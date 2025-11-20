@@ -14,7 +14,7 @@ export default function ForgeDashboard() {
 
     const isLoading = !campaigns;
 
-    const seedCampaign = useMutation(api.forge.seedCampaign);
+    const seedSkyrim = useMutation(api.forge.seedSkyrim);
     const seedEffectsLibrary = useMutation(api.forge.seedEffectsLibrary);
     const [isSeeding, setIsSeeding] = useState(false);
     const [isSeedingEffects, setIsSeedingEffects] = useState(false);
@@ -26,10 +26,10 @@ export default function ForgeDashboard() {
         }
     }, [user, authLoading]);
 
-    const handleSeed = async () => {
+    const handleSeedSkyrim = async () => {
         setIsSeeding(true);
         try {
-            await seedCampaign({});
+            await seedSkyrim({});
         } finally {
             setIsSeeding(false);
         }
@@ -67,12 +67,12 @@ export default function ForgeDashboard() {
                     </div>
                     <div className="flex gap-4">
                         <button
-                            onClick={handleSeed}
+                            onClick={handleSeedSkyrim}
                             disabled={isSeeding}
                             className="bg-stone-800 hover:bg-stone-700 text-white px-4 py-2 rounded-lg font-bold transition-colors flex items-center gap-2 disabled:opacity-50"
                         >
                             {isSeeding ? <Loader2 className="animate-spin" size={20} /> : <Database size={20} />}
-                            Seed Demo Campaign
+                            Seed Skyrim
                         </button>
                         <button
                             onClick={handleSeedEffects}

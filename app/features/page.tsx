@@ -1,13 +1,22 @@
 "use client";
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Map, Sword, Crown, Star, ArrowRight, Sparkles, Ghost, Skull, Flame, Shield, Play } from 'lucide-react';
 import Link from 'next/link';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 
 export default function FeaturesPage() {
+    // Initialize state for client-side rendering
+    const [mounted, setMounted] = useState(false);
     const campaigns = useQuery(api.forge.getAllCampaigns);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    // Return skeleton/loading state if not mounted or loading
+    if (!mounted) return <div className="min-h-screen bg-stone-950" />;
 
     return (
         <div className="min-h-screen bg-stone-950 text-stone-200 font-sans selection:bg-indigo-900 selection:text-white pt-20">

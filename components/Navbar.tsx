@@ -37,12 +37,12 @@ const Navbar = () => {
                         <div className="h-9 w-24 bg-stone-800/50 animate-pulse rounded"></div>
                     ) : user ? (
                         <div className="flex items-center gap-4">
-                            <div className="hidden md:flex items-center gap-2 text-stone-300">
+                            <Link href="/dashboard" className="hidden md:flex items-center gap-2 text-stone-300 hover:text-white transition-colors">
                                 <div className="w-8 h-8 rounded-full bg-indigo-900/50 border border-indigo-500/30 flex items-center justify-center text-indigo-300">
                                     {user.firstName ? user.firstName[0].toUpperCase() : <UserIcon size={16} />}
                                 </div>
                                 <span className="text-sm font-medium">{user.firstName || 'Traveler'}</span>
-                            </div>
+                            </Link>
                             <button
                                 onClick={() => signOut({ returnTo: '/' })}
                                 className="p-2 text-stone-400 hover:text-white hover:bg-stone-800 rounded-full transition-all"

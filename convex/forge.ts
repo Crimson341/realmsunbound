@@ -44,10 +44,27 @@ export const getMyCampaigns = query({
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) return [];
         const userId = identity.tokenIdentifier;
-        return await ctx.db
+        
+        const campaigns = await ctx.db
             .query("campaigns")
             .withIndex("by_user", (q) => q.eq("userId", userId))
             .collect();
+
+        // Enrich with player counts
+        const enrichedCampaigns = await Promise.all(
+            campaigns.map(async (campaign) => {
+                const characters = await ctx.db
+                    .query("characters")
+                    .filter((q) => q.eq(q.field("campaignId"), campaign._id))
+                    .collect();
+                return {
+                    ...campaign,
+                    playerCount: characters.length,
+                };
+            })
+        );
+
+        return enrichedCampaigns;
     },
 });
 
@@ -61,7 +78,9 @@ export const getAllCampaigns = query({
 export const getCampaignDetails = query({
     args: { campaignId: v.id("campaigns") },
     handler: async (ctx, args) => {
-        // Public access allowed
+        const identity = await ctx.auth.getUserIdentity();
+        
+        // Public access allowed for campaign details
         const campaign = await ctx.db.get(args.campaignId);
         if (!campaign) return null;
 
@@ -94,7 +113,7 @@ export const getCampaignDetails = query({
             .withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId))
             .collect();
 
-        // Fetch items created by the DM for this campaign
+        // Fetch items created by the DM for this campaign (Templates)
         const items = await ctx.db
             .query("items")
             .withIndex("by_user", (q) => q.eq("userId", dmUserId))
@@ -106,7 +125,27 @@ export const getCampaignDetails = query({
             .withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId))
             .collect();
 
-        return { campaign, locations, events, quests, npcs, monsters, items, spells };
+        // Fetch Player Specific Data (Inventory & Active Quests)
+        let inventory: any[] = [];
+        let activeQuests: any[] = [];
+
+        if (identity) {
+            const userId = identity.tokenIdentifier;
+            
+            inventory = await ctx.db
+                .query("items")
+                .withIndex("by_user", (q) => q.eq("userId", userId))
+                .filter((q) => q.eq(q.field("campaignId"), args.campaignId))
+                .collect();
+
+            activeQuests = await ctx.db
+                .query("quests")
+                .withIndex("by_user", (q) => q.eq("userId", userId))
+                .filter((q) => q.eq(q.field("campaignId"), args.campaignId))
+                .collect();
+        }
+
+        return { campaign, locations, events, quests, npcs, monsters, items, spells, inventory, activeQuests };
     },
 });
 
@@ -137,6 +176,45 @@ export const getMyCharacters = query({
             .query("characters")
             .withIndex("by_user", (q) => q.eq("userId", identity.tokenIdentifier))
             .collect();
+    },
+});
+
+export const getPlayedCampaigns = query({
+    handler: async (ctx) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) return [];
+
+        const characters = await ctx.db
+            .query("characters")
+            .withIndex("by_user", (q) => q.eq("userId", identity.tokenIdentifier))
+            .collect();
+
+        // Fetch all items for the user to distribute them by campaign
+        const allUserItems = await ctx.db
+            .query("items")
+            .withIndex("by_user", (q) => q.eq("userId", identity.tokenIdentifier))
+            .collect();
+
+        const campaignIds = [...new Set(characters.map((c) => c.campaignId).filter((id) => id !== undefined))];
+
+        const campaigns = await Promise.all(
+            campaignIds.map(async (id) => {
+                if (!id) return null;
+                const campaign = await ctx.db.get(id);
+                if (!campaign) return null;
+
+                const character = characters.find(c => c.campaignId === id);
+                const items = allUserItems.filter(item => item.campaignId === id);
+
+                return {
+                    ...campaign,
+                    character,
+                    items
+                };
+            })
+        );
+
+        return campaigns.filter((c) => c !== null);
     },
 });
 
@@ -660,6 +738,93 @@ export const seedCampaign = mutation({
     },
 });
 
+// --- REWARDS SYSTEM ---
+export const grantRewards = mutation({
+    args: {
+        campaignId: v.id("campaigns"),
+        itemNames: v.optional(v.array(v.string())),
+        questTitles: v.optional(v.array(v.string())),
+    },
+    handler: async (ctx, args) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) return;
+        const userId = identity.tokenIdentifier;
+
+        // 1. Handle Items
+        if (args.itemNames && args.itemNames.length > 0) {
+            // Fetch all campaign items (templates) first to minimize queries
+            // In a real app, you'd want to be more specific with indexing
+            const campaignItems = await ctx.db
+                .query("items")
+                .filter((q) => q.eq(q.field("campaignId"), args.campaignId))
+                .collect();
+
+            for (const name of args.itemNames) {
+                // Find the template (ignoring user ownership, looking for matching name in campaign)
+                const template = campaignItems.find(i => i.name.toLowerCase() === name.toLowerCase());
+                
+                if (template) {
+                    // Check if user already has this item to prevent duplicates if desired
+                    // For now, we allow duplicates (e.g. multiple potions)
+                    await ctx.db.insert("items", {
+                        userId, // Assign to player
+                        campaignId: args.campaignId,
+                        name: template.name,
+                        type: template.type,
+                        rarity: template.rarity,
+                        effects: template.effects,
+                        effectId: template.effectId,
+                        spellId: template.spellId,
+                        description: template.description,
+                        specialAbilities: template.specialAbilities,
+                        usage: template.usage,
+                        requirements: template.requirements,
+                        lore: template.lore,
+                        textColor: template.textColor,
+                        imageId: template.imageId,
+                    });
+                }
+            }
+        }
+
+        // 2. Handle Quests
+        if (args.questTitles && args.questTitles.length > 0) {
+            const campaignQuests = await ctx.db
+                .query("quests")
+                .filter((q) => q.eq(q.field("campaignId"), args.campaignId))
+                .collect();
+
+            for (const title of args.questTitles) {
+                const template = campaignQuests.find(q => q.title.toLowerCase() === title.toLowerCase());
+                
+                if (template) {
+                    // Check if player already has this quest
+                    const existing = await ctx.db
+                        .query("quests")
+                        .withIndex("by_user", (q) => q.eq("userId", userId))
+                        .filter((q) => q.eq(q.field("campaignId"), args.campaignId))
+                        .filter((q) => q.eq(q.field("title"), template.title))
+                        .first();
+
+                    if (!existing) {
+                        await ctx.db.insert("quests", {
+                            userId, // Assign to player
+                            campaignId: args.campaignId,
+                            locationId: template.locationId,
+                            title: template.title,
+                            description: template.description,
+                            rewards: template.rewards,
+                            rewardItemIds: template.rewardItemIds,
+                            status: "Active",
+                            npcId: template.npcId,
+                        });
+                    }
+                }
+            }
+        }
+    },
+});
+
 // --- MONSTERS ---
 export const createMonster = mutation({
     args: {
@@ -680,20 +845,453 @@ export const createMonster = mutation({
     },
 });
 
-// --- RARITY COLORS ---
-export const updateRarityColors = mutation({
-    args: {
-        campaignId: v.id("campaigns"),
-        rarityColors: v.string(), // JSON string
-    },
-    handler: async (ctx, args) => {
+// --- SKRYIM SEED ---
+export const seedSkyrim = mutation({
+    args: {},
+    handler: async (ctx) => {
         const identity = await getUser(ctx);
-        const campaign = await ctx.db.get(args.campaignId);
-        if (!campaign || campaign.userId !== identity.tokenIdentifier) {
-            throw new Error("Unauthorized");
-        }
-        await ctx.db.patch(args.campaignId, {
-            rarityColors: args.rarityColors,
+        const userId = identity.tokenIdentifier;
+
+        // 1. Create Campaign
+        const campaignId = await ctx.db.insert("campaigns", {
+            userId,
+            title: "The Elder Scrolls: Skyrim",
+            description: "The Empire of Tamriel is on the edge. The High King of Skyrim has been murdered. Alliances form as claims to the throne are made. In the midst of this conflict, a far more dangerous, ancient evil is awakened. Dragons, long lost to the passages of the Elder Scrolls, have returned to Tamriel.",
+            xpRate: 1.0,
+            rules: JSON.stringify({ magic: "standard", death: "respawn_at_shrine", combat: "real_time_turns" }),
+            raritySettings: JSON.stringify({ Common: "#d1d5db", Uncommon: "#22c55e", Rare: "#3b82f6", Epic: "#a855f7", Legendary: "#fbbf24" }),
         });
+
+        // 2. Create Locations
+        // Riverwood
+        const locRiverwood = await ctx.db.insert("locations", {
+            userId,
+            campaignId,
+            name: "Riverwood",
+            type: "Village",
+            environment: "Forest, River, Valley",
+            description: "A small timberline village located on the banks of the White River.",
+            neighbors: [],
+        });
+
+        // Whiterun
+        const locWhiterun = await ctx.db.insert("locations", {
+            userId,
+            campaignId,
+            name: "Whiterun",
+            type: "City",
+            environment: "Tundra, Plains, Fortified",
+            description: "The capital of Whiterun Hold, located in the center of the province.",
+            neighbors: [locRiverwood],
+        });
+
+        // Dragonsreach (Inside Whiterun, but modeled as a location for granularity)
+        const locDragonsreach = await ctx.db.insert("locations", {
+            userId,
+            campaignId,
+            name: "Dragonsreach",
+            type: "Keep",
+            environment: "Stone, Indoor, Castle",
+            description: "The palace of the Jarl of Whiterun, built to hold a captive dragon.",
+            neighbors: [locWhiterun],
+        });
+
+        // Bleak Falls Barrow
+        const locBarrow = await ctx.db.insert("locations", {
+            userId,
+            campaignId,
+            name: "Bleak Falls Barrow",
+            type: "Dungeon",
+            environment: "Snow, Ruins, Ancient",
+            description: "An ancient Nordic tomb located west of Riverwood.",
+            neighbors: [locRiverwood],
+        });
+
+        // High Hrothgar
+        const locHighHrothgar = await ctx.db.insert("locations", {
+            userId,
+            campaignId,
+            name: "High Hrothgar",
+            type: "Monastery",
+            environment: "Mountain, Snow, Stone",
+            description: "A monastery sitting on the slopes of the Throat of the World.",
+            neighbors: [locWhiterun], // Simplified connection
+        });
+
+        // Throat of the World
+        const locThroat = await ctx.db.insert("locations", {
+            userId,
+            campaignId,
+            name: "Throat of the World",
+            type: "Mountain Peak",
+            environment: "Snow, High Altitude, Wind",
+            description: "The highest peak in Tamriel, home to Paarthurnax.",
+            neighbors: [locHighHrothgar],
+        });
+
+        // Riften
+        const locRiften = await ctx.db.insert("locations", {
+            userId,
+            campaignId,
+            name: "Riften",
+            type: "City",
+            environment: "Forest, Lake, Autumn",
+            description: "A city in the southeastern Rift hold, known for the Thieves Guild.",
+            neighbors: [locWhiterun], // Simplified long-distance connection
+        });
+
+        // 3. Create Spells
+        const spellFlames = await ctx.db.insert("spells", {
+            userId,
+            campaignId,
+            name: "Flames",
+            level: 0,
+            school: "Destruction",
+            castingTime: "Action",
+            range: "15 ft",
+            duration: "Instant",
+            description: "A gout of fire streams from your hand.",
+            damageDice: "1d8",
+            damageType: "Fire",
+            tags: ["fire", "cantrip"],
+        });
+
+        const spellHealing = await ctx.db.insert("spells", {
+            userId,
+            campaignId,
+            name: "Healing",
+            level: 1,
+            school: "Restoration",
+            castingTime: "Action",
+            range: "Touch",
+            duration: "Instant",
+            description: "Heals a target for a small amount.",
+            damageDice: "1d8+mod",
+            damageType: "Healing",
+            tags: ["healing"],
+        });
+
+        const spellFusRoDah = await ctx.db.insert("spells", {
+            userId,
+            campaignId,
+            name: "Shout: Unrelenting Force",
+            level: 3,
+            school: "Thu'um",
+            castingTime: "Action",
+            range: "60 ft cone",
+            duration: "Instant",
+            description: "Your Voice heralds raw power, pushing aside anything - or anyone - who stands in your path.",
+            save: "STR",
+            tags: ["force", "knockback", "shout"],
+        });
+
+        const spellMagelight = await ctx.db.insert("spells", {
+            userId,
+            campaignId,
+            name: "Magelight",
+            level: 1,
+            school: "Alteration",
+            castingTime: "Action",
+            range: "60 ft",
+            duration: "1 hour",
+            description: "Ball of light that sticks where it strikes.",
+            tags: ["utility", "light"],
+        });
+
+        // 4. Create Items
+        const itemSweetroll = await ctx.db.insert("items", {
+            userId,
+            campaignId,
+            name: "Sweetroll",
+            type: "Consumable",
+            rarity: "Common",
+            effects: "Restores 5 HP",
+            description: "A small, sweet pastry. Hopefully nobody stole it.",
+            usage: "Eat",
+            textColor: "#d1d5db",
+        });
+
+        const itemPotionMinor = await ctx.db.insert("items", {
+            userId,
+            campaignId,
+            name: "Potion of Minor Healing",
+            type: "Consumable",
+            rarity: "Common",
+            effects: "Restores 25 HP",
+            description: "A ruddy liquid that smells of wildflowers.",
+            usage: "Drink",
+            textColor: "#d1d5db",
+        });
+
+        const itemIronHelmet = await ctx.db.insert("items", {
+            userId,
+            campaignId,
+            name: "Iron Helmet",
+            type: "Armor",
+            rarity: "Common",
+            effects: "+1 AC",
+            description: "A standard helmet used by guards and bandits alike.",
+            usage: "Head slot",
+            textColor: "#d1d5db",
+        });
+
+        const itemSteelSword = await ctx.db.insert("items", {
+            userId,
+            campaignId,
+            name: "Steel Sword",
+            type: "Weapon",
+            rarity: "Common",
+            effects: "1d8 Slashing",
+            description: "A reliable blade forged from steel.",
+            usage: "One-handed",
+            textColor: "#d1d5db",
+        });
+
+        const itemDragonstone = await ctx.db.insert("items", {
+            userId,
+            campaignId,
+            name: "Dragonstone",
+            type: "Key Item",
+            rarity: "Rare",
+            effects: "Quest Item",
+            description: "An ancient stone tablet from Bleak Falls Barrow, etched with a map of dragon burial mounds.",
+            lore: "Farengar Secret-Fire has been looking for this.",
+            textColor: "#3b82f6",
+            spawnLocationIds: [locBarrow],
+        });
+
+        const itemAmuletTalos = await ctx.db.insert("items", {
+            userId,
+            campaignId,
+            name: "Amulet of Talos",
+            type: "Accessory",
+            rarity: "Uncommon",
+            effects: "Reduces Shout cooldown by 20%",
+            description: "An amulet depicting the god Talos.",
+            lore: "Worshipping Talos is technically banned by the White-Gold Concordat.",
+            textColor: "#22c55e",
+        });
+
+        const itemWuuthrad = await ctx.db.insert("items", {
+            userId,
+            campaignId,
+            name: "Wuuthrad",
+            type: "Weapon",
+            rarity: "Legendary",
+            effects: "1d12 Slashing; Extra damage to Elves",
+            description: "The legendary battleaxe of Ysgramor.",
+            lore: "Forged from the tears of the Night of Tears.",
+            textColor: "#fbbf24",
+        });
+
+        const itemWabbajack = await ctx.db.insert("items", {
+            userId,
+            campaignId,
+            name: "Wabbajack",
+            type: "Staff",
+            rarity: "Legendary",
+            effects: "Random Effect",
+            description: "A mysterious staff topped with three faces.",
+            specialAbilities: "Casts a random spell or transforms the target.",
+            lore: "Artifact of Sheogorath, Daedric Prince of Madness.",
+            textColor: "#fbbf24",
+        });
+
+         const itemDaedricBow = await ctx.db.insert("items", {
+            userId,
+            campaignId,
+            name: "Daedric Bow",
+            type: "Weapon",
+            rarity: "Epic",
+            effects: "1d8 Piercing + Fire Damage",
+            description: "A bow forged from the blood of a Daedra heart.",
+            textColor: "#a855f7",
+        });
+
+        // 5. Create NPCs
+        const npcRalof = await ctx.db.insert("npcs", {
+            userId,
+            campaignId,
+            name: "Ralof",
+            role: "Stormcloak Soldier",
+            attitude: "Friendly",
+            description: "A Nord rebel who escaped Helgen with you.",
+            locationId: locRiverwood,
+        });
+
+        const npcAlvor = await ctx.db.insert("npcs", {
+            userId,
+            campaignId,
+            name: "Alvor",
+            role: "Blacksmith",
+            attitude: "Friendly",
+            description: "The local blacksmith in Riverwood.",
+            locationId: locRiverwood,
+        });
+
+        const npcBalgruuf = await ctx.db.insert("npcs", {
+            userId,
+            campaignId,
+            name: "Jarl Balgruuf the Greater",
+            role: "Jarl of Whiterun",
+            attitude: "Neutral",
+            description: "A wise but weary ruler, trying to stay out of the civil war.",
+            locationId: locDragonsreach,
+        });
+
+        const npcFarengar = await ctx.db.insert("npcs", {
+            userId,
+            campaignId,
+            name: "Farengar Secret-Fire",
+            role: "Court Wizard",
+            attitude: "Arrogant",
+            description: "The Jarl's wizard, obsessed with dragons.",
+            locationId: locDragonsreach,
+        });
+
+        const npcDelphine = await ctx.db.insert("npcs", {
+            userId,
+            campaignId,
+            name: "Delphine",
+            role: "Innkeeper / Blade",
+            attitude: "Suspicious",
+            description: "Runs the Sleeping Giant Inn, but seems to be more than she appears.",
+            locationId: locRiverwood,
+        });
+
+        const npcArngeir = await ctx.db.insert("npcs", {
+            userId,
+            campaignId,
+            name: "Arngeir",
+            role: "Greybeard",
+            attitude: "Wise",
+            description: "The voice of the Greybeards.",
+            locationId: locHighHrothgar,
+        });
+
+        const npcPaarthurnax = await ctx.db.insert("npcs", {
+            userId,
+            campaignId,
+            name: "Paarthurnax",
+            role: "Dragon / Mentor",
+            attitude: "Friendly",
+            description: "An ancient dragon who meditates at the peak of the world.",
+            locationId: locThroat,
+        });
+
+        // 6. Create Monsters
+        await ctx.db.insert("monsters", {
+            userId,
+            campaignId,
+            name: "Mudcrab",
+            description: "Annoying crustaceans found near water.",
+            health: 10,
+            damage: 2,
+            locationId: locRiverwood,
+        });
+
+        await ctx.db.insert("monsters", {
+            userId,
+            campaignId,
+            name: "Draugr",
+            description: "Undead Nords guarding ancient tombs.",
+            health: 30,
+            damage: 5,
+            locationId: locBarrow,
+            dropItemIds: [itemSteelSword, itemIronHelmet],
+        });
+
+        await ctx.db.insert("monsters", {
+            userId,
+            campaignId,
+            name: "Draugr Overlord",
+            description: "A powerful undead warrior.",
+            health: 80,
+            damage: 12,
+            locationId: locBarrow,
+            dropItemIds: [itemDragonstone],
+        });
+
+        await ctx.db.insert("monsters", {
+            userId,
+            campaignId,
+            name: "Frost Troll",
+            description: "A hulking beast with regenerating health.",
+            health: 60,
+            damage: 15,
+            locationId: locHighHrothgar,
+        });
+
+        await ctx.db.insert("monsters", {
+            userId,
+            campaignId,
+            name: "Mirmulnir",
+            description: "The first dragon you fight at the Western Watchtower.",
+            health: 200,
+            damage: 25,
+            locationId: locWhiterun,
+            dropItemIds: [itemSteelSword],
+        });
+
+        // 7. Create Quests
+        await ctx.db.insert("quests", {
+            userId,
+            campaignId,
+            title: "Before the Storm",
+            description: "Go to Whiterun and inform Jarl Balgruuf about the dragon attack at Helgen.",
+            status: "Active",
+            locationId: locRiverwood,
+            npcId: npcAlvor,
+        });
+
+        await ctx.db.insert("quests", {
+            userId,
+            campaignId,
+            title: "Bleak Falls Barrow",
+            description: "Farengar needs you to retrieve the Dragonstone from Bleak Falls Barrow.",
+            status: "Pending",
+            locationId: locDragonsreach,
+            npcId: npcFarengar,
+            rewardItemIds: [itemPotionMinor],
+        });
+
+        await ctx.db.insert("quests", {
+            userId,
+            campaignId,
+            title: "The Way of the Voice",
+            description: "The Greybeards have summoned you to High Hrothgar.",
+            status: "Pending",
+            locationId: locHighHrothgar,
+            npcId: npcArngeir,
+        });
+
+        // 8. Create Events
+        await ctx.db.insert("events", {
+            userId,
+            campaignId,
+            trigger: "Fast Travel to Mountains",
+            effect: "A dragon is spotted circling overhead.",
+            locationId: locWhiterun,
+        });
+
+        await ctx.db.insert("events", {
+            userId,
+            campaignId,
+            trigger: "Night time",
+            effect: "The Aurora Borealis lights up the sky, restoring magicka regeneration.",
+        });
+
+        // 9. Set Colors
+        await ctx.db.patch(campaignId, {
+            rarityColors: JSON.stringify({
+                Common: "#d1d5db",
+                Uncommon: "#22c55e",
+                Rare: "#3b82f6",
+                Epic: "#a855f7",
+                Legendary: "#fbbf24"
+            }),
+        });
+
+        return campaignId;
     },
 });

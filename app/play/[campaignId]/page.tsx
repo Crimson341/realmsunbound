@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams } from 'next/navigation';
-import { useQuery, useAction } from 'convex/react';
+import { useQuery, useAction, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { Id } from '../../../convex/_generated/dataModel';
 import {
@@ -17,6 +17,7 @@ type Message = {
     role: 'user' | 'model';
     content: string;
     choices?: string[];
+    questOffer?: string[];
 };
 
 // --- UTILS ---
@@ -24,7 +25,112 @@ const cn = (...classes: (string | undefined | null | false)[]) => classes.filter
 
 // --- COMPONENTS ---
 
-const HighlightText = ({ text, entities }: { text: string, entities: { name: string, type: string, color?: string }[] }) => {
+const SmartTooltip = ({ children, content, className, color }: { children: React.ReactNode, content: React.ReactNode, className?: string, color?: string }) => {
+    const [state, setState] = useState<'idle' | 'hovering' | 'locked'>('idle');
+    const [position, setPosition] = useState<'top' | 'bottom'>('top');
+    const timerRef = useRef<NodeJS.Timeout | null>(null);
+    const ref = useRef<HTMLDivElement>(null);
+
+    const handleEnter = () => {
+        // Position logic
+        if (ref.current) {
+             const rect = ref.current.getBoundingClientRect();
+             // If near top of viewport (less than 250px), flip to bottom
+             setPosition(rect.top < 250 ? 'bottom' : 'top');
+        }
+        
+        if (state === 'idle') {
+            setState('hovering');
+            timerRef.current = setTimeout(() => {
+                setState('locked');
+            }, 2000);
+        }
+    };
+
+    const handleLeaveTrigger = () => {
+        if (timerRef.current) {
+            clearTimeout(timerRef.current);
+            timerRef.current = null;
+        }
+        if (state !== 'locked') {
+            setState('idle');
+        }
+    };
+
+    const handleLeaveTooltip = () => {
+        if (timerRef.current) {
+            clearTimeout(timerRef.current);
+            timerRef.current = null;
+        }
+        setState('idle');
+    };
+
+    return (
+        <div ref={ref} className={cn("relative inline-block", className)} onMouseEnter={handleEnter} onMouseLeave={handleLeaveTrigger}>
+            {children}
+            {(state !== 'idle') && (
+                <div
+                     className={cn(
+                        "absolute left-1/2 -translate-x-1/2 w-64 bg-[#1a1918] text-stone-300 text-xs rounded-lg border border-white/10 shadow-2xl backdrop-blur-xl z-50 animate-in fade-in zoom-in-95 duration-200",
+                        position === 'top' ? "bottom-full mb-2" : "top-full mt-2"
+                     )}
+                     onMouseLeave={handleLeaveTooltip}
+                >
+                    {/* Progress Bar */}
+                    <div className="h-0.5 bg-stone-800 w-full absolute top-0 left-0 rounded-t-lg overflow-hidden">
+                         <div
+                            className="h-full bg-indigo-500 ease-linear"
+                            style={{
+                                width: state === 'idle' ? '0%' : '100%',
+                                transitionProperty: 'width',
+                                transitionDuration: state === 'locked' ? '0s' : '2000ms',
+                                transitionTimingFunction: 'linear'
+                            }}
+                         />
+                    </div>
+
+                    {/* Content */}
+                    <div className="p-3 relative">
+                        {content}
+                        
+                        {/* Arrow */}
+                        <div className={cn(
+                            "absolute left-1/2 -translate-x-1/2 border-4 border-transparent w-0 h-0",
+                            position === 'top' 
+                                ? "top-full border-t-[#1a1918] -mt-0.5" 
+                                : "bottom-full border-b-[#1a1918] -mb-0.5"
+                        )} />
+                    </div>
+                </div>
+            )}
+        </div>
+    )
+};
+
+const EntitySpan = ({ entity, text }: { entity: any, text: string }) => {
+    const tooltipContent = (
+        <>
+            <div className="flex items-center justify-between mb-2 border-b border-white/5 pb-2">
+                <span className="font-bold text-white text-sm">{entity.name}</span>
+                <span className="text-[10px] uppercase tracking-wider font-bold text-stone-500 bg-white/5 px-2 py-0.5 rounded">{entity.type}</span>
+            </div>
+            <p className="leading-relaxed italic text-stone-400">{entity.description || "No details available."}</p>
+        </>
+    );
+
+    return (
+        <SmartTooltip content={tooltipContent}>
+             <span
+                className="font-semibold border-b border-dotted border-white/40 hover:border-indigo-400 cursor-help transition-colors"
+                style={{ color: entity.color }}
+            >
+                {text}
+            </span>
+        </SmartTooltip>
+    );
+};
+
+const HighlightText = ({ text, entities }: { text: string, entities: { name: string, type: string, color?: string, description?: string }[] }) => {
     const sortedEntities = useMemo(() => {
         return [...entities].sort((a, b) => b.name.length - a.name.length);
     }, [entities]);
@@ -40,18 +146,7 @@ const HighlightText = ({ text, entities }: { text: string, entities: { name: str
             {parts.map((part, i) => {
                 const entity = sortedEntities.find(e => e.name.toLowerCase() === part.toLowerCase());
                 if (entity) {
-                    return (
-                        <span
-                            key={i}
-                            className="relative inline-block font-semibold text-white border-b border-dotted border-white/40 hover:border-indigo-400 cursor-help transition-colors group"
-                            style={{ color: entity.color }}
-                        >
-                            {part}
-                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-stone-900 text-xs rounded border border-white/10 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50 shadow-xl">
-                                {entity.type}
-                            </span>
-                        </span>
-                    );
+                    return <EntitySpan key={i} entity={entity} text={part} />;
                 }
                 return part;
             })}
@@ -65,6 +160,8 @@ export default function PlayPage() {
 
     const data = useQuery(api.forge.getCampaignDetails, { campaignId });
     const generateNarrative = useAction(api.ai.generateNarrative);
+    const grantRewards = useMutation(api.forge.grantRewards);
+    const { isAuthenticated } = useConvexAuth();
 
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState("");
@@ -80,12 +177,26 @@ export default function PlayPage() {
     const entities = useMemo(() => {
         if (!data) return [];
         return [
-            ...(data.locations?.map(l => ({ name: l.name, type: 'Location', color: '#a7f3d0' })) || []), // Emerald-200
-            ...(data.npcs?.map(n => ({ name: n.name, type: 'NPC', color: '#fbcfe8' })) || []), // Pink-200
-            ...(data.items?.map(i => ({ name: i.name, type: 'Item', color: i.textColor || '#fde68a' })) || []), // Amber-200
-            ...(data.monsters?.map(m => ({ name: m.name, type: 'Monster', color: '#fca5a5' })) || []) // Red-300
+            ...(data.locations?.map(l => ({ name: l.name, type: 'Location', color: '#a7f3d0', description: l.description })) || []), // Emerald-200
+            ...(data.npcs?.map(n => ({ name: n.name, type: 'NPC', color: '#fbcfe8', description: n.description })) || []), // Pink-200
+            ...(data.items?.map(i => ({ name: i.name, type: 'Item', color: i.textColor || '#fde68a', description: i.description })) || []), // Amber-200
+            ...(data.monsters?.map(m => ({ name: m.name, type: 'Monster', color: '#fca5a5', description: m.description })) || []) // Red-300
         ];
     }, [data]);
+
+    // Derived State for Local Context
+    const localNPCs = useMemo(() => {
+        if (!data || !currentLocationId) return [];
+        return data.npcs?.filter(n => n.locationId === currentLocationId) || [];
+    }, [data, currentLocationId]);
+
+    const availableQuests = useMemo(() => {
+        if (!data || !currentLocationId) return [];
+        // Get quests located here
+        const local = data.quests?.filter(q => q.locationId === currentLocationId) || [];
+        // Filter out ones we already have active
+        return local.filter(q => !data.activeQuests?.some((aq: any) => aq.title === q.title));
+    }, [data, currentLocationId, data?.activeQuests]);
 
     // Auto-scroll
     useEffect(() => {
@@ -129,6 +240,30 @@ export default function PlayPage() {
         }
     };
 
+    const handleAcceptQuest = async (questTitle: string, messageIndex: number) => {
+        if (!isAuthenticated) return;
+        
+        try {
+            await grantRewards({
+                campaignId,
+                questTitles: [questTitle]
+            });
+
+            // Remove from offer list in UI to show it's accepted
+            setMessages(prev => prev.map((msg, idx) => {
+                if (idx === messageIndex && msg.questOffer) {
+                    return {
+                        ...msg,
+                        questOffer: msg.questOffer.filter(t => t !== questTitle)
+                    };
+                }
+                return msg;
+            }));
+        } catch (e) {
+            console.error("Failed to accept quest", e);
+        }
+    };
+
     const submitAction = async (actionText: string) => {
         if (!actionText.trim() || isLoading) return;
 
@@ -146,7 +281,41 @@ export default function PlayPage() {
                 history: history
             });
             const parsed = JSON.parse(response);
-            setMessages(prev => [...prev, { role: 'model', content: parsed.content, choices: parsed.choices }]);
+            
+            // Update Location
+            if (parsed.current_location && data?.locations) {
+                const newLoc = data.locations.find((l: any) => l.name.toLowerCase() === parsed.current_location.toLowerCase());
+                if (newLoc) {
+                    setCurrentLocationId(newLoc._id);
+                }
+            }
+
+            let questOffers: string[] = [];
+
+            // Handle Rewards
+            if (parsed.rewards && isAuthenticated) {
+                const { items, quests } = parsed.rewards;
+                
+                // Auto-grant items (Loot)
+                if (items && items.length > 0) {
+                    await grantRewards({
+                        campaignId,
+                        itemNames: items
+                    });
+                }
+
+                // Hold quests for manual acceptance
+                if (quests && quests.length > 0) {
+                    questOffers = quests;
+                }
+            }
+
+            setMessages(prev => [...prev, { 
+                role: 'model', 
+                content: parsed.content, 
+                choices: parsed.choices,
+                questOffer: questOffers
+            }]);
         } catch (error) {
             setMessages(prev => [...prev, { role: 'model', content: "The connection is severed... (AI Error)" }]);
         } finally {
@@ -161,7 +330,7 @@ export default function PlayPage() {
         </div>
     );
 
-    const { campaign, items } = data;
+    const { campaign, items, inventory, activeQuests } = data;
     const currentLocation = data.locations?.find(l => l._id === currentLocationId) || data.locations?.[0];
     const hpPercentage = (hp / maxHp) * 100;
 
@@ -180,7 +349,7 @@ export default function PlayPage() {
             {/* --- HUD SIDEBAR --- */}
             <aside className={cn(
                 "fixed inset-y-0 left-0 z-50 w-[300px] bg-[#12100e]/90 backdrop-blur-2xl border-r border-white/5 transform transition-transform duration-500 ease-out flex flex-col",
-                "md:relative md:translate-x-0",
+                "lg:relative lg:translate-x-0",
                 isSidebarOpen ? "translate-x-0" : "-translate-x-full"
             )}>
                 {/* Header */}
@@ -190,7 +359,7 @@ export default function PlayPage() {
                             <ArrowLeft size={14} className="group-hover:-translate-x-1 transition-transform" />
                             <span className="text-[10px] uppercase tracking-widest font-bold">Exit</span>
                         </Link>
-                        <button onClick={() => setSidebarOpen(false)} className="md:hidden text-stone-500">
+                        <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-stone-500">
                             <X size={20} />
                         </button>
                     </div>
@@ -237,14 +406,66 @@ export default function PlayPage() {
                         </div>
                     </div>
 
+                    {/* Quest Log */}
+                    <div>
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-[10px] uppercase tracking-widest font-bold text-stone-500">Active Quests</h3>
+                            <Sparkles size={14} className="text-stone-600" />
+                        </div>
+                        <div className="space-y-3">
+                            {activeQuests?.length === 0 ? (
+                                <div className="p-4 border border-dashed border-stone-800 rounded-lg text-center">
+                                    <p className="text-xs text-stone-600 italic">No active quests.</p>
+                                </div>
+                            ) : (
+                                activeQuests?.map((quest: any) => {
+                                    const tooltipContent = (
+                                        <>
+                                            <div className="flex items-center justify-between mb-2 border-b border-white/5 pb-2">
+                                                <span className="font-bold text-amber-500 text-sm">{quest.title}</span>
+                                                <span className="text-[10px] uppercase tracking-wider font-bold text-stone-500 bg-white/5 px-2 py-0.5 rounded">Quest</span>
+                                            </div>
+                                            <p className="leading-relaxed text-stone-400 mb-3">{quest.description}</p>
+                                            
+                                            {/* Rewards Section in Tooltip */}
+                                            {quest.rewardItemIds && quest.rewardItemIds.length > 0 && (
+                                                <div className="bg-black/20 rounded p-2 border border-white/5">
+                                                    <p className="text-[10px] uppercase tracking-widest font-bold text-stone-500 mb-1">Rewards</p>
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {/* Note: We don't have item names resolved here easily without another query, 
+                                                            so we might just show count or static text unless we enrich the data. 
+                                                            For now, implying 'Unknown Rewards' or if the rewards string exists */}
+                                                        <span className="text-xs text-emerald-400 italic">{quest.rewards || "Mystery Loot"}</span>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </>
+                                    );
+
+                                    return (
+                                        <SmartTooltip key={quest._id} content={tooltipContent} className="w-full block">
+                                            <div className="bg-stone-900/40 border border-white/5 rounded-lg p-3 hover:bg-stone-800/40 transition-colors group cursor-help w-full text-left">
+                                                <div className="flex items-start justify-between gap-2 mb-1">
+                                                    <h4 className="text-sm font-bold text-stone-300 group-hover:text-indigo-300 transition-colors leading-tight">{quest.title}</h4>
+                                                    {quest.status === 'Active' && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5 shadow-[0_0_5px_rgba(245,158,11,0.5)]" />}
+                                                </div>
+                                                <p className="text-xs text-stone-500 line-clamp-2 group-hover:text-stone-400 transition-colors">{quest.description}</p>
+                                            </div>
+                                        </SmartTooltip>
+                                    );
+                                })
+                            )}
+                        </div>
+                    </div>
+
                     {/* Inventory Grid System */}
                     <div>
                         <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-[10px] uppercase tracking-widest font-bold text-stone-500">Inventory</h3>
+                            <h3 className="text-[10px] uppercase tracking-widest font-bold text-stone-500">Backpack</h3>
                             <Backpack size={14} className="text-stone-600" />
                         </div>
                         <div className="grid grid-cols-4 gap-2">
-                            {items?.slice(0, 12).map(item => (
+                            {inventory?.slice(0, 12).map((item: any) => (
                                 <div
                                     key={item._id}
                                     className="aspect-square rounded bg-stone-800/40 border border-white/5 hover:border-indigo-500/50 hover:bg-indigo-500/10 transition-all cursor-help group relative flex items-center justify-center"
@@ -260,7 +481,7 @@ export default function PlayPage() {
                                 </div>
                             ))}
                             {/* Empty Slots */}
-                            {Array.from({ length: Math.max(0, 8 - (items?.length || 0)) }).map((_, i) => (
+                            {Array.from({ length: Math.max(0, 8 - (inventory?.length || 0)) }).map((_, i) => (
                                 <div key={`empty-${i}`} className="aspect-square rounded bg-stone-900/20 border border-white/5 opacity-50" />
                             ))}
                         </div>
@@ -285,7 +506,7 @@ export default function PlayPage() {
             <main className="flex-1 flex flex-col relative z-10 h-full">
 
                 {/* Mobile Nav Trigger */}
-                <header className="md:hidden p-4 flex items-center justify-between border-b border-white/5 bg-[#0c0a09]/80 backdrop-blur">
+                <header className="lg:hidden p-4 flex items-center justify-between border-b border-white/5 bg-[#0c0a09]/80 backdrop-blur">
                     <h1 className="font-serif font-bold text-stone-200">{campaign.title}</h1>
                     <button onClick={() => setSidebarOpen(true)} className="p-2 text-stone-400 active:text-white">
                         <Menu size={20} />
@@ -333,11 +554,31 @@ export default function PlayPage() {
                                             <div className="flex-1 space-y-4 pb-4 border-b border-white/5 md:border-none md:pb-0">
                                                 <div className="prose prose-invert prose-p:text-stone-300 prose-p:font-serif prose-p:text-lg prose-p:leading-loose prose-strong:text-white max-w-none">
                                                     {msg.content.split('\n').filter(line => line.trim() !== '').map((line, i) => (
-                                                        <p key={i} className="mb-4">
+                                                        <div key={i} className="mb-4 text-lg leading-loose font-serif text-stone-300">
                                                             <HighlightText text={line} entities={entities} />
-                                                        </p>
+                                                        </div>
                                                     ))}
                                                 </div>
+
+                                                {/* Quest Offers */}
+                                                {msg.questOffer && msg.questOffer.length > 0 && (
+                                                    <div className="space-y-2 mt-4">
+                                                        {msg.questOffer.map((questTitle, qIdx) => (
+                                                            <div key={qIdx} className="bg-stone-900/60 border border-amber-500/30 rounded-lg p-4 flex items-center justify-between animate-in slide-in-from-bottom-2 fade-in duration-500">
+                                                                <div>
+                                                                    <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500 mb-1">New Quest Available</p>
+                                                                    <h4 className="font-bold text-white">{questTitle}</h4>
+                                                                </div>
+                                                                <button 
+                                                                    onClick={() => handleAcceptQuest(questTitle, idx)}
+                                                                    className="bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors shadow-lg shadow-amber-900/20"
+                                                                >
+                                                                    Accept
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
 
                                                 {/* Choices */}
                                                 {msg.choices && msg.choices.length > 0 && idx === messages.length - 1 && !isLoading && (
@@ -414,6 +655,80 @@ export default function PlayPage() {
                 </div>
 
             </main>
+
+            {/* --- RIGHT SIDEBAR (CONTEXT) --- */}
+            <aside className="hidden lg:flex w-72 bg-[#12100e]/90 backdrop-blur-2xl border-l border-white/5 flex-col relative z-20">
+                <div className="p-6 border-b border-white/5">
+                    <h3 className="text-xs font-bold text-stone-500 uppercase tracking-widest mb-1">Local Context</h3>
+                    <p className="text-sm font-bold text-white">{currentLocation?.name || "Unknown Region"}</p>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-6 space-y-8 scrollbar-hide">
+                    
+                    {/* In the Area (NPCs) */}
+                    <div>
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-[10px] uppercase tracking-widest font-bold text-stone-500">In the Area</h3>
+                            <Users size={14} className="text-stone-600" />
+                        </div>
+                        <div className="space-y-3">
+                            {localNPCs.length === 0 ? (
+                                <p className="text-xs text-stone-600 italic">It's quiet here.</p>
+                            ) : (
+                                localNPCs.map((npc: any) => {
+                                    // Detect shop roles
+                                    const isShop = /merchant|blacksmith|innkeeper|alchemist|trader/i.test(npc.role);
+                                    return (
+                                        <div key={npc._id} className="flex items-center gap-3 group cursor-help">
+                                            <div className={cn(
+                                                "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-colors",
+                                                isShop ? "bg-amber-900/20 text-amber-500 border border-amber-500/30 group-hover:border-amber-500" : "bg-stone-800 text-stone-400 border border-white/5 group-hover:border-white/20"
+                                            )}>
+                                                {npc.name[0]}
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-bold text-stone-300 group-hover:text-white transition-colors">{npc.name}</p>
+                                                <p className="text-[10px] text-stone-500 uppercase tracking-wide flex items-center gap-1">
+                                                    {npc.role}
+                                                    {isShop && <Package size={10} className="text-amber-500" />}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )
+                                })
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Bulletin Board (Available Quests) */}
+                    <div>
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-[10px] uppercase tracking-widest font-bold text-stone-500">Bulletin Board</h3>
+                            <MapPin size={14} className="text-stone-600" />
+                        </div>
+                        <div className="space-y-3">
+                            {availableQuests.length === 0 ? (
+                                <div className="p-4 border border-dashed border-stone-800 rounded-lg text-center">
+                                    <p className="text-xs text-stone-600 italic">No new notices.</p>
+                                </div>
+                            ) : (
+                                availableQuests.map((quest: any) => (
+                                    <div key={quest._id} className="bg-stone-900/40 border border-white/5 rounded-lg p-3 hover:bg-stone-800/40 transition-colors group cursor-help">
+                                        <div className="mb-1">
+                                            <h4 className="text-sm font-bold text-stone-300 group-hover:text-indigo-300 transition-colors leading-tight">{quest.title}</h4>
+                                        </div>
+                                        <p className="text-xs text-stone-500 line-clamp-2 mb-2">{quest.description}</p>
+                                        <div className="flex items-center gap-2">
+                                            <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5 text-[9px] text-stone-400 uppercase font-bold">Available</span>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+
+                </div>
+            </aside>
         </div>
     );
 }

@@ -22,7 +22,7 @@ export const generateNarrative = action({
     // Add the current prompt as the last user message
     contents.push({
       role: "user",
-      parts: [{ text: args.prompt + "\n\nIMPORTANT: Respond in valid JSON format with two fields: 'content' (the narrative text) and 'choices' (an array of 2-4 suggested short actions for the player). Do not wrap the JSON in markdown code blocks." }],
+      parts: [{ text: args.prompt + "\n\nIMPORTANT: Respond in valid JSON format with these fields:\n1. 'content' (narrative text)\n2. 'choices' (array of 2-4 actions)\n3. 'rewards' (optional object with 'items': string[] and 'quests': string[])\n4. 'current_location' (optional string: the exact name of the location the player is currently in, e.g. 'Riverwood', only if changed or relevant).\nDo not wrap the JSON in markdown code blocks." }],
     });
 
     const response = await fetch(

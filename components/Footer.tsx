@@ -11,7 +11,7 @@ const Footer = () => (
                 </div>
             </div>
             <div className="flex gap-6">
-                <T className="hover:text-white cursor-pointer transition-colors" />
+                <Twitter className="hover:text-white cursor-pointer transition-colors" />
                 <Youtube className="hover:text-white cursor-pointer transition-colors" />
                 <Instagram className="hover:text-white cursor-pointer transition-colors" />
                 <Globe className="hover:text-white cursor-pointer transition-colors" />

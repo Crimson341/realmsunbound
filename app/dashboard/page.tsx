@@ -253,7 +253,11 @@ export default function UserDashboard() {
                                             // @ts-ignore
                                             playedCampaigns.map((c) => (
                                                 <Link href={`/play/${c._id}`} key={c._id}>
-                                                    <CharacterRow char={c.character || { name: "Unknown Hero", level: 1, element: "Anemo" }} />
+                                                    <CharacterRow 
+                                                        char={c.character || { name: "Unknown Hero", level: 1, element: "Anemo" }} 
+                                                        campaignTitle={c.title}
+                                                        creatorName={c.creatorName}
+                                                    />
                                                 </Link>
                                             ))
                                         ) : (
@@ -342,7 +346,7 @@ const ResourceDisplay = ({ icon, amount }) => (
 );
 
 // @ts-ignore
-const CharacterRow = ({ char }) => (
+const CharacterRow = ({ char, campaignTitle, creatorName }) => (
     <div className="flex items-center gap-4 p-2 group cursor-pointer">
         <div className="relative w-14 h-14">
             <div className="absolute inset-0 bg-gradient-to-br from-[#D4AF37]/20 to-transparent rounded-full blur-md opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -357,6 +361,8 @@ const CharacterRow = ({ char }) => (
         <div className="flex-1">
             <h4 className="font-bold text-[#43485C] text-lg group-hover:text-[#D4AF37] transition-colors">{char.name}</h4>
             <p className="text-xs font-bold text-gray-400 uppercase">Lv. {char.level} / 90</p>
+            {campaignTitle && <p className="text-xs text-gray-500 mt-1 font-medium">{campaignTitle}</p>}
+            {creatorName && <p className="text-[10px] text-[#D4AF37] uppercase tracking-wider mt-0.5">Created by {creatorName}</p>}
         </div>
         
         <ChevronRight className="text-gray-300 group-hover:text-[#D4AF37] transition-transform group-hover:translate-x-1" size={16} />

@@ -18,6 +18,35 @@ export const generateUploadUrl = mutation(async (ctx) => {
     return await ctx.storage.generateUploadUrl();
 });
 
+// --- PROFILE ---
+export const updateProfile = mutation({
+    args: {
+        studioName: v.string(),
+    },
+    handler: async (ctx, args) => {
+        const identity = await getUser(ctx);
+        const user = await ctx.db
+            .query("users")
+            .withIndex("by_token", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
+            .first();
+        
+        if (user) {
+            await ctx.db.patch(user._id, { studioName: args.studioName });
+        }
+    },
+});
+
+export const getMyProfile = query({
+    handler: async (ctx) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) return null;
+        return await ctx.db
+            .query("users")
+            .withIndex("by_token", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
+            .first();
+    },
+});
+
 // --- CAMPAIGNS ---
 export const createCampaign = mutation({
     args: {
@@ -236,10 +265,16 @@ export const getPlayedCampaigns = query({
                 const character = characters.find(c => c.campaignId === id);
                 const items = allUserItems.filter(item => item.campaignId === id);
 
+                const creator = await ctx.db
+                    .query("users")
+                    .withIndex("by_token", (q) => q.eq("tokenIdentifier", campaign.userId))
+                    .first();
+
                 return {
                     ...campaign,
                     character,
-                    items
+                    items,
+                    creatorName: creator?.studioName || creator?.name || "Unknown Creator"
                 };
             })
         );

@@ -7,7 +7,7 @@
 - [ ] **Save/Load States**: Enhanced persistence for campaigns, allowing multiple save slots per user per campaign.
 
 ## 🛠️ Forge & Creator Tools
-- [ ] **Creator Attribution**:
+- [x] **Creator Attribution**:
     - Display "Created by [Name]" on campaign cards in the global dashboard.
     - Allow creators to set a custom "Studio Name" or alias for their profile.
 - [ ] **Campaign Chaining (Sagas)**:

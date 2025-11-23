@@ -10,6 +10,7 @@ export default defineSchema({
     tokenIdentifier: v.string(),
     name: v.string(),
     pictureUrl: v.optional(v.string()),
+    studioName: v.optional(v.string()),
   }).index("by_token", ["tokenIdentifier"]),
 
   campaigns: defineTable({

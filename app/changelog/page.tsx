@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Terminal, Sparkles } from 'lucide-react';
+import { ArrowLeft, Sparkles, Star, Compass, Scroll } from 'lucide-react';
 import Link from 'next/link';
 
 // --- TYPES ---
@@ -59,15 +59,14 @@ const CHANGELOG_DATA: LogEntry[] = [
 ];
 
 // --- COMPONENT: FADE BLOCK ---
-// Handles the "blur-in" effect for text elements
-const FadeBlock = ({ 
-    children, 
-    delay = 0, 
-    className = "" 
-}: { 
-    children: React.ReactNode, 
-    delay?: number, 
-    className?: string 
+const FadeBlock = ({
+    children,
+    delay = 0,
+    className = ""
+}: {
+    children: React.ReactNode,
+    delay?: number,
+    className?: string
 }) => {
     const [isVisible, setIsVisible] = useState(false);
 
@@ -77,136 +76,188 @@ const FadeBlock = ({
     }, [delay]);
 
     return (
-        <div className={`transition-all duration-1000 ease-out transform ${
-            isVisible 
-                ? 'opacity-100 blur-0 translate-y-0' 
+        <div className={`transition-all duration-1000 ease-out transform ${isVisible
+                ? 'opacity-100 blur-0 translate-y-0'
                 : 'opacity-0 blur-sm translate-y-4'
-        } ${className}`}>
+            } ${className}`}>
             {children}
         </div>
     );
 };
 
-export default function ChangelogPage() {
+// --- COMPONENT: PRIMOGEM STAR MARKER ---
+const PrimogemMarker = () => (
+    <div className="relative w-4 h-4 flex items-center justify-center">
+        <div className="absolute inset-0 bg-[#D3BC8E] rotate-45 rounded-[1px] shadow-[0_0_10px_#D3BC8E]"></div>
+        <div className="absolute inset-0 bg-white w-[60%] h-[60%] m-auto rotate-45 rounded-[1px]"></div>
+    </div>
+);
+
+export default function GenshinChangelog() {
     const [isSystemReady, setIsSystemReady] = useState(false);
 
-    // Initial "Boot" Sequence
+    // Initial "Ley Line" Sequence
     useEffect(() => {
-        const timer = setTimeout(() => setIsSystemReady(true), 800);
+        const timer = setTimeout(() => setIsSystemReady(true), 1200);
         return () => clearTimeout(timer);
     }, []);
 
     return (
-        <div className="min-h-screen bg-[#0c0a09] text-stone-300 font-sans selection:bg-indigo-500/30 selection:text-indigo-200 overflow-x-hidden">
-            
-            {/* Subtle Ambient Background */}
-            <div className="fixed inset-0 pointer-events-none">
-                <div className="absolute top-[-10%] right-[-5%] w-[600px] h-[600px] bg-indigo-900/10 blur-[150px] rounded-full opacity-30" />
-                <div className="absolute bottom-[-10%] left-[-5%] w-[500px] h-[500px] bg-stone-800/10 blur-[150px] rounded-full opacity-30" />
-                <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] opacity-[0.02]" />
+        // Base Background: Clean paper white/gray typical of Genshin Menus
+        <div className="min-h-screen bg-[#F0F1F5] text-[#3B4255] font-sans selection:bg-[#D3BC8E]/30 selection:text-[#3B4255] overflow-x-hidden relative">
+
+            {/* --- CELESTIAL BACKGROUND ELEMENTS --- */}
+            <div className="fixed inset-0 pointer-events-none overflow-hidden">
+                {/* Soft Gradient Overlay */}
+                <div className="absolute inset-0 bg-gradient-to-b from-white via-transparent to-[#E3E5E8] opacity-80" />
+
+                {/* Constellation Lines (SVG Pattern) */}
+                <svg className="absolute top-0 right-0 w-[800px] h-[800px] opacity-[0.03] text-[#3B4255]" viewBox="0 0 100 100">
+                    <path d="M10,10 L30,30 L50,10 L70,40" fill="none" stroke="currentColor" strokeWidth="0.5" />
+                    <circle cx="10" cy="10" r="1" fill="currentColor" />
+                    <circle cx="30" cy="30" r="1" fill="currentColor" />
+                    <circle cx="50" cy="10" r="1" fill="currentColor" />
+                    <circle cx="70" cy="40" r="1" fill="currentColor" />
+                </svg>
+
+                {/* Bottom Left Pattern */}
+                <div className="absolute bottom-[-10%] left-[-5%] w-[500px] h-[500px] bg-[#D3BC8E]/5 rounded-full blur-[100px]" />
             </div>
 
-            {/* Navigation */}
+            {/* --- NAVIGATION --- */}
             <nav className="fixed top-0 left-0 right-0 z-50 p-6 md:p-12 pointer-events-none">
                 <div className="max-w-4xl mx-auto flex justify-between items-center pointer-events-auto">
-                    <Link 
-                        href="/" 
-                        className="group flex items-center gap-3 text-xs font-bold uppercase tracking-[0.2em] text-stone-500 hover:text-stone-200 transition-colors"
+                    <Link
+                        href="/"
+                        className="group flex items-center gap-3"
                     >
-                        <div className="relative w-8 h-8 rounded-full border border-white/10 flex items-center justify-center group-hover:border-indigo-500/50 transition-colors overflow-hidden bg-[#0c0a09]">
-                            <ArrowLeft size={12} className="group-hover:-translate-x-0.5 transition-transform" />
+                        {/* Genshin-style Back Button Circle */}
+                        <div className="relative w-10 h-10 rounded-full bg-[#EBEBEB] border-2 border-[#D3BC8E] flex items-center justify-center shadow-sm group-hover:bg-white group-hover:shadow-[0_0_15px_#D3BC8E] transition-all duration-300">
+                            <ArrowLeft size={18} className="text-[#3B4255] group-hover:-translate-x-0.5 transition-transform" />
                         </div>
-                        <span>Dashboard</span>
+                        <span className="text-sm font-bold uppercase tracking-widest text-[#838692] group-hover:text-[#D3BC8E] transition-colors">
+                            Paimon Menu
+                        </span>
                     </Link>
                 </div>
             </nav>
 
-            {/* Main Content */}
-            <main className="relative z-10 pt-32 md:pt-48 pb-32 max-w-2xl mx-auto px-6 md:px-0">
-                
+            {/* --- MAIN CONTENT --- */}
+            <main className="relative z-10 pt-32 md:pt-48 pb-32 max-w-3xl mx-auto px-6 md:px-0">
+
                 {!isSystemReady ? (
-                    <div className="h-[60vh] flex flex-col items-center justify-center">
-                        <div className="flex items-center gap-3 text-stone-600 animate-pulse">
-                            <Terminal size={16} />
-                            <span className="font-mono text-xs">INITIALIZING_LOGS...</span>
+                    <div className="h-[60vh] flex flex-col items-center justify-center space-y-6">
+                        {/* Loading Icon */}
+                        <div className="relative">
+                            <div className="absolute inset-0 bg-[#D3BC8E] blur-xl opacity-50 animate-pulse"></div>
+                            <Compass size={48} className="text-[#3B4255] animate-[spin_4s_linear_infinite] relative z-10" />
+                        </div>
+                        <div className="flex items-center gap-3 text-[#D3BC8E] animate-pulse">
+                            <span className="font-serif text-sm tracking-[0.2em] font-bold">CONNECTING TO LEY LINES...</span>
                         </div>
                     </div>
                 ) : (
                     <>
-                        {/* Header Title */}
-                        <FadeBlock delay={100} className="mb-24">
-                            <h1 className="text-5xl md:text-7xl font-serif font-bold text-white mb-6 tracking-tight">
-                                Updates
+                        {/* --- HEADER --- */}
+                        <FadeBlock delay={100} className="mb-20 text-center relative">
+                            {/* Decorative Top Line */}
+                            <div className="flex justify-center items-center gap-4 mb-6 opacity-50">
+                                <div className="h-[1px] w-12 bg-[#D3BC8E]" />
+                                <Star size={12} className="text-[#D3BC8E] fill-[#D3BC8E]" />
+                                <div className="h-[1px] w-12 bg-[#D3BC8E]" />
+                            </div>
+
+                            <h1 className="text-5xl md:text-6xl font-serif font-bold text-[#3B4255] mb-4 tracking-wide drop-shadow-sm">
+                                Archive Log
                             </h1>
-                            <div className="h-1 w-12 bg-indigo-500/50 rounded-full" />
+                            <p className="text-[#838692] font-medium tracking-wide uppercase text-xs">
+                                Travel Log / System Updates
+                            </p>
                         </FadeBlock>
 
-                        {/* Timeline Feed */}
-                        <div className="relative border-l border-white/5 pl-8 md:pl-12 space-y-20">
-                            
+                        {/* --- TIMELINE FEED --- */}
+                        <div className="relative pl-4 md:pl-0 space-y-16">
+
+                            {/* Vertical Guide Line */}
+                            <div className="absolute left-4 md:left-[27px] top-4 bottom-0 w-[2px] bg-gradient-to-b from-[#D3BC8E] via-[#D3BC8E]/30 to-transparent md:block hidden" />
+
                             {CHANGELOG_DATA.map((entry, index) => (
-                                <div key={entry.version} className="relative group">
-                                    {/* Timeline Marker - Glows on hover */}
-                                    <div className="absolute -left-[37px] md:-left-[53px] top-2">
-                                        <div className="w-2.5 h-2.5 rounded-full bg-stone-800 border border-stone-700 group-hover:bg-indigo-500 group-hover:border-indigo-400 group-hover:shadow-[0_0_15px_rgba(99,102,241,0.6)] transition-all duration-500 ease-out"></div>
+                                <div key={entry.version} className="relative md:pl-20 group">
+
+                                    {/* Timeline Marker (Desktop) */}
+                                    <div className="absolute left-[19px] top-3 hidden md:block z-20 group-hover:scale-125 transition-transform duration-500">
+                                        <PrimogemMarker />
                                     </div>
 
-                                    {/* Entry Header */}
+                                    {/* Card Container - Genshin Style Card */}
                                     <FadeBlock delay={300 + (index * 200)}>
-                                        <div className="flex items-center gap-3 mb-3 font-mono text-xs tracking-widest">
-                                            <span className="text-indigo-400 font-bold">{entry.version}</span>
-                                            <span className="text-stone-600">/</span>
-                                            <span className="text-stone-500 uppercase">{entry.date}</span>
-                                        </div>
-                                        
-                                        <h2 className="text-3xl md:text-4xl font-medium text-stone-200 mb-4 group-hover:text-white transition-colors duration-500">
-                                            {entry.title}
-                                        </h2>
-                                        
-                                        <p className="text-lg text-stone-500 leading-relaxed mb-8 max-w-lg group-hover:text-stone-400 transition-colors duration-500">
-                                            {entry.description}
-                                        </p>
-                                    </FadeBlock>
+                                        <div className="bg-white rounded-xl p-8 border border-white shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] relative overflow-hidden hover:shadow-[0_8px_30px_-4px_rgba(211,188,142,0.2)] transition-all duration-500">
 
-                                    {/* Changes List */}
-                                    <ul className="space-y-4">
-                                        {entry.changes.map((change, i) => (
-                                            <li key={i}>
-                                                <FadeBlock delay={500 + (index * 200) + (i * 100)}>
-                                                    <div className="flex items-baseline gap-4 group/item cursor-default">
-                                                        {/* Bullet Point */}
-                                                        <div className="shrink-0 w-1.5 h-1.5 rounded-full bg-stone-800 group-hover/item:bg-white transition-colors duration-300 mt-2"></div>
-                                                        
-                                                        {/* Text */}
-                                                        <p className="text-stone-400 group-hover/item:text-stone-200 transition-colors duration-300 text-base leading-relaxed flex-1">
+                                            {/* Subtle Gold Corner Decoration */}
+                                            <div className="absolute top-0 right-0 p-4 opacity-20">
+                                                <Scroll size={40} className="text-[#D3BC8E] rotate-12" />
+                                            </div>
+
+                                            {/* Version & Date */}
+                                            <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4 mb-4">
+                                                <span className="inline-block bg-[#3B4255] text-[#D3BC8E] text-xs font-bold px-3 py-1 rounded-full tracking-widest">
+                                                    {entry.version}
+                                                </span>
+                                                <span className="text-[#838692] text-xs font-bold uppercase tracking-widest">
+                                                    {entry.date}
+                                                </span>
+                                            </div>
+
+                                            {/* Title */}
+                                            <h2 className="text-3xl font-serif font-bold text-[#3B4255] mb-3 group-hover:text-[#A08655] transition-colors duration-300">
+                                                {entry.title}
+                                            </h2>
+
+                                            {/* Description */}
+                                            <p className="text-[#686D7F] leading-relaxed mb-8 border-l-2 border-[#D3BC8E]/30 pl-4 text-sm md:text-base">
+                                                {entry.description}
+                                            </p>
+
+                                            {/* Changes List */}
+                                            <ul className="space-y-3">
+                                                {entry.changes.map((change, i) => (
+                                                    <li key={i} className="flex items-start gap-3 text-sm group/item">
+                                                        {/* Custom Bullet - 4 Point Star */}
+                                                        <div className="mt-1.5 shrink-0 text-[#D3BC8E]">
+                                                            <svg width="10" height="10" viewBox="0 0 10 10" className="fill-current group-hover/item:rotate-90 transition-transform duration-500">
+                                                                <path d="M5 0L6.5 3.5L10 5L6.5 6.5L5 10L3.5 6.5L0 5L3.5 3.5L5 0Z" />
+                                                            </svg>
+                                                        </div>
+
+                                                        <span className="text-[#3B4255] group-hover/item:text-black transition-colors flex-1">
                                                             {change.text}
-                                                        </p>
+                                                        </span>
 
-                                                        {/* Type Tag - Fades in on hover */}
+                                                        {/* Tag - Genshin Element Style */}
                                                         <span className={`
-                                                            shrink-0 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border border-white/5 
-                                                            opacity-0 translate-x-2 group-hover/item:opacity-100 group-hover/item:translate-x-0 transition-all duration-300
-                                                            ${change.type === 'feature' ? 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20' : ''}
-                                                            ${change.type === 'fix' ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' : ''}
-                                                            ${change.type === 'improvement' ? 'text-amber-200 bg-amber-500/10 border-amber-500/20' : ''}
-                                                            ${change.type === 'system' ? 'text-stone-400 bg-stone-500/10 border-stone-500/20' : ''}
+                                                            shrink-0 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border
+                                                            transition-all duration-300
+                                                            ${change.type === 'feature' ? 'text-[#4E7CFF] border-[#4E7CFF]/20 bg-[#4E7CFF]/5' : ''}
+                                                            ${change.type === 'fix' ? 'text-[#2CB988] border-[#2CB988]/20 bg-[#2CB988]/5' : ''}
+                                                            ${change.type === 'improvement' ? 'text-[#FF9C33] border-[#FF9C33]/20 bg-[#FF9C33]/5' : ''}
+                                                            ${change.type === 'system' ? 'text-[#838692] border-[#838692]/20 bg-[#838692]/5' : ''}
                                                         `}>
                                                             {change.type}
                                                         </span>
-                                                    </div>
-                                                </FadeBlock>
-                                            </li>
-                                        ))}
-                                    </ul>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    </FadeBlock>
                                 </div>
                             ))}
                         </div>
 
-                        {/* Footer */}
-                        <FadeBlock delay={2000} className="mt-32 pt-12 border-t border-white/5 text-center">
-                            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/5 text-[10px] text-stone-500 uppercase tracking-widest hover:bg-white/10 hover:text-stone-300 transition-all cursor-pointer">
-                                <Sparkles size={12} />
-                                <span>End of Log</span>
+                        {/* --- FOOTER --- */}
+                        <FadeBlock delay={1500} className="mt-24 text-center pb-12">
+                            <div className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-white border border-[#D3BC8E]/30 text-[#D3BC8E] text-xs font-bold uppercase tracking-widest hover:bg-[#D3BC8E] hover:text-white transition-all cursor-pointer shadow-sm">
+                                <Sparkles size={14} />
+                                <span>Travel Complete</span>
                             </div>
                         </FadeBlock>
                     </>

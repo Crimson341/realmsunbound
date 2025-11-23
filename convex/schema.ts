@@ -63,6 +63,7 @@ export default defineSchema({
     rewardItemIds: v.optional(v.array(v.id("items"))),
     status: v.string(),
     npcId: v.optional(v.id("npcs")),
+    source: v.optional(v.string()), // 'creator' or 'ai'
   }).index("by_user", ["userId"]),
 
   locations: defineTable({

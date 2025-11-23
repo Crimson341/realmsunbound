@@ -1,15 +1,94 @@
-"use client";
+'use client';
 
 import React, { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { useAuth } from '@workos-inc/authkit-nextjs/components';
 import Link from 'next/link';
 import { 
     Loader2, Sword, Shield, Map, User, Plus, Scroll, 
-    FlaskConical, Skull, Sparkles, Crown, Gem, ChevronRight,
-    BookOpen, Search, Bell, Feather, Settings, LogOut, LayoutDashboard
+    Sparkles, Crown, Gem, ChevronRight, Search, Bell, 
+    Settings, LayoutDashboard, Star, Compass, Zap, Hexagon,
+    Minimize2
 } from 'lucide-react';
+
+// --- ASSETS & ICONS ---
+// @ts-ignore
+const ElementIcon = ({ element }) => {
+    const colors: Record<string, string> = {
+        Electro: "text-purple-500",
+        Dendro: "text-green-500",
+        Pyro: "text-orange-500",
+        Hydro: "text-blue-500",
+        Cryo: "text-cyan-400",
+        Geo: "text-yellow-500",
+        Anemo: "text-teal-400"
+    };
+    return <Zap className={`${colors[element] || 'text-gray-400'} drop-shadow-sm`} size={14} fill="currentColor" />;
+};
+
+// --- DECORATIVE COMPONENTS ---
+const GoldDivider = () => (
+    <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-[#D4AF37]/40 to-transparent my-2" />
+);
+
+const StarPattern = () => (
+    <div className="absolute inset-0 opacity-[0.03] pointer-events-none" 
+         style={{ 
+             backgroundImage: 'radial-gradient(#D4AF37 1px, transparent 1px)', 
+             backgroundSize: '32px 32px' 
+         }} 
+    />
+);
+
+// --- LOADING SCREEN ---
+const DivineLoader = () => (
+    <div className="flex flex-col items-center justify-center h-screen bg-[#fcfcfc] overflow-hidden relative selection:bg-[#D4AF37] selection:text-white">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-yellow-50/50 via-white to-white" />
+        <StarPattern />
+        
+        <div className="relative z-10 flex flex-col items-center gap-8">
+            <div className="relative w-40 h-40 flex items-center justify-center">
+                {/* Intricate Spinner */}
+                <motion.div 
+                    className="absolute inset-0 border-4 border-[#e8e0c5] rounded-full"
+                    animate={{ scale: [1, 1.05, 1] }}
+                    transition={{ duration: 2, repeat: Infinity }}
+                />
+                <motion.div 
+                    className="absolute inset-2 border-[1px] border-[#D4AF37] rounded-full border-dashed"
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 10, ease: "linear", repeat: Infinity }}
+                />
+                <motion.div 
+                    className="absolute inset-0 m-auto w-24 h-24 bg-[#D4AF37] rounded-full opacity-10 blur-xl animate-pulse"
+                />
+                
+                {/* Center Icon */}
+                <div className="relative z-10 bg-white p-4 rounded-full shadow-lg border border-[#D4AF37]/30">
+                    <Compass size={32} className="text-[#D4AF37]" />
+                </div>
+            </div>
+            
+            <div className="flex flex-col items-center gap-2">
+                <p className="text-[#43485C] font-serif tracking-[0.2em] text-sm font-bold uppercase">
+                    Opening Archives
+                </p>
+                <motion.div 
+                    className="h-1 bg-[#e8e0c5] w-32 rounded-full overflow-hidden"
+                >
+                    <motion.div 
+                        className="h-full bg-[#D4AF37]"
+                        initial={{ x: '-100%' }}
+                        animate={{ x: '100%' }}
+                        transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+                    />
+                </motion.div>
+            </div>
+        </div>
+    </div>
+);
 
 export default function UserDashboard() {
     const { user, loading: authLoading } = useAuth();
@@ -27,297 +106,278 @@ export default function UserDashboard() {
 
     useEffect(() => {
         // Artificial delay to show the cool loading animation if data loads too fast
-        const timer = setTimeout(() => setShowLoadingScreen(false), 1000);
+        const timer = setTimeout(() => setShowLoadingScreen(false), 2000);
         return () => clearTimeout(timer);
     }, []);
 
     const isLoading = authLoading || dataLoading || showLoadingScreen;
 
-    if (isLoading) {
-        return (
-            <div className="min-h-screen bg-[#0a0908] flex items-center justify-center flex-col gap-4">
-                <div className="relative">
-                    <div className="absolute inset-0 bg-indigo-500 blur-xl opacity-20 animate-pulse" />
-                    <Loader2 className="w-12 h-12 text-indigo-400 animate-spin relative z-10" />
-                </div>
-                <p className="text-stone-500 font-serif tracking-widest uppercase text-sm font-bold">Consulting the Archives...</p>
-            </div>
-        );
-    }
+    if (isLoading) return <DivineLoader />;
 
     return (
-        <div className="min-h-screen bg-[#0a0908] text-stone-200 font-sans flex overflow-hidden selection:bg-indigo-500/30 relative">
+        <div className="min-h-screen bg-[#f8f9fa] text-[#43485C] font-serif selection:bg-[#D4AF37] selection:text-white relative overflow-hidden flex items-center justify-center p-4 md:p-8">
             
-            {/* Ambient Background Effects */}
-            <div className="fixed top-[-10%] left-[-10%] w-[40rem] h-[40rem] bg-indigo-900/10 rounded-full blur-[128px] pointer-events-none mix-blend-screen z-0" />
-            <div className="fixed bottom-[-10%] right-[-10%] w-[40rem] h-[40rem] bg-purple-900/10 rounded-full blur-[128px] pointer-events-none mix-blend-screen z-0" />
-            <div className="fixed inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none z-0" />
+            {/* --- BACKGROUND ATMOSPHERE --- */}
+            <div className="fixed inset-0 z-0 pointer-events-none bg-[#fcfcfc]">
+                {/* Subtle Grain/Paper Texture */}
+                <div className="absolute inset-0 opacity-[0.03] bg-[url('https://www.transparenttextures.com/patterns/paper.png')]" />
+                <StarPattern />
+                {/* Corner Vignette */}
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(255,255,255,0)_50%,rgba(212,175,55,0.03)_100%)]" />
+            </div>
 
-            {/* --- LEFT SIDEBAR: The Binding --- */}
-            <aside className="w-72 bg-[#0f0e0d]/95 backdrop-blur-xl border-r border-white/5 flex flex-col relative z-20 shadow-2xl">
-                
-                {/* Brand */}
-                <div className="p-8 border-b border-white/5 relative">
-                    <Link href="/" className="flex items-center gap-3 text-indigo-400 group">
-                        <div className="relative">
-                            <div className="absolute inset-0 bg-indigo-500 blur opacity-50 animate-pulse" />
-                            <Sword className="w-8 h-8 rotate-45 relative z-10 group-hover:rotate-12 transition-transform" strokeWidth={2.5} />
-                        </div>
-                        <span className="text-2xl font-serif font-black tracking-tighter uppercase text-white">Forge</span>
-                    </Link>
-                </div>
+            {/* --- MAIN "MENU" CONTAINER --- */}
+            <motion.div 
+                initial={{ scale: 0.98, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 0.6, ease: "easeOut" }}
+                className="relative w-full max-w-[1600px] h-[90vh] bg-white/60 backdrop-blur-md rounded-[32px] shadow-[0_20px_60px_-10px_rgba(0,0,0,0.05)] border border-white/60 overflow-hidden flex z-10 ring-1 ring-[#D4AF37]/10"
+            >
 
-                {/* Navigation */}
-                <nav className="flex-1 p-6 space-y-2 relative">
-                    <p className="text-xs font-bold text-stone-500 uppercase tracking-widest mb-4 pl-3">Grimoire</p>
+                {/* --- SIDEBAR --- */}
+                <aside className="w-24 md:w-72 flex flex-col relative z-20 border-r border-[#D4AF37]/10 bg-white/40">
                     
-                    <NavItem href="/dashboard" active={true} icon={<LayoutDashboard size={20} />} label="Overview" />
-                    <NavItem href="/forge" active={false} icon={<Map size={20} />} label="Campaigns" />
-                    <NavItem href="/roster" active={false} icon={<User size={20} />} label="Heroes" />
-                    <NavItem href="/artifacts" active={false} icon={<Gem size={20} />} label="Artifacts" />
-                    <NavItem href="/spellbook" active={false} icon={<Scroll size={20} />} label="Spellbook" />
-                </nav>
-
-                {/* User Profile Snippet */}
-                <div className="p-6 bg-white/5 border-t border-white/5 relative group cursor-pointer hover:bg-white/10 transition-colors">
-                    <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 p-[1px]">
-                            <div className="w-full h-full rounded-full bg-[#0a0908] flex items-center justify-center font-bold text-white">
-                                {user?.firstName?.[0] || "U"}
+                    {/* Profile Section - Floating */}
+                    <div className="p-8 flex flex-col items-center">
+                        <div className="relative w-20 h-20 mb-4 group cursor-pointer">
+                            <div className="absolute inset-0 bg-[#D4AF37] rounded-full blur-[20px] opacity-20 group-hover:opacity-40 transition-opacity" />
+                            <div className="relative w-full h-full rounded-full border-[2px] border-white shadow-lg overflow-hidden">
+                                <img src={user?.profilePictureUrl || `https://ui-avatars.com/api/?name=${user?.firstName}&background=D4AF37&color=fff`} alt="User" className="w-full h-full object-cover" />
+                            </div>
+                            <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-1 shadow-sm border border-[#f0f0f0]">
+                                <Star size={12} className="fill-[#D4AF37] text-[#D4AF37]" />
                             </div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                            <p className="text-sm font-bold text-stone-200 truncate group-hover:text-white">{user?.firstName || "Traveler"}</p>
-                            <p className="text-xs text-stone-500 truncate">Grand Archivist</p>
+                        <div className="hidden md:block text-center">
+                            <h2 className="text-xl font-bold text-[#43485C] drop-shadow-sm">{user?.firstName || "Traveler"}</h2>
+                            <p className="text-xs text-[#D4AF37] font-bold uppercase tracking-widest mt-1">Grand Archivist</p>
                         </div>
-                        <Settings size={18} className="text-stone-500 group-hover:text-indigo-400 transition-colors" />
                     </div>
-                </div>
-            </aside>
 
-
-            {/* --- MAIN CONTENT: The Pages --- */}
-            <main className="flex-1 flex flex-col h-screen overflow-hidden relative z-10">
-
-                {/* Top Bar */}
-                <header className="h-20 border-b border-white/5 flex items-center justify-between px-8 bg-[#0a0908]/80 backdrop-blur-sm sticky top-0 z-30">
-                    <div className="flex items-center gap-4 text-stone-400">
-                        <h1 className="text-2xl font-serif font-bold text-white">Guild Ledger</h1>
-                        <span className="h-6 w-px bg-white/10" />
-                        <span className="text-sm italic text-stone-500 font-mono">Day {new Date().getDate()} of the Sun Month</span>
-                    </div>
-                    <div className="flex items-center gap-6">
-                        <div className="relative group hidden md:block">
-                            <div className="absolute inset-0 bg-indigo-500/20 blur-md rounded-lg opacity-0 group-focus-within:opacity-100 transition-opacity" />
-                            <input 
-                                type="text" 
-                                placeholder="Search archives..." 
-                                className="relative pl-10 pr-4 py-2 bg-stone-900/50 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 placeholder-stone-600 text-stone-300 transition-all w-64 font-sans"
-                            />
-                            <Search className="w-4 h-4 text-stone-500 absolute left-3 top-1/2 -translate-y-1/2 group-focus-within:text-indigo-400 transition-colors" />
-                        </div>
-                        <button className="relative text-stone-400 hover:text-white transition-colors">
-                            <Bell size={20} />
-                            <span className="absolute top-0 right-0 w-2 h-2 bg-indigo-500 rounded-full shadow-[0_0_10px_rgba(99,102,241,0.5)]" />
-                        </button>
-                    </div>
-                </header>
-
-                {/* Scrollable Content */}
-                <div className="flex-1 overflow-y-auto p-8 space-y-10 scrollbar-thin scrollbar-thumb-stone-800 scrollbar-track-transparent">
-                    
-                    {/* Stats Ledger */}
-                    <section className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                        <LedgerCard label="Active Quests" value={playedCampaigns.length} icon={<Shield />} color="text-indigo-400" />
-                        <LedgerCard label="Heroes" value={myCharacters.length} icon={<User />} color="text-emerald-400" />
-                        <LedgerCard label="Relics Found" value={myItems.length} icon={<Gem />} color="text-amber-400" />
-                        <LedgerCard label="Spells Known" value={mySpells.length} icon={<FlaskConical />} color="text-purple-400" />
-                    </section>
-
-                    <div className="grid grid-cols-1 xl:grid-cols-3 gap-10">
+                    {/* Navigation - Text Only with Indicators */}
+                    <nav className="flex-1 py-6 px-6 space-y-1 overflow-y-auto">
+                        <NavButton href="/dashboard" icon={<LayoutDashboard size={18} />} label="Overview" active />
+                        <NavButton href="/forge" icon={<Map size={18} />} label="Campaigns" />
+                        <NavButton href="/roster" icon={<User size={18} />} label="Characters" />
+                        <NavButton href="/artifacts" icon={<Gem size={18} />} label="Artifacts" />
+                        <NavButton href="/spellbook" icon={<Scroll size={18} />} label="Spellbook" />
                         
-                        {/* Main Column */}
-                        <div className="xl:col-span-2 space-y-10">
-                            
-                            {/* Active Campaigns */}
-                            <section>
-                                <div className="flex items-end justify-between mb-6 border-b border-white/5 pb-4">
-                                    <h2 className="text-xl font-serif font-bold text-white flex items-center gap-2">
-                                        <Map className="text-indigo-400" size={20} />
-                                        My Adventures
-                                    </h2>
-                                </div>
-                                {playedCampaigns.length === 0 ? (
-                                    <div className="p-8 border border-dashed border-stone-800 rounded-xl text-center text-stone-500">
-                                        <p>You are not participating in any campaigns yet.</p>
-                                    </div>
-                                ) : (
-                                    <div className="grid grid-cols-1 gap-6">
-                                        {playedCampaigns.map((data: any) => (
-                                            <Link href={`/play/${data._id}`} key={data._id} className="group relative overflow-hidden bg-stone-900/40 border border-white/5 hover:border-indigo-500/30 rounded-xl p-6 transition-all hover:bg-stone-900/60 block">
-                                                <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500/50 group-hover:bg-indigo-400 transition-colors" />
-                                                
-                                                {/* Header */}
-                                                <div className="flex justify-between items-start mb-4">
-                                                    <div>
-                                                        <h3 className="text-xl font-bold text-stone-200 group-hover:text-white transition-colors">{data.title}</h3>
-                                                        <p className="text-sm text-stone-500 italic line-clamp-1">"{data.description}"</p>
-                                                    </div>
-                                                    <span className="text-[10px] font-bold tracking-widest uppercase text-indigo-300 bg-indigo-500/10 px-2 py-1 rounded border border-indigo-500/20">Active</span>
-                                                </div>
+                        <div className="py-6 px-2">
+                            <div className="h-[1px] w-12 bg-[#D4AF37]/30" />
+                        </div>
+                        
+                        <NavButton href="/settings" icon={<Settings size={18} />} label="Settings" />
+                    </nav>
 
-                                                {/* Character & Items Grid */}
-                                                <div className="grid md:grid-cols-2 gap-6 mt-6">
-                                                    {/* Character Info */}
-                                                    <div className="bg-black/20 rounded-lg p-4 border border-white/5">
-                                                        <p className="text-xs font-bold text-stone-500 uppercase tracking-widest mb-2 flex items-center gap-2">
-                                                            <User size={12} /> Hero
-                                                        </p>
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-10 h-10 rounded-full bg-indigo-900/30 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-bold">
-                                                                {data.character?.name?.[0] || "?"}
-                                                            </div>
-                                                            <div>
-                                                                <p className="font-bold text-stone-200">{data.character?.name || "Unknown Hero"}</p>
-                                                                <p className="text-xs text-stone-500">Level {data.character?.level || 1} {data.character?.class || "Adventurer"}</p>
-                                                            </div>
-                                                        </div>
-                                                    </div>
+                    {/* Bottom Logo */}
+                    <div className="p-8 text-center opacity-40 hidden md:block">
+                         <div className="flex justify-center mb-2">
+                            <Compass size={24} className="text-[#43485C]" />
+                         </div>
+                        <p className="text-[10px] uppercase tracking-[0.3em] font-bold">The Forge</p>
+                    </div>
+                </aside>
 
-                                                    {/* Items Inventory */}
-                                                    <div className="bg-black/20 rounded-lg p-4 border border-white/5">
-                                                        <p className="text-xs font-bold text-stone-500 uppercase tracking-widest mb-2 flex items-center gap-2">
-                                                            <Gem size={12} /> Loot ({data.items?.length || 0})
-                                                        </p>
-                                                        {(!data.items || data.items.length === 0) ? (
-                                                            <p className="text-xs text-stone-600 italic">No items collected yet.</p>
-                                                        ) : (
-                                                            <div className="flex flex-wrap gap-2">
-                                                                {data.items.slice(0, 5).map((item: any) => (
-                                                                    <div 
-                                                                        key={item._id} 
-                                                                        className="px-2 py-1 bg-stone-800/50 border border-white/10 rounded text-xs text-stone-300 truncate max-w-[150px]"
-                                                                        title={item.name}
-                                                                    >
-                                                                        {item.name}
-                                                                    </div>
-                                                                ))}
-                                                                {data.items.length > 5 && (
-                                                                    <span className="px-2 py-1 bg-stone-800/50 border border-white/10 rounded text-xs text-stone-500">
-                                                                        +{data.items.length - 5} more
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
 
-                                                <div className="flex items-center justify-end mt-4 text-xs font-sans text-stone-400 gap-4">
-                                                    <span className="hover:text-indigo-400 transition-colors flex items-center gap-1">Enter World <ChevronRight size={12} /></span>
-                                                </div>
-                                                
-                                                {/* Hover shine */}
-                                                <div className="absolute top-0 -left-[100%] w-full h-full bg-gradient-to-r from-transparent via-white/5 to-transparent skew-x-12 group-hover:animate-shine pointer-events-none" />
-                                            </Link>
-                                        ))}
-                                        
-                                        {/* Find New Adventure Button */}
-                                        <Link href="/forge/create/campaign" className="border border-dashed border-stone-800 rounded-xl p-6 flex flex-col items-center justify-center gap-3 text-stone-600 hover:bg-white/5 hover:border-indigo-500/30 hover:text-indigo-400 transition-all group">
-                                            <div className="w-12 h-12 rounded-full bg-stone-900 flex items-center justify-center group-hover:scale-110 transition-transform border border-stone-800 group-hover:border-indigo-500/30">
-                                                <Search size={20} />
-                                            </div>
-                                            <span className="font-bold text-sm">Find New Adventure</span>
-                                        </Link>
-                                    </div>
-                                )}
-                            </section>
+                {/* --- MAIN CONTENT AREA --- */}
+                <main className="flex-1 relative flex flex-col min-w-0">
+                    
+                    {/* Header - Transparent */}
+                    <header className="h-24 flex items-center justify-between px-10 sticky top-0 z-30">
+                        <div className="flex items-center gap-4">
+                            <h1 className="text-3xl font-bold text-[#43485C] font-serif tracking-tight drop-shadow-sm">
+                                Handbook
+                            </h1>
+                            <span className="hidden md:block text-xs font-bold text-[#D4AF37]/80 uppercase tracking-widest border-l-2 border-[#D4AF37]/20 pl-4">
+                                Chapter IV: The Journey
+                            </span>
                         </div>
 
-                        {/* Sidebar Column */}
-                        <div className="space-y-8">
+                        {/* Resources - Floating Pills */}
+                        <div className="flex items-center gap-6">
+                            <ResourceDisplay icon={<Gem size={14} className="text-purple-500" />} amount={myItems?.length?.toString() || "0"} />
+                            <ResourceDisplay icon={<div className="w-3 h-3 bg-[#D4AF37] rounded-full shadow-[0_0_5px_#D4AF37]" />} amount="2.5M" />
+                            <button className="relative group">
+                                <Bell size={20} className="text-[#43485C] group-hover:text-[#D4AF37] transition-colors" />
+                                <span className="absolute top-0 right-0 w-2 h-2 bg-red-400 rounded-full border-2 border-white" />
+                            </button>
+                        </div>
+                    </header>
+
+                    {/* Content */}
+                    <div className="flex-1 overflow-y-auto p-10 scrollbar-thin scrollbar-thumb-[#D4AF37]/20 scrollbar-track-transparent">
+                        <div className="max-w-6xl mx-auto space-y-12">
                             
-                            {/* Rankings Widget (Replaces Hero Roster) */}
-                            <div className="bg-stone-900/40 backdrop-blur-md p-6 border border-white/5 rounded-xl relative overflow-hidden">
-                                <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-amber-500/10 to-transparent rounded-tr-xl pointer-events-none" />
+                            {/* Stats Row - Frameless */}
+                            <div className="flex items-center justify-between px-4">
+                                <StatContent title="Active Quests" value={playedCampaigns?.length?.toString() || "0"} icon={<Shield className="text-[#D4AF37]" size={24} />} />
+                                <div className="h-12 w-[1px] bg-[#D4AF37]/10" />
+                                <StatContent title="Heroes" value={myCharacters?.length?.toString() || "0"} icon={<User className="text-blue-500" size={24} />} />
+                                <div className="h-12 w-[1px] bg-[#D4AF37]/10" />
+                                <StatContent title="Relics" value={myItems?.length?.toString() || "0"} icon={<Crown className="text-purple-500" size={24} />} />
+                            </div>
+
+                            {/* Main Hero - Full Width Image */}
+                            <section className="relative group rounded-[24px] overflow-hidden shadow-[0_15px_40px_-10px_rgba(0,0,0,0.2)]">
+                                <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1518562180175-34a163b1a9a6?q=80&w=2000')] bg-cover bg-center transition-transform duration-[2s] group-hover:scale-105" />
+                                <div className="absolute inset-0 bg-gradient-to-r from-[#2d3142] via-[#2d3142]/40 to-transparent" />
                                 
-                                <h3 className="text-lg font-serif font-bold mb-4 flex items-center gap-2 text-white">
-                                    <Crown size={18} className="text-amber-400" /> Creator Rankings
-                                </h3>
-                                <div className="space-y-3">
-                                    {/* Current User Rank Mock */}
-                                    <div className="flex items-center gap-3 p-3 bg-amber-950/20 border border-amber-500/30 rounded-lg">
-                                        <div className="font-black text-2xl text-amber-500 w-8 text-center">3</div>
-                                        <div>
-                                            <p className="font-bold text-sm text-white">You</p>
-                                            <p className="text-xs text-stone-400">{myCampaigns.length} Realms • {myCampaigns.reduce((acc:number, c:any) => acc + (c.playerCount||0), 0)} Players</p>
-                                        </div>
+                                <div className="relative z-10 p-12 md:p-16 w-full md:w-2/3 text-white flex flex-col items-start">
+                                    <div className="flex items-center gap-3 mb-4 opacity-80">
+                                        <div className="h-[1px] w-8 bg-white/50" />
+                                        <span className="text-[10px] font-bold uppercase tracking-[0.2em]">Current Objective</span>
                                     </div>
                                     
-                                    <div className="text-center pt-2">
-                                        <p className="text-[10px] text-stone-500 uppercase tracking-widest">Global Leaderboard Coming Soon</p>
+                                    <h2 className="text-5xl font-serif font-bold mb-4 drop-shadow-lg">Celestia's Fall</h2>
+                                    <p className="text-white/80 font-sans mb-8 leading-relaxed max-w-lg drop-shadow-md">
+                                        The ley lines are disrupting the upper atmosphere. Journey to the peak of Dragonspine and stabilize the anomaly before the stars descend.
+                                    </p>
+                                    
+                                    <Link href="/forge/create/campaign">
+                                        <button className="flex items-center gap-3 bg-white text-[#2d3142] px-8 py-3 rounded-full font-bold uppercase text-xs tracking-widest hover:shadow-[0_0_20px_rgba(255,255,255,0.4)] transition-all">
+                                            Navigate <ChevronRight size={14} />
+                                        </button>
+                                    </Link>
+                                </div>
+                            </section>
+
+                            {/* Bottom Grid - Frameless Lists */}
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+                                
+                                {/* Party Setup */}
+                                <div className="lg:col-span-2">
+                                    <SectionHeader title="Active Campaigns" icon={<User size={18} />} />
+                                    
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        {playedCampaigns?.length > 0 ? (
+                                            // @ts-ignore
+                                            playedCampaigns.map((c) => (
+                                                <Link href={`/play/${c._id}`} key={c._id}>
+                                                    <CharacterRow char={c.character || { name: "Unknown Hero", level: 1, element: "Anemo" }} />
+                                                </Link>
+                                            ))
+                                        ) : (
+                                            <p className="text-gray-400 text-sm italic p-4">No active campaigns found.</p>
+                                        )}
+                                        
+                                        {/* Add Slot - Dashed, minimal */}
+                                        <Link href="/forge/create/campaign" className="flex items-center gap-4 p-4 rounded-xl border border-dashed border-[#D4AF37]/30 text-[#8d99ae] hover:text-[#D4AF37] hover:bg-[#D4AF37]/5 transition-all group">
+                                            <div className="w-12 h-12 rounded-full border border-dashed border-[#D4AF37]/30 flex items-center justify-center group-hover:border-[#D4AF37]">
+                                                <Plus size={18} />
+                                            </div>
+                                            <span className="text-xs font-bold uppercase tracking-widest">Start New Adventure</span>
+                                        </Link>
                                     </div>
                                 </div>
-                            </div>
 
-                             {/* Quick Actions / Tools */}
-                             <div className="bg-gradient-to-br from-stone-900 to-[#0a0908] border border-white/10 p-6 rounded-xl shadow-lg relative overflow-hidden group">
-                                <div className="absolute -right-10 -top-10 text-indigo-500/10 group-hover:text-indigo-500/20 transition-colors duration-700">
-                                    <Sparkles size={150} strokeWidth={1} />
-                                </div>
-                                <h3 className="text-lg font-serif font-bold mb-2 relative z-10 text-white">The Forge</h3>
-                                <p className="text-xs text-stone-400 mb-6 relative z-10 leading-relaxed max-w-[80%]">
-                                    Craft new items, scribe spells, or generate encounters instantly.
-                                </p>
-                                <div className="grid grid-cols-2 gap-3 relative z-10">
-                                    <ToolBtn href="/forge/create/item" label="Item" icon={<Sword size={14} />} color="hover:border-amber-500/50 hover:text-amber-400" />
-                                    <ToolBtn href="/forge/create/spell" label="Spell" icon={<Scroll size={14} />} color="hover:border-purple-500/50 hover:text-purple-400" />
-                                    <ToolBtn href="/forge/create/character" label="Hero" icon={<User size={14} />} color="hover:border-emerald-500/50 hover:text-emerald-400" />
-                                    <ToolBtn href="/forge/create/campaign" label="Realm" icon={<Map size={14} />} color="hover:border-blue-500/50 hover:text-blue-400" />
+                                {/* Commissions - Simple List */}
+                                <div>
+                                    <SectionHeader title="Daily Commissions" icon={<Sparkles size={18} />} />
+
+                                    <div className="space-y-6 mt-2">
+                                        <CommissionItem title="Defeat 5 Hilichurls" completed />
+                                        <GoldDivider />
+                                        <CommissionItem title="Complete 1 Domain" completed />
+                                        <GoldDivider />
+                                        <CommissionItem title="Cook 3 Dishes" />
+                                        <GoldDivider />
+                                        <CommissionItem title="Forge a Weapon" />
+                                    </div>
                                 </div>
                             </div>
 
                         </div>
                     </div>
-                </div>
-            </main>
+
+                </main>
+            </motion.div>
         </div>
     );
 }
 
-// --- Components ---
+// --- SUB-COMPONENTS ---
 
-const NavItem = ({ active, icon, label, href }: { active: boolean, icon: any, label: string, href: string }) => (
-    <Link 
-        href={href}
-        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 group relative overflow-hidden ${
-            active 
-            ? 'bg-white/5 text-white shadow-lg border border-white/5' 
-            : 'text-stone-500 hover:bg-white/5 hover:text-stone-300'
-        }`}
-    >
-        {active && <div className="absolute left-0 top-0 bottom-0 w-1 bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.8)]" />}
-        <div className={`${active ? 'text-indigo-400' : 'text-stone-600 group-hover:text-stone-400'}`}>
+// @ts-ignore
+const SectionHeader = ({ title, icon }) => (
+    <div className="flex items-center gap-3 mb-6">
+        <div className="text-[#D4AF37]">{icon}</div>
+        <h3 className="font-bold text-xl text-[#43485C]">{title}</h3>
+    </div>
+);
+
+// @ts-ignore
+const NavButton = ({ icon, label, active, href }) => (
+    <Link href={href || "#"} className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-200 group ${
+        active ? 'text-[#43485C]' : 'text-gray-400 hover:text-[#D4AF37]'
+    }`}>
+        <div className={`relative z-10 ${active ? 'text-[#D4AF37]' : 'group-hover:text-[#D4AF37]'}`}>
             {icon}
         </div>
-        <span className="font-bold text-sm tracking-wide">{label}</span>
-        {active && <ChevronRight size={14} className="ml-auto text-indigo-400" />}
+        <span className={`hidden md:block text-sm font-bold tracking-wide ${active ? 'font-serif' : 'font-sans'}`}>
+            {label}
+        </span>
+        {active && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-[#D4AF37]" />}
     </Link>
 );
 
-const LedgerCard = ({ label, value, icon, color }: { label: string, value: number, icon: any, color: string }) => (
-    <div className="bg-stone-900/40 backdrop-blur-sm p-5 border border-white/5 rounded-xl flex items-center gap-4 hover:bg-stone-900/60 transition-colors group">
-        <div className={`w-12 h-12 rounded-xl bg-stone-950 border border-white/5 flex items-center justify-center ${color} shadow-inner group-hover:scale-110 transition-transform`}>
+// @ts-ignore
+const StatContent = ({ title, value, icon }) => (
+    <div className="flex items-center gap-5 px-4">
+        <div className="p-3 bg-[#fff] rounded-2xl shadow-sm text-[#D4AF37]">
             {icon}
         </div>
         <div>
-            <p className="text-2xl font-black text-white">{value}</p>
-            <p className="text-xs font-bold text-stone-500 uppercase tracking-wider group-hover:text-stone-400 transition-colors">{label}</p>
+            <p className="text-4xl font-serif font-bold text-[#43485C] tracking-tight">{value}</p>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">{title}</p>
         </div>
     </div>
 );
 
-const ToolBtn = ({ label, icon, color, href }: { label: string, icon: any, color?: string, href: string }) => (
-    <Link href={href} className={`flex items-center justify-center gap-2 bg-stone-950 border border-white/10 py-3 rounded-lg text-xs font-bold text-stone-400 transition-all hover:bg-stone-900 hover:shadow-lg ${color}`}>
-        {icon} {label}
-    </Link>
+// @ts-ignore
+const ResourceDisplay = ({ icon, amount }) => (
+    <div className="flex items-center gap-2 px-3 py-1.5 bg-white/50 rounded-full shadow-sm border border-white/50">
+        {icon}
+        <span className="text-sm font-bold text-[#43485C] font-sans">{amount}</span>
+    </div>
+);
+
+// @ts-ignore
+const CharacterRow = ({ char }) => (
+    <div className="flex items-center gap-4 p-2 group cursor-pointer">
+        <div className="relative w-14 h-14">
+            <div className="absolute inset-0 bg-gradient-to-br from-[#D4AF37]/20 to-transparent rounded-full blur-md opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="relative w-full h-full bg-[#f8f9fa] rounded-full border-2 border-white shadow-md flex items-center justify-center text-xl font-bold text-gray-300 overflow-hidden">
+                {char.name ? char.name[0] : "?"}
+            </div>
+            <div className="absolute -bottom-1 -right-1 bg-white p-0.5 rounded-full shadow-sm">
+                <ElementIcon element={char.element} />
+            </div>
+        </div>
+        
+        <div className="flex-1">
+            <h4 className="font-bold text-[#43485C] text-lg group-hover:text-[#D4AF37] transition-colors">{char.name}</h4>
+            <p className="text-xs font-bold text-gray-400 uppercase">Lv. {char.level} / 90</p>
+        </div>
+        
+        <ChevronRight className="text-gray-300 group-hover:text-[#D4AF37] transition-transform group-hover:translate-x-1" size={16} />
+    </div>
+);
+
+// @ts-ignore
+const CommissionItem = ({ title, completed }) => (
+    <div className="flex items-center justify-between group cursor-pointer py-1">
+        <div className="flex items-center gap-4">
+            <div className={`w-4 h-4 rounded-full border-[1.5px] flex items-center justify-center transition-colors ${completed ? 'bg-[#D4AF37] border-[#D4AF37]' : 'border-gray-300 group-hover:border-[#D4AF37]'}`}>
+                {completed && <div className="w-2 h-2 bg-white rounded-full" />}
+            </div>
+            <span className={`text-sm font-bold transition-colors ${completed ? 'text-gray-400 line-through' : 'text-[#43485C] group-hover:text-[#D4AF37]'}`}>
+                {title}
+            </span>
+        </div>
+        {!completed && (
+            <div className="text-[10px] font-bold text-[#D4AF37] uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">
+                Go
+            </div>
+        )}
+    </div>
 );

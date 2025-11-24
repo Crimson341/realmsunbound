@@ -23,7 +23,18 @@ export default defineSchema({
     rarityColors: v.optional(v.string()), // JSON string: {"Common": "#ffffff", "Rare": "#0070f3", ...}
     starterItemIds: v.optional(v.array(v.id("items"))),
     imageId: v.optional(v.id("_storage")),
+    templateId: v.optional(v.id("templates")),
+    templateVersion: v.optional(v.string()),
   }).index("by_user", ["userId"]),
+
+  templates: defineTable({
+    title: v.string(),
+    description: v.string(), // Lore
+    imageId: v.optional(v.id("_storage")),
+    version: v.string(), // e.g., "1.0.0"
+    updates: v.optional(v.array(v.string())), // ["Fixed bugs", "Added new quest"]
+    creatorId: v.optional(v.string()), // Optional for system templates
+  }),
 
   characters: defineTable({
     userId: v.string(),
@@ -33,7 +44,7 @@ export default defineSchema({
     level: v.number(),
     stats: v.string(), // JSON string
     imageId: v.optional(v.id("_storage")),
-  }).index("by_user", ["userId"]),
+  }).index("by_user", ["userId"]).index("by_campaign", ["campaignId"]),
 
   items: defineTable({
     userId: v.string(),

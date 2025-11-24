@@ -79,16 +79,20 @@ export const getMyCampaigns = query({
             .withIndex("by_user", (q) => q.eq("userId", userId))
             .collect();
 
-        // Enrich with player counts
+        // Enrich with player counts and image URLs
         const enrichedCampaigns = await Promise.all(
             campaigns.map(async (campaign) => {
                 const characters = await ctx.db
                     .query("characters")
                     .filter((q) => q.eq(q.field("campaignId"), campaign._id))
                     .collect();
+                
+                const imageUrl = campaign.imageId ? await ctx.storage.getUrl(campaign.imageId) : null;
+
                 return {
                     ...campaign,
                     playerCount: characters.length,
+                    imageUrl,
                 };
             })
         );
@@ -99,9 +103,74 @@ export const getMyCampaigns = query({
 
 export const getAllCampaigns = query({
     handler: async (ctx) => {
-        // In a real app, you might want pagination or filtering here
-        return await ctx.db.query("campaigns").collect();
+        const campaigns = await ctx.db.query("campaigns").collect();
+        return await Promise.all(campaigns.map(async (c) => {
+            const imageUrl = c.imageId ? await ctx.storage.getUrl(c.imageId) : null;
+            let template = null;
+            if (c.templateId) {
+                template = await ctx.db.get(c.templateId);
+            }
+
+            const characters = await ctx.db
+                .query("characters")
+                .withIndex("by_campaign", (q) => q.eq("campaignId", c._id))
+                .collect();
+
+             const activeCharacters = await Promise.all(characters.map(async (char) => {
+                 const user = await ctx.db
+                    .query("users")
+                    .withIndex("by_token", (q) => q.eq("tokenIdentifier", char.userId))
+                    .first();
+                 return {
+                     _id: char._id,
+                     name: char.name,
+                     class: char.class,
+                     level: char.level,
+                     playerName: user?.name || "Unknown"
+                 };
+            }));
+
+            return {
+                ...c,
+                imageUrl,
+                template,
+                activeCharacters
+            };
+        }));
     },
+});
+
+export const seedTemplates = mutation({
+    args: {},
+    handler: async (ctx) => {
+        // Skyrim Template
+        const skyrim = await ctx.db.query("templates")
+            .filter(q => q.eq(q.field("title"), "The Elder Scrolls: Skyrim"))
+            .first();
+            
+        if (!skyrim) {
+            await ctx.db.insert("templates", {
+                title: "The Elder Scrolls: Skyrim",
+                description: "The Empire of Tamriel is on the edge. The High King of Skyrim has been murdered. Alliances form as claims to the throne are made. In the midst of this conflict, a far more dangerous, ancient evil is awakened. Dragons, long lost to the passages of the Elder Scrolls, have returned to Tamriel.",
+                version: "1.0.0",
+                updates: ["Initial Release"],
+            });
+        }
+
+        // Eldoria Template
+         const eldoria = await ctx.db.query("templates")
+            .filter(q => q.eq(q.field("title"), "The Shadow of Eldoria"))
+            .first();
+            
+        if (!eldoria) {
+            await ctx.db.insert("templates", {
+                title: "The Shadow of Eldoria",
+                description: "A realm teetering on the brink of eternal twilight. Ancient magic is fading, and the shadows are growing longer.",
+                version: "1.0.0",
+                updates: ["Initial Release"],
+            });
+        }
+    }
 });
 
 export const getCampaignDetails = query({
@@ -625,9 +694,15 @@ export const seedCampaign = mutation({
         const identity = await getUser(ctx);
         const userId = identity.tokenIdentifier;
 
+        const template = await ctx.db.query("templates")
+            .filter(q => q.eq(q.field("title"), "The Shadow of Eldoria"))
+            .first();
+
         // 1. Create Campaign
         const campaignId = await ctx.db.insert("campaigns", {
             userId,
+            templateId: template?._id,
+            templateVersion: template?.version,
             title: "The Shadow of Eldoria",
             description: "A realm teetering on the brink of eternal twilight. Ancient magic is fading, and the shadows are growing longer.",
             imageId: undefined,
@@ -985,9 +1060,15 @@ export const seedSkyrim = mutation({
         const identity = await getUser(ctx);
         const userId = identity.tokenIdentifier;
 
+        const template = await ctx.db.query("templates")
+            .filter(q => q.eq(q.field("title"), "The Elder Scrolls: Skyrim"))
+            .first();
+
         // 1. Create Campaign
         const campaignId = await ctx.db.insert("campaigns", {
             userId,
+            templateId: template?._id,
+            templateVersion: template?.version,
             title: "The Elder Scrolls: Skyrim",
             description: "The Empire of Tamriel is on the edge. The High King of Skyrim has been murdered. Alliances form as claims to the throne are made. In the midst of this conflict, a far more dangerous, ancient evil is awakened. Dragons, long lost to the passages of the Elder Scrolls, have returned to Tamriel.",
             xpRate: 1.0,

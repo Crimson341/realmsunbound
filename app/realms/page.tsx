@@ -10,22 +10,30 @@ import {
     Crown, Ghost
 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import RealmDetailsModal from '../../components/RealmDetailsModal';
 
 // --- COMPONENTS ---
 
-const RealmCard = ({ campaign, index }: { campaign: any, index: number }) => {
+const RealmCard = ({ campaign, index, onClick }: { campaign: any, index: number, onClick: () => void }) => {
     return (
         <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: index * 0.1 }}
-            className="group relative bg-white border border-stone-200 rounded-2xl overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-1"
+            onClick={onClick}
+            className="group relative bg-white border border-stone-200 rounded-2xl overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer"
         >
             {/* Image / Banner Placeholder */}
             <div className="h-48 bg-stone-100 relative overflow-hidden">
+                {campaign.imageUrl ? (
+                    <div 
+                        className="absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-110"
+                        style={{ backgroundImage: `url(${campaign.imageUrl})` }}
+                    />
+                ) : (
+                    <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10" />
+                )}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent z-10" />
-                {/* Placeholder Pattern */}
-                <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10" />
                 
                 <div className="absolute bottom-4 left-4 z-20">
                     <h3 className="text-white font-serif text-2xl font-bold drop-shadow-md line-clamp-1">{campaign.title}</h3>
@@ -34,7 +42,7 @@ const RealmCard = ({ campaign, index }: { campaign: any, index: number }) => {
                         <span>•</span>
                         <span className="flex items-center gap-1">
                             <Users size={12} />
-                            Open
+                            {campaign.activeCharacters?.length || 0} Online
                         </span>
                     </div>
                 </div>
@@ -62,21 +70,28 @@ const RealmCard = ({ campaign, index }: { campaign: any, index: number }) => {
                         </div>
                     </div>
 
-                    <Link href={`/play/${campaign._id}`} className="flex items-center gap-2 text-indigo-600 font-bold text-sm group/btn hover:text-indigo-700 transition-colors">
-                        Enter Realm <ArrowRight size={16} className="group-hover/btn:translate-x-1 transition-transform" />
-                    </Link>
+                    <button className="flex items-center gap-2 text-indigo-600 font-bold text-sm group/btn hover:text-indigo-700 transition-colors">
+                        View Details <ArrowRight size={16} className="group-hover/btn:translate-x-1 transition-transform" />
+                    </button>
                 </div>
             </div>
         </motion.div>
     );
 };
 
-const FeaturedRealm = ({ campaign }: { campaign: any }) => {
+const FeaturedRealm = ({ campaign, onDetails }: { campaign: any, onDetails: () => void }) => {
     if (!campaign) return null;
 
     return (
-        <div className="relative rounded-3xl overflow-hidden bg-stone-900 text-white mb-16 group cursor-pointer shadow-2xl">
-            <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?q=80&w=2000')] bg-cover bg-center opacity-40 group-hover:scale-105 transition-transform duration-1000" />
+        <div className="relative rounded-3xl overflow-hidden bg-stone-900 text-white mb-16 group shadow-2xl">
+            {campaign.imageUrl ? (
+                <div 
+                    className="absolute inset-0 bg-cover bg-center opacity-40 group-hover:scale-105 transition-transform duration-1000"
+                    style={{ backgroundImage: `url(${campaign.imageUrl})` }}
+                />
+            ) : (
+                <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?q=80&w=2000')] bg-cover bg-center opacity-40 group-hover:scale-105 transition-transform duration-1000" />
+            )}
             <div className="absolute inset-0 bg-gradient-to-r from-black via-black/60 to-transparent" />
             
             <div className="relative z-10 p-12 md:p-20 max-w-3xl">
@@ -95,9 +110,12 @@ const FeaturedRealm = ({ campaign }: { campaign: any }) => {
                             Begin Journey <ArrowRight size={16} />
                         </button>
                     </Link>
-                    <div className="px-6 py-4 rounded-full border border-white/20 text-white/60 text-sm font-bold uppercase tracking-widest hover:bg-white/5 transition-colors">
+                    <button 
+                        onClick={onDetails}
+                        className="px-6 py-4 rounded-full border border-white/20 text-white/60 text-sm font-bold uppercase tracking-widest hover:bg-white/5 transition-colors"
+                    >
                         View Lore
-                    </div>
+                    </button>
                 </div>
             </div>
         </div>
@@ -107,6 +125,7 @@ const FeaturedRealm = ({ campaign }: { campaign: any }) => {
 export default function RealmsPage() {
     const campaigns = useQuery(api.forge.getAllCampaigns);
     const [search, setSearch] = useState("");
+    const [selectedRealm, setSelectedRealm] = useState<any>(null);
 
     const filteredCampaigns = campaigns?.filter((c: any) => 
         c.title.toLowerCase().includes(search.toLowerCase()) || 
@@ -119,6 +138,12 @@ export default function RealmsPage() {
 
     return (
         <div className="min-h-screen bg-[#f8f7f5] text-stone-800 font-sans">
+            <RealmDetailsModal 
+                campaign={selectedRealm} 
+                isOpen={!!selectedRealm} 
+                onClose={() => setSelectedRealm(null)} 
+            />
+
             {/* --- HEADER --- */}
             <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-stone-200/50">
                 <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
@@ -167,7 +192,12 @@ export default function RealmsPage() {
                     </div>
                 ) : (
                     <>
-                        {featured && <FeaturedRealm campaign={featured} />}
+                        {featured && (
+                            <FeaturedRealm 
+                                campaign={featured} 
+                                onDetails={() => setSelectedRealm(featured)} 
+                            />
+                        )}
 
                         <div className="flex items-center justify-between mb-8">
                             <h2 className="text-2xl font-serif font-bold flex items-center gap-3">
@@ -187,7 +217,12 @@ export default function RealmsPage() {
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                             {list.length > 0 ? (
                                 list.map((campaign: any, idx: number) => (
-                                    <RealmCard key={campaign._id} campaign={campaign} index={idx} />
+                                    <RealmCard 
+                                        key={campaign._id} 
+                                        campaign={campaign} 
+                                        index={idx} 
+                                        onClick={() => setSelectedRealm(campaign)}
+                                    />
                                 ))
                             ) : (
                                 <div className="col-span-full py-20 text-center text-stone-500">

@@ -160,7 +160,7 @@ export default function CampaignManager() {
     const handleSaveRarityColors = async () => {
         setIsSubmitting(true);
         try {
-            await updateRarityColors({ campaignId, rarityColors: rarityColors });
+            await updateRarityColors({ campaignId, rarityColors: JSON.stringify(rarityColors) });
         } finally {
             setIsSubmitting(false);
         }
@@ -179,8 +179,8 @@ export default function CampaignManager() {
                 usage: itemUsage,
                 requirements: itemRequirements,
                 lore: itemLore,
-                effects: effectMode === 'custom' ? itemEffects : undefined,
-                effectId: effectMode === 'library' && itemEffectId ? (itemEffectId as Id<"effects">) : undefined,
+                effects: effectMode === 'custom' ? itemEffects : "",
+                effectId: effectMode === 'library' && itemEffectId ? (itemEffectId as Id<"effectsLibrary">) : undefined,
                 spellId: itemSpellId ? (itemSpellId as Id<"spells">) : undefined,
                 specialAbilities: itemSpecial,
             });
@@ -212,7 +212,7 @@ export default function CampaignManager() {
                 areaShape: spellAreaShape,
                 areaSize: spellAreaSize,
                 higherLevels: spellHigherLevels,
-                effectId: spellEffectId ? (spellEffectId as Id<"effects">) : undefined,
+                effectId: spellEffectId ? (spellEffectId as Id<"effectsLibrary">) : undefined,
                 description: spellDescription,
                 notes: spellNotes,
             });

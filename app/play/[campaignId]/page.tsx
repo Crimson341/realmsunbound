@@ -193,7 +193,7 @@ const SmartTooltip = ({ children, content, className }: { children: React.ReactN
                          <div
                             className="h-full bg-genshin-gold ease-linear"
                             style={{
-                                width: state === 'idle' ? '0%' : '100%',
+                                width: '100%',
                                 transitionProperty: 'width',
                                 transitionDuration: state === 'locked' ? '0s' : '2000ms',
                                 transitionTimingFunction: 'linear'
@@ -340,7 +340,7 @@ export default function PlayPage() {
     };
 
     const handleSendMessage = async () => {
-        if (!input.trim() || isLoading) return;
+        if (!input.trim() || isLoading || !data) return;
 
         const userMsg: Message = { role: 'user', content: input };
         setMessages(prev => [...prev, userMsg]);
@@ -555,7 +555,7 @@ export default function PlayPage() {
                 <CharacterSheetModal 
                     isOpen={isCharacterSheetOpen} 
                     onClose={() => setCharacterSheetOpen(false)} 
-                    characterId={null} 
+                    character={data.character} 
                 />
             )}
         </div>

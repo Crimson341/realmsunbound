@@ -30,6 +30,7 @@ export default function SpellbookPage() {
         return matchesSearch && matchesFilter;
     });
 
+    
     return (
         <div className="min-h-screen bg-stone-950 text-stone-200 font-serif pt-24 px-6 pb-20">
             <div className="max-w-7xl mx-auto">

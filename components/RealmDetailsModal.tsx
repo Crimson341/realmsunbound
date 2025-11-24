@@ -15,13 +15,13 @@ interface Campaign {
     _id: string;
     title: string;
     description: string;
-    imageUrl?: string;
+    imageUrl?: string | null;
     xpRate: number;
     activeCharacters?: Character[];
     template?: {
         version: string;
         updates?: string[];
-    };
+    } | null;
     templateVersion?: string;
     rules?: string;
 }

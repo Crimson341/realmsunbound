@@ -66,7 +66,7 @@ const VisionCard = ({ title, description, img, icon: Icon, index }: VisionCardPr
             filter: 'blur(0px)',
             transition: { 
                 duration: 1.2, 
-                ease: [0.25, 0.1, 0.25, 1] // Cinematic ease
+                ease: [0.25, 0.1, 0.25, 1] as [number, number, number, number]
             } 
         }
     };

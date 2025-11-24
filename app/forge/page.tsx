@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
-import { Plus, Sword, Scroll, Users, Map, Loader2, Database, Sparkles } from 'lucide-react';
+import { Plus, Map, Loader2, Database, Sparkles, Settings } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@workos-inc/authkit-nextjs/components';
 
@@ -66,6 +66,13 @@ export default function ForgeDashboard() {
                         </p>
                     </div>
                     <div className="flex gap-4">
+                        <Link
+                            href="/settings"
+                            className="bg-stone-800 hover:bg-stone-700 text-white px-4 py-2 rounded-lg font-bold transition-colors flex items-center gap-2"
+                        >
+                            <Settings size={20} />
+                            Studio Settings
+                        </Link>
                         <button
                             onClick={handleSeedSkyrim}
                             disabled={isSeeding}
@@ -149,30 +156,3 @@ export default function ForgeDashboard() {
         </div>
     );
 }
-
-const Card = ({ title, subtitle, icon: Icon }: { title: string, subtitle: string, icon: any }) => (
-    <div className="bg-stone-900/50 border border-stone-800 rounded-xl p-6 hover:border-indigo-500/50 transition-all group cursor-pointer">
-        <div className="flex items-start justify-between mb-4">
-            <div className="p-3 bg-stone-950 rounded-lg text-indigo-400 group-hover:text-white transition-colors">
-                <Icon size={24} />
-            </div>
-        </div>
-        <h3 className="text-xl font-bold text-white mb-1">{title}</h3>
-        <p className="text-sm text-stone-500">{subtitle}</p>
-    </div>
-);
-
-const EmptyState = ({ type }: { type: string }) => (
-    <div className="col-span-full flex flex-col items-center justify-center py-20 text-center border-2 border-dashed border-stone-800 rounded-xl">
-        <div className="p-4 bg-stone-900 rounded-full mb-4 text-stone-600">
-            <Scroll size={32} />
-        </div>
-        <h3 className="text-xl font-bold text-stone-300 mb-2">No {type}s Found</h3>
-        <p className="text-stone-500 max-w-md mb-6">
-            The archives are empty. Be the first to forge a new {type.toLowerCase()}.
-        </p>
-        <Link href={`/forge/create/${type.toLowerCase()}`} className="text-indigo-400 hover:text-indigo-300 font-medium">
-            Create {type} &rarr;
-        </Link>
-    </div>
-);

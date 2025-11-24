@@ -2,13 +2,14 @@
 
 import { useEffect, useRef } from 'react';
 import gsap from 'gsap';
-import { Monitor, Smartphone, Gamepad2 } from 'lucide-react';
+
+import Link from 'next/link';
 
 const Hero = () => {
     const comp = useRef(null);
 
     useEffect(() => {
-        let ctx = gsap.context(() => {
+        const ctx = gsap.context(() => {
             const tl = gsap.timeline();
             
             // Set initial state safely via JS
@@ -34,15 +35,12 @@ const Hero = () => {
                     REALMS UNBOUND
                 </h1>
                 <div className="hero-text flex flex-col md:flex-row gap-4 justify-center items-center">
-                    <button className="btn-genshin group relative px-8 py-4 bg-genshin-dark text-genshin-gold border border-genshin-gold rounded-sm min-w-[200px] overflow-hidden">
-                        <span className="font-serif text-xl z-10 relative group-hover:text-white transition-colors">START JOURNEY</span>
-                        <div className="absolute inset-0 bg-genshin-gold transform scale-x-0 group-hover:scale-x-100 transition-transform origin-left duration-300 z-0"></div>
-                    </button>
-                    <div className="flex gap-4 text-genshin-dark/60">
-                        <Monitor size={24} />
-                        <Smartphone size={24} />
-                        <Gamepad2 size={24} />
-                    </div>
+                    <Link href="/realms">
+                        <button className="btn-genshin group relative px-8 py-4 bg-genshin-dark text-genshin-gold border border-genshin-gold rounded-sm min-w-[200px] overflow-hidden">
+                            <span className="font-serif text-xl z-10 relative group-hover:text-white transition-colors">START JOURNEY</span>
+                            <div className="absolute inset-0 bg-genshin-gold transform scale-x-0 group-hover:scale-x-100 transition-transform origin-left duration-300 z-0"></div>
+                        </button>
+                    </Link>
                 </div>
             </div>
 

@@ -7,15 +7,29 @@ import { api } from '../../convex/_generated/api';
 import { useAuth } from '@workos-inc/authkit-nextjs/components';
 import Link from 'next/link';
 import { 
-    Loader2, Sword, Shield, Map, User, Plus, Scroll, 
-    Sparkles, Crown, Gem, ChevronRight, Search, Bell, 
-    Settings, LayoutDashboard, Star, Compass, Zap, Hexagon,
-    Minimize2
+    Shield, Map, User, Plus, Scroll, 
+    Sparkles, Crown, Gem, ChevronRight, Bell, 
+    Settings, LayoutDashboard, Star, Compass, Zap
 } from 'lucide-react';
 
+// --- TYPES ---
+interface Character {
+    name?: string;
+    level?: number;
+    element?: string;
+}
+
+interface Campaign {
+    _id: string;
+    title: string;
+    description?: string;
+    xpRate?: number;
+    character?: Character;
+    creatorName?: string;
+}
+
 // --- ASSETS & ICONS ---
-// @ts-ignore
-const ElementIcon = ({ element }) => {
+const ElementIcon = ({ element }: { element?: string }) => {
     const colors: Record<string, string> = {
         Electro: "text-purple-500",
         Dendro: "text-green-500",
@@ -25,7 +39,7 @@ const ElementIcon = ({ element }) => {
         Geo: "text-yellow-500",
         Anemo: "text-teal-400"
     };
-    return <Zap className={`${colors[element] || 'text-gray-400'} drop-shadow-sm`} size={14} fill="currentColor" />;
+    return <Zap className={`${(element && colors[element]) || 'text-gray-400'} drop-shadow-sm`} size={14} fill="currentColor" />;
 };
 
 // --- DECORATIVE COMPONENTS ---
@@ -95,7 +109,6 @@ export default function UserDashboard() {
     
     // Real Data Fetching
     const myCampaigns = useQuery(api.forge.getMyCampaigns);
-    // @ts-ignore
     const playedCampaigns = useQuery(api.forge.getPlayedCampaigns);
     const myCharacters = useQuery(api.forge.getMyCharacters);
     const myItems = useQuery(api.forge.getMyItems);
@@ -142,6 +155,7 @@ export default function UserDashboard() {
                         <div className="relative w-20 h-20 mb-4 group cursor-pointer">
                             <div className="absolute inset-0 bg-[#D4AF37] rounded-full blur-[20px] opacity-20 group-hover:opacity-40 transition-opacity" />
                             <div className="relative w-full h-full rounded-full border-[2px] border-white shadow-lg overflow-hidden">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img src={user?.profilePictureUrl || `https://ui-avatars.com/api/?name=${user?.firstName}&background=D4AF37&color=fff`} alt="User" className="w-full h-full object-cover" />
                             </div>
                             <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-1 shadow-sm border border-[#f0f0f0]">
@@ -157,7 +171,7 @@ export default function UserDashboard() {
                     {/* Navigation - Text Only with Indicators */}
                     <nav className="flex-1 py-6 px-6 space-y-1 overflow-y-auto">
                         <NavButton href="/dashboard" icon={<LayoutDashboard size={18} />} label="Overview" active />
-                        <NavButton href="/forge" icon={<Map size={18} />} label="Campaigns" />
+                        <NavButton href="/forge" icon={<Map size={18} />} label="Forge" />
                         <NavButton href="/roster" icon={<User size={18} />} label="Characters" />
                         <NavButton href="/artifacts" icon={<Gem size={18} />} label="Artifacts" />
                         <NavButton href="/spellbook" icon={<Scroll size={18} />} label="Spellbook" />
@@ -228,7 +242,7 @@ export default function UserDashboard() {
                                         <span className="text-[10px] font-bold uppercase tracking-[0.2em]">Current Objective</span>
                                     </div>
                                     
-                                    <h2 className="text-5xl font-serif font-bold mb-4 drop-shadow-lg">Celestia's Fall</h2>
+                                    <h2 className="text-5xl font-serif font-bold mb-4 drop-shadow-lg">Celestia&apos;s Fall</h2>
                                     <p className="text-white/80 font-sans mb-8 leading-relaxed max-w-lg drop-shadow-md">
                                         The ley lines are disrupting the upper atmosphere. Journey to the peak of Dragonspine and stabilize the anomaly before the stars descend.
                                     </p>
@@ -249,9 +263,8 @@ export default function UserDashboard() {
                                     <SectionHeader title="Active Campaigns" icon={<User size={18} />} />
                                     
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        {playedCampaigns?.length > 0 ? (
-                                            // @ts-ignore
-                                            playedCampaigns.map((c) => (
+                                        {playedCampaigns && playedCampaigns.length > 0 ? (
+                                            playedCampaigns.map((c: Campaign) => (
                                                 <Link href={`/play/${c._id}`} key={c._id}>
                                                     <CharacterRow 
                                                         char={c.character || { name: "Unknown Hero", level: 1, element: "Anemo" }} 
@@ -301,16 +314,14 @@ export default function UserDashboard() {
 
 // --- SUB-COMPONENTS ---
 
-// @ts-ignore
-const SectionHeader = ({ title, icon }) => (
+const SectionHeader = ({ title, icon }: { title: string, icon: React.ReactNode }) => (
     <div className="flex items-center gap-3 mb-6">
         <div className="text-[#D4AF37]">{icon}</div>
         <h3 className="font-bold text-xl text-[#43485C]">{title}</h3>
     </div>
 );
 
-// @ts-ignore
-const NavButton = ({ icon, label, active, href }) => (
+const NavButton = ({ icon, label, active, href }: { icon: React.ReactNode, label: string, active?: boolean, href: string }) => (
     <Link href={href || "#"} className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-200 group ${
         active ? 'text-[#43485C]' : 'text-gray-400 hover:text-[#D4AF37]'
     }`}>
@@ -324,8 +335,7 @@ const NavButton = ({ icon, label, active, href }) => (
     </Link>
 );
 
-// @ts-ignore
-const StatContent = ({ title, value, icon }) => (
+const StatContent = ({ title, value, icon }: { title: string, value: string, icon: React.ReactNode }) => (
     <div className="flex items-center gap-5 px-4">
         <div className="p-3 bg-[#fff] rounded-2xl shadow-sm text-[#D4AF37]">
             {icon}
@@ -337,16 +347,14 @@ const StatContent = ({ title, value, icon }) => (
     </div>
 );
 
-// @ts-ignore
-const ResourceDisplay = ({ icon, amount }) => (
+const ResourceDisplay = ({ icon, amount }: { icon: React.ReactNode, amount: string }) => (
     <div className="flex items-center gap-2 px-3 py-1.5 bg-white/50 rounded-full shadow-sm border border-white/50">
         {icon}
         <span className="text-sm font-bold text-[#43485C] font-sans">{amount}</span>
     </div>
 );
 
-// @ts-ignore
-const CharacterRow = ({ char, campaignTitle, creatorName }) => (
+const CharacterRow = ({ char, campaignTitle, creatorName }: { char: Character, campaignTitle?: string, creatorName?: string }) => (
     <div className="flex items-center gap-4 p-2 group cursor-pointer">
         <div className="relative w-14 h-14">
             <div className="absolute inset-0 bg-gradient-to-br from-[#D4AF37]/20 to-transparent rounded-full blur-md opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -369,8 +377,7 @@ const CharacterRow = ({ char, campaignTitle, creatorName }) => (
     </div>
 );
 
-// @ts-ignore
-const CommissionItem = ({ title, completed }) => (
+const CommissionItem = ({ title, completed }: { title: string, completed?: boolean }) => (
     <div className="flex items-center justify-between group cursor-pointer py-1">
         <div className="flex items-center gap-4">
             <div className={`w-4 h-4 rounded-full border-[1.5px] flex items-center justify-center transition-colors ${completed ? 'bg-[#D4AF37] border-[#D4AF37]' : 'border-gray-300 group-hover:border-[#D4AF37]'}`}>

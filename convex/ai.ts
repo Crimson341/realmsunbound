@@ -1,30 +1,9 @@
-import { action } from "./_generated/server";
+import { action, httpAction } from "./_generated/server";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
 
-export const generateNarrative = action({
-  args: {
-    prompt: v.string(),
-    history: v.array(v.object({ role: v.string(), content: v.string() })),
-    campaignId: v.id("campaigns"),
-  },
-  handler: async (ctx, args) => {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      console.error("GEMINI_API_KEY is not set in Convex environment variables.");
-      return "The Dungeon Master is currently away (GEMINI_API_KEY missing). Please set it in your Convex dashboard.";
-    }
-
-    // Fetch campaign context
-    // Use explicit 'any' cast for api to avoid circular type inference issues
-    const campaignData = await ctx.runQuery((api as any).forge.getCampaignDetails, { 
-      campaignId: args.campaignId 
-    });
-
-    if (!campaignData) {
-        return "Error: Campaign not found.";
-    }
-
+// Helper to generate context
+const generateWorldContext = (campaignData: any) => {
     const { 
       campaign, 
       locations, 
@@ -33,18 +12,9 @@ export const generateNarrative = action({
       items,
       quests,
       rules 
-    }: { 
-      campaign: any; 
-      locations: any[]; 
-      npcs: any[]; 
-      monsters: any[]; 
-      items: any[]; 
-      quests: any[];
-      rules: string 
     } = campaignData;
 
-    // Construct System Context
-    const worldContext: string = `
+    return `
     You are the Dungeon Master for a TTRPG campaign.
     STRICTLY ADHERE to the following world details. 
     
@@ -78,6 +48,32 @@ export const generateNarrative = action({
     - If the user asks to go to a location not in this list, guide them to a known nearby location or describe the travel based on the environment.
     - Use the defined Rules for any mechanics.
     `;
+};
+
+export const generateNarrative = action({
+  args: {
+    prompt: v.string(),
+    history: v.array(v.object({ role: v.string(), content: v.string() })),
+    campaignId: v.id("campaigns"),
+  },
+  handler: async (ctx, args) => {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.error("GEMINI_API_KEY is not set in Convex environment variables.");
+      return "The Dungeon Master is currently away (GEMINI_API_KEY missing). Please set it in your Convex dashboard.";
+    }
+
+    // Fetch campaign context
+    // Use explicit 'any' cast for api to avoid circular type inference issues
+    const campaignData = await ctx.runQuery((api as any).forge.getCampaignDetails, {
+      campaignId: args.campaignId 
+    });
+
+    if (!campaignData) {
+        return "Error: Campaign not found.";
+    }
+
+    const worldContext = generateWorldContext(campaignData);
 
     const contents = [
       {
@@ -141,4 +137,72 @@ export const generateNarrative = action({
        return JSON.stringify({ content: rawText, choices: [] });
     }
   },
+});
+
+export const chatStream = httpAction(async (ctx, request) => {
+  const { prompt, history, campaignId } = await request.json();
+
+  const corsHeaders = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+  };
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return new Response("GEMINI_API_KEY not set", { status: 500, headers: corsHeaders });
+  }
+
+  const campaignData = await ctx.runQuery((api as any).forge.getCampaignDetails, {
+    campaignId: campaignId 
+  });
+
+  if (!campaignData) {
+      return new Response("Campaign not found", { status: 404, headers: corsHeaders });
+  }
+
+  const worldContext = generateWorldContext(campaignData);
+
+  const contents = [
+    {
+      role: "user",
+      parts: [{ text: worldContext }]
+    },
+    ...history.map((msg: any) => ({
+      role: msg.role === "user" ? "user" : "model",
+      parts: [{ text: msg.content }],
+    })),
+    {
+      role: "user",
+      parts: [{ text: prompt + "\n\nIMPORTANT: Respond in this EXACT format:\n<narrative>\n[Write the narrative text here...]\n</narrative>\n<data>\n[JSON object with 'choices', 'rewards', 'current_location', 'completed_quests']\n</data>" }],
+    }
+  ];
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        contents: contents,
+        generationConfig: {
+          temperature: 0.9,
+          maxOutputTokens: 1000,
+        },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    return new Response(await response.text(), { status: response.status, headers: corsHeaders });
+  }
+
+  return new Response(response.body, {
+      headers: {
+          "Content-Type": "application/json",
+          ...corsHeaders
+      }
+  });
 });

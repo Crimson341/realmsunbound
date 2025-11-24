@@ -10,6 +10,7 @@
 
 import type * as ai from "../ai.js";
 import type * as forge from "../forge.js";
+import type * as http from "../http.js";
 
 import type {
   ApiFromModules,
@@ -20,6 +21,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   ai: typeof ai;
   forge: typeof forge;
+  http: typeof http;
 }>;
 
 /**

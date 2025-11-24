@@ -34,7 +34,7 @@ const Navbar = () => {
 
         { name: 'Home', href: '/' },
 
-        { name: 'Realms', href: '/forge' },
+        { name: 'Realms', href: '/realms' },
 
         { name: 'Lore', href: '/lore' },
 

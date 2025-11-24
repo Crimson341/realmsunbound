@@ -331,6 +331,7 @@ export default function PlayPage() {
             setCurrentChoices([]); // Clear previous choices
     
             const currentLocation = data.locations?.find(l => l._id === currentLocationId);
+            const questLocation = data.locations?.find(l => l._id === selectedQuest?.locationId);
             
             const currentLocationName = currentLocation?.name || "Unknown Wilds";
             const questLocationName = questLocation?.name || "Unknown Place";

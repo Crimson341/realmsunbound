@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Cinzel, Quicksand } from 'next/font/google';
 import './globals.css';
 import { ConvexClientProvider } from '@/components/ConvexClientProvider';
+import { ThemeProvider } from '@/components/ThemeProvider';
 import LayoutWrapper from '@/components/LayoutWrapper';
 
 const cinzel = Cinzel({
@@ -30,12 +31,31 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className={`${cinzel.variable} ${quicksand.variable} antialiased font-sans bg-genshin-white text-[#333] overflow-x-hidden`}>
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Prevent flash of wrong theme */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  var theme = localStorage.getItem('realms-theme');
+                  if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                    document.documentElement.classList.add('dark');
+                  }
+                } catch (e) {}
+              })();
+            `,
+          }}
+        />
+      </head>
+      <body className={`${cinzel.variable} ${quicksand.variable} antialiased font-sans overflow-x-hidden`}>
         <ConvexClientProvider>
-          <LayoutWrapper>
-            {children}
-          </LayoutWrapper>
+          <ThemeProvider>
+            <LayoutWrapper>
+              {children}
+            </LayoutWrapper>
+          </ThemeProvider>
         </ConvexClientProvider>
       </body>
     </html>

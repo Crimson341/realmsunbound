@@ -133,6 +133,23 @@ export default function CampaignManager() {
 
     // --- HANDLERS ---
 
+    const handleCreateLocation = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsSubmitting(true);
+        try {
+            await createLocation({
+                campaignId,
+                name: locName,
+                type: locType,
+                environment: locEnvironment || undefined,
+                description: locDesc,
+            });
+            setLocName(""); setLocType("Town"); setLocEnvironment(""); setLocDesc("");
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
     const handleCreateNPC = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmitting(true);
@@ -159,7 +176,6 @@ export default function CampaignManager() {
                 campaignId,
                 title: questTitle,
                 description: questDesc,
-                status: "Active",
                 locationId: questLocationId ? (questLocationId as Id<"locations">) : undefined,
                 npcId: questNpcId ? (questNpcId as Id<"npcs">) : undefined,
                 rewardItemIds: questRewardItemIds.length > 0 ? questRewardItemIds : undefined,
@@ -335,6 +351,81 @@ export default function CampaignManager() {
                                         </div>
                                     ))}
                                 </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* REALM TAB - Locations */}
+                    {activeTab === 'realm' && (
+                        <div className="grid md:grid-cols-3 gap-8">
+                            <div className="md:col-span-2 space-y-4">
+                                <h3 className="text-xl font-bold text-[#43485C] mb-4 flex items-center gap-2">
+                                    <Map className="text-[#D4AF37]" /> Locations
+                                </h3>
+                                {locations && locations.length > 0 ? (
+                                    <div className="grid gap-4">
+                                        {locations.map((loc: any) => (
+                                            <div key={loc._id} className="bg-white border border-[#D4AF37]/10 rounded-2xl p-6 hover:border-[#D4AF37]/30 transition-all group">
+                                                <div className="flex justify-between items-start">
+                                                    <div>
+                                                        <h4 className="font-bold text-[#43485C] text-lg group-hover:text-[#D4AF37] transition-colors">{loc.name}</h4>
+                                                        <span className="text-xs uppercase tracking-wider text-[#D4AF37] font-bold bg-[#D4AF37]/10 px-2 py-0.5 rounded-full">{loc.type}</span>
+                                                    </div>
+                                                </div>
+                                                {loc.environment && (
+                                                    <p className="text-sm text-[#43485C]/60 mt-2 italic">Environment: {loc.environment}</p>
+                                                )}
+                                                <p className="text-sm text-[#43485C]/70 mt-2 font-sans leading-relaxed">{loc.description}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="bg-white border border-[#D4AF37]/10 rounded-2xl p-8 text-center text-[#43485C]/50 italic font-sans">
+                                        No locations yet. Create your first location to build your world!
+                                    </div>
+                                )}
+                            </div>
+                            <div className="bg-white border border-[#D4AF37]/20 rounded-2xl p-6 h-fit shadow-lg">
+                                <h3 className="text-lg font-bold text-[#43485C] mb-6 border-b border-[#D4AF37]/10 pb-4">Add Location</h3>
+                                <form onSubmit={handleCreateLocation} className="space-y-4">
+                                    <Input label="Name" placeholder="The Whispering Woods" value={locName} onChange={(e: any) => setLocName(e.target.value)} required />
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Type</label>
+                                        <select
+                                            className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm focus:outline-none focus:border-[#D4AF37] transition-colors appearance-none"
+                                            value={locType}
+                                            onChange={(e) => setLocType(e.target.value)}
+                                        >
+                                            <option value="Town">Town</option>
+                                            <option value="City">City</option>
+                                            <option value="Village">Village</option>
+                                            <option value="Dungeon">Dungeon</option>
+                                            <option value="Forest">Forest</option>
+                                            <option value="Mountain">Mountain</option>
+                                            <option value="Desert">Desert</option>
+                                            <option value="Swamp">Swamp</option>
+                                            <option value="Castle">Castle</option>
+                                            <option value="Ruins">Ruins</option>
+                                            <option value="Cave">Cave</option>
+                                            <option value="Other">Other</option>
+                                        </select>
+                                    </div>
+                                    <Input label="Environment" placeholder="Dense foliage, misty paths..." value={locEnvironment} onChange={(e: any) => setLocEnvironment(e.target.value)} />
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Description</label>
+                                        <MentionTextArea
+                                            label=""
+                                            value={locDesc}
+                                            onChange={(e: any) => setLocDesc(e.target.value)}
+                                            placeholder="A dark forest where the trees seem to whisper secrets..."
+                                            suggestions={mentionSuggestions}
+                                        />
+                                    </div>
+                                    <button type="submit" disabled={isSubmitting} className="w-full flex items-center justify-center gap-2 py-3 bg-[#D4AF37] text-white rounded-xl font-bold uppercase tracking-wider text-xs hover:bg-[#c9a432] transition-colors shadow-md hover:shadow-lg disabled:opacity-50">
+                                        {isSubmitting ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />}
+                                        Add Location
+                                    </button>
+                                </form>
                             </div>
                         </div>
                     )}

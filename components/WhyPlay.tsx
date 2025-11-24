@@ -3,6 +3,7 @@
 import React, { useRef } from 'react';
 import { motion, useScroll, useTransform, useSpring, useMotionValue } from 'framer-motion';
 import { Sparkles, Star, Compass, BrainCircuit, Hammer, Map, BookOpen } from 'lucide-react';
+import { useTheme } from './ThemeProvider';
 
 // --- 3D Card Component (Celestia Style) ---
 interface VisionCardProps {
@@ -11,9 +12,10 @@ interface VisionCardProps {
     img: string;
     icon: React.ElementType;
     index: number;
+    dark?: boolean;
 }
 
-const VisionCard = ({ title, description, img, icon: Icon, index }: VisionCardProps) => {
+const VisionCard = ({ title, description, img, icon: Icon, index, dark }: VisionCardProps) => {
     const ref = useRef<HTMLDivElement>(null);
     const mouseX = useMotionValue(0);
     const mouseY = useMotionValue(0);
@@ -42,7 +44,6 @@ const VisionCard = ({ title, description, img, icon: Icon, index }: VisionCardPr
 
     const isEven = index % 2 === 0;
 
-    // --- Text Animation Variants ---
     const textContainerVariants = {
         hidden: { opacity: 0 },
         visible: { 
@@ -58,7 +59,7 @@ const VisionCard = ({ title, description, img, icon: Icon, index }: VisionCardPr
         hidden: { 
             opacity: 0, 
             y: 30, 
-            filter: 'blur(10px)' // The "Mist" effect
+            filter: 'blur(10px)'
         },
         visible: { 
             opacity: 1, 
@@ -87,11 +88,11 @@ const VisionCard = ({ title, description, img, icon: Icon, index }: VisionCardPr
                     <div className="h-[1px] w-16 bg-gradient-to-r from-[#d4af37] to-transparent"></div>
                 </motion.div>
                 
-                <motion.h3 variants={textItemVariants} className="font-serif text-5xl md:text-6xl font-bold text-[#3d405b] mb-6 drop-shadow-sm">
+                <motion.h3 variants={textItemVariants} className={`font-serif text-5xl md:text-6xl font-bold mb-6 drop-shadow-sm ${dark ? 'text-[#e8e6e3]' : 'text-[#3d405b]'}`}>
                     {title}
                 </motion.h3>
                 
-                <motion.p variants={textItemVariants} className="font-serif text-lg text-[#6c757d] leading-relaxed tracking-wide">
+                <motion.p variants={textItemVariants} className={`font-serif text-lg leading-relaxed tracking-wide ${dark ? 'text-gray-400' : 'text-[#6c757d]'}`}>
                     {description}
                 </motion.p>
             </motion.div>
@@ -108,12 +109,12 @@ const VisionCard = ({ title, description, img, icon: Icon, index }: VisionCardPr
                 transition={{ duration: 0.8 }}
                 className="flex-1 relative group cursor-none w-full max-w-[500px]"
             >
-                {/* Card Frame - Marble & Gold */}
+                {/* Card Frame */}
                 <motion.div 
-                    className="relative w-full aspect-[3/4] rounded-[2rem] bg-white shadow-[0_20px_50px_-12px_rgba(0,0,0,0.1)] overflow-hidden"
+                    className={`relative w-full aspect-[3/4] rounded-[2rem] shadow-[0_20px_50px_-12px_rgba(0,0,0,0.1)] overflow-hidden ${dark ? 'bg-[#1a1d2e]' : 'bg-white'}`}
                 >
                     {/* Gold Border Container */}
-                    <div className="absolute inset-0 border-[6px] border-white z-20 rounded-[2rem] pointer-events-none ring-1 ring-[#d4af37]/20"></div>
+                    <div className={`absolute inset-0 border-[6px] z-20 rounded-[2rem] pointer-events-none ring-1 ring-[#d4af37]/20 ${dark ? 'border-[#1a1d2e]' : 'border-white'}`}></div>
                     <div className="absolute inset-[6px] border-[1px] border-[#d4af37]/40 z-20 rounded-[1.6rem] pointer-events-none"></div>
                     
                     {/* Image */}
@@ -121,7 +122,7 @@ const VisionCard = ({ title, description, img, icon: Icon, index }: VisionCardPr
                          style={{ backgroundImage: `url(${img})` }} />
                     
                     {/* Light/Holy Overlay */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-white/90 via-white/20 to-transparent z-10" />
+                    <div className={`absolute inset-0 z-10 ${dark ? 'bg-gradient-to-t from-[#0f1119]/90 via-[#0f1119]/20 to-transparent' : 'bg-gradient-to-t from-white/90 via-white/20 to-transparent'}`} />
                     
                     {/* Decorative Corner Accents (Filigree) */}
                     <div className="absolute top-4 left-4 w-8 h-8 border-t-2 border-l-2 border-[#d4af37] z-20 rounded-tl-lg opacity-60"></div>
@@ -132,13 +133,12 @@ const VisionCard = ({ title, description, img, icon: Icon, index }: VisionCardPr
                     {/* Icon Badge */}
                     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30">
                         <div className="relative w-24 h-24 flex items-center justify-center">
-                            {/* Rotating Gold Halo */}
                             <motion.div 
                                 animate={{ rotate: 360 }}
                                 transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
                                 className="absolute inset-0 border border-[#d4af37] border-dashed rounded-full"
                             />
-                            <div className="absolute inset-2 bg-white/80 backdrop-blur-md rounded-full shadow-lg border border-white flex items-center justify-center">
+                            <div className={`absolute inset-2 backdrop-blur-md rounded-full shadow-lg border flex items-center justify-center ${dark ? 'bg-[#1a1d2e]/80 border-[#2a2d3e]' : 'bg-white/80 border-white'}`}>
                                 <Icon size={36} className="text-[#d4af37]" />
                             </div>
                         </div>
@@ -163,17 +163,12 @@ const VisionCard = ({ title, description, img, icon: Icon, index }: VisionCardPr
 };
 
 // --- Background Atmosphere ---
-const SkyCanvas = () => {
+const SkyCanvas = ({ dark }: { dark?: boolean }) => {
     return (
-        <div className="absolute inset-0 z-0 pointer-events-none bg-[#f8f9fa]">
-             {/* Subtle Sky Gradient */}
-            <div className="absolute inset-0 bg-gradient-to-b from-[#e6f3ff] via-[#fff] to-[#fff]" />
-            
-            {/* "Cloud" textures */}
-            <div className="absolute top-0 left-0 w-full h-full opacity-30 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] mix-blend-multiply"></div>
-            
-            {/* Divine Light Rays (CSS Gradients) */}
-            <div className="absolute top-[-20%] left-1/2 -translate-x-1/2 w-[150%] h-[80%] bg-gradient-to-b from-white via-transparent to-transparent opacity-80 blur-3xl rounded-full"></div>
+        <div className={`absolute inset-0 z-0 pointer-events-none ${dark ? 'bg-[#0f1119]' : 'bg-[#f8f9fa]'}`}>
+            <div className={`absolute inset-0 ${dark ? 'bg-gradient-to-b from-[#1a1d2e] via-[#0f1119] to-[#0f1119]' : 'bg-gradient-to-b from-[#e6f3ff] via-[#fff] to-[#fff]'}`} />
+            <div className={`absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] mix-blend-multiply ${dark ? 'opacity-10' : 'opacity-30'}`}></div>
+            <div className={`absolute top-[-20%] left-1/2 -translate-x-1/2 w-[150%] h-[80%] blur-3xl rounded-full ${dark ? 'bg-gradient-to-b from-[#D4AF37]/10 via-transparent to-transparent opacity-50' : 'bg-gradient-to-b from-white via-transparent to-transparent opacity-80'}`}></div>
         </div>
     );
 };
@@ -181,6 +176,8 @@ const SkyCanvas = () => {
 const WhyPlay = () => {
     const containerRef = useRef(null);
     const { scrollYProgress } = useScroll({ target: containerRef });
+    const { theme, mounted } = useTheme();
+    const dark = mounted ? theme === 'dark' : false;
     
     const pathLength = useSpring(scrollYProgress, { stiffness: 50, damping: 20 });
 
@@ -212,8 +209,8 @@ const WhyPlay = () => {
     ];
 
     return (
-        <div ref={containerRef} className="relative min-h-screen text-[#3d405b] overflow-hidden selection:bg-[#d4af37] selection:text-white">
-            <SkyCanvas />
+        <div ref={containerRef} className={`relative min-h-screen overflow-hidden selection:bg-[#d4af37] selection:text-white ${dark ? 'text-[#e8e6e3]' : 'text-[#3d405b]'}`}>
+            <SkyCanvas dark={dark} />
 
             {/* Main Content */}
             <div className="relative z-10 container mx-auto px-6 py-32">
@@ -229,7 +226,7 @@ const WhyPlay = () => {
                         <h1 className="font-serif text-6xl md:text-8xl font-bold text-transparent bg-clip-text bg-gradient-to-b from-[#d4af37] to-[#b08d26] drop-shadow-sm tracking-tight">
                             NEW HORIZONS
                         </h1>
-                        <p className="mt-6 text-xl font-serif text-[#8d99ae] italic tracking-widest uppercase">
+                        <p className={`mt-6 text-xl font-serif italic tracking-widest uppercase ${dark ? 'text-gray-500' : 'text-[#8d99ae]'}`}>
                             Powered by Artificial Intelligence
                         </p>
                         
@@ -245,7 +242,6 @@ const WhyPlay = () => {
                 {/* Central Timeline Line (Gold) */}
                 <div className="absolute left-1/2 top-0 bottom-0 w-[2px] -translate-x-1/2 hidden md:block h-full pointer-events-none">
                      <svg className="h-full w-20 -ml-10 overflow-visible">
-                         {/* Base Line */}
                          <path
                             d="M 40 0 L 40 10000"
                             stroke="#d4af37"
@@ -254,7 +250,6 @@ const WhyPlay = () => {
                             strokeOpacity="0.2"
                             fill="none"
                          />
-                         {/* Active Progress Line */}
                          <motion.path
                             d="M 40 0 L 40 5000"
                             stroke="#d4af37"
@@ -273,7 +268,8 @@ const WhyPlay = () => {
                         <VisionCard 
                             key={index} 
                             {...feature} 
-                            index={index} 
+                            index={index}
+                            dark={dark}
                         />
                     ))}
                 </div>
@@ -283,13 +279,14 @@ const WhyPlay = () => {
                     <motion.button
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
-                        className="relative group px-12 py-4 bg-white text-[#d4af37] font-serif font-bold text-lg tracking-[0.1em] uppercase border border-[#d4af37]/30 shadow-[0_10px_30px_-10px_rgba(212,175,55,0.3)] overflow-hidden rounded-full"
+                        className={`relative group px-12 py-4 font-serif font-bold text-lg tracking-[0.1em] uppercase border border-[#d4af37]/30 shadow-[0_10px_30px_-10px_rgba(212,175,55,0.3)] overflow-hidden rounded-full ${
+                            dark ? 'bg-[#1a1d2e] text-[#d4af37]' : 'bg-white text-[#d4af37]'
+                        }`}
                     >
                          <span className="relative z-10 flex items-center gap-3">
                             <Compass className="w-5 h-5" />
                             Enter The Realm
                          </span>
-                         {/* Hover Fill */}
                          <div className="absolute inset-0 bg-[#d4af37] opacity-0 group-hover:opacity-10 transition-opacity duration-300"></div>
                          <span className="absolute inset-0 z-20 flex items-center justify-center gap-3 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                             <Compass className="w-5 h-5" />
@@ -335,4 +332,3 @@ const WhyPlay = () => {
 };
 
 export default WhyPlay;
-

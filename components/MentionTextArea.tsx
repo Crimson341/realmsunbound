@@ -1,7 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from 'react';
-import { Search } from 'lucide-react';
+import React, { useState, useRef } from 'react';
 
 type Suggestion = {
     id: string;
@@ -13,13 +12,13 @@ interface MentionTextAreaProps extends React.TextareaHTMLAttributes<HTMLTextArea
     label: string;
     suggestions: Suggestion[];
     value: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     onChange: (e: any) => void;
 }
 
 export const MentionTextArea = ({ label, suggestions, value, onChange, ...props }: MentionTextAreaProps) => {
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [cursorPos, setCursorPos] = useState(0);
-    const [query, setQuery] = useState("");
     const [filteredSuggestions, setFilteredSuggestions] = useState<Suggestion[]>([]);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -43,7 +42,6 @@ export const MentionTextArea = ({ label, suggestions, value, onChange, ...props 
             // If the capture has a newline, abort.
             if (!textAfterAt.includes('\n')) {
                 setShowSuggestions(true);
-                setQuery(textAfterAt);
                 const filtered = suggestions.filter(s =>
                     s.name.toLowerCase().includes(textAfterAt.toLowerCase())
                 );
@@ -85,7 +83,7 @@ export const MentionTextArea = ({ label, suggestions, value, onChange, ...props 
                 className="w-full bg-stone-950 border border-stone-800 rounded p-2 text-white text-sm focus:outline-none focus:border-indigo-500 transition-colors min-h-[80px]"
                 value={value}
                 onChange={handleInput}
-                onKeyDown={(e) => {
+                onKeyDown={() => {
                     // Optional: Handle Arrows/Enter for suggestions
                 }}
                 {...props}

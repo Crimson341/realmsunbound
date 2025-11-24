@@ -6,15 +6,38 @@ import { api } from '../../convex/_generated/api';
 import Link from 'next/link';
 import { 
     Search, Map, Users, ArrowRight, 
-    Sparkles, Scroll, Sword, Shield, 
+    Sparkles, 
     Crown, Ghost
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import RealmDetailsModal from '../../components/RealmDetailsModal';
 
+// --- TYPES ---
+interface Character {
+    _id: string;
+    name: string;
+    class: string;
+    level: number;
+}
+
+interface Campaign {
+    _id: string;
+    title: string;
+    description: string;
+    imageUrl?: string;
+    xpRate: number;
+    activeCharacters?: Character[];
+    template?: {
+        version: string;
+        updates?: string[];
+    };
+    templateVersion?: string;
+    rules?: string;
+}
+
 // --- COMPONENTS ---
 
-const RealmCard = ({ campaign, index, onClick }: { campaign: any, index: number, onClick: () => void }) => {
+const RealmCard = ({ campaign, index, onClick }: { campaign: Campaign, index: number, onClick: () => void }) => {
     return (
         <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -79,7 +102,7 @@ const RealmCard = ({ campaign, index, onClick }: { campaign: any, index: number,
     );
 };
 
-const FeaturedRealm = ({ campaign, onDetails }: { campaign: any, onDetails: () => void }) => {
+const FeaturedRealm = ({ campaign, onDetails }: { campaign: Campaign, onDetails: () => void }) => {
     if (!campaign) return null;
 
     return (
@@ -125,16 +148,15 @@ const FeaturedRealm = ({ campaign, onDetails }: { campaign: any, onDetails: () =
 export default function RealmsPage() {
     const campaigns = useQuery(api.forge.getAllCampaigns);
     const [search, setSearch] = useState("");
-    const [selectedRealm, setSelectedRealm] = useState<any>(null);
+    const [selectedRealm, setSelectedRealm] = useState<Campaign | null>(null);
 
-    const filteredCampaigns = campaigns?.filter((c: any) => 
-        c.title.toLowerCase().includes(search.toLowerCase()) || 
+        const filteredCampaigns = campaigns?.filter((c: Campaign) =>          c.title.toLowerCase().includes(search.toLowerCase()) || 
         c.description?.toLowerCase().includes(search.toLowerCase())
     ) || [];
 
     // Pick a random featured campaign if available
-    const featured = campaigns && campaigns.length > 0 ? campaigns[0] : null;
-    const list = filteredCampaigns.filter((c: any) => c._id !== featured?._id);
+    const featured = campaigns && campaigns.length > 0 ? campaigns[0] as Campaign : null;
+    const list = filteredCampaigns.filter((c: Campaign) => c._id !== featured?._id) as Campaign[];
 
     return (
         <div className="min-h-screen bg-[#f8f7f5] text-stone-800 font-sans">
@@ -216,7 +238,7 @@ export default function RealmsPage() {
 
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                             {list.length > 0 ? (
-                                list.map((campaign: any, idx: number) => (
+                                list.map((campaign: Campaign, idx: number) => (
                                     <RealmCard 
                                         key={campaign._id} 
                                         campaign={campaign} 

@@ -3,12 +3,10 @@
 import React from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
-import { useAuth } from '@workos-inc/authkit-nextjs/components';
-import { Loader2, Users, Sword, Shield, User, Scroll, ArrowLeft, Plus } from 'lucide-react';
+import { Loader2, Users, User, ArrowLeft, Plus } from 'lucide-react';
 import Link from 'next/link';
 
 export default function RosterPage() {
-    const { user } = useAuth();
     const characters = useQuery(api.forge.getMyCharacters);
 
     if (!characters) {
@@ -75,6 +73,7 @@ export default function RosterPage() {
     );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const CharacterCard = ({ character }: { character: any }) => {
     // Parse stats if string, otherwise default
     let stats = { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 };
@@ -82,7 +81,7 @@ const CharacterCard = ({ character }: { character: any }) => {
         if (typeof character.stats === 'string') {
             stats = JSON.parse(character.stats);
         }
-    } catch (e) {}
+    } catch {}
 
     return (
         <div className="bg-stone-900 border border-stone-800 rounded-xl overflow-hidden hover:border-indigo-500/50 transition-all group hover:shadow-xl hover:shadow-indigo-900/20">

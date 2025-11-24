@@ -47,6 +47,30 @@ export const getMyProfile = query({
     },
 });
 
+// --- RARITY ---
+export const updateRarityColors = mutation({
+    args: {
+        campaignId: v.id("campaigns"),
+        rarityColors: v.string(), // JSON string
+    },
+    handler: async (ctx, args) => {
+        const identity = await getUser(ctx);
+        const campaign = await ctx.db.get(args.campaignId);
+
+        if (!campaign) {
+            throw new Error("Campaign not found");
+        }
+
+        if (campaign.userId !== identity.tokenIdentifier) {
+            throw new Error("Unauthorized");
+        }
+
+        await ctx.db.patch(args.campaignId, {
+            rarityColors: args.rarityColors,
+        });
+    },
+});
+
 // --- CAMPAIGNS ---
 export const createCampaign = mutation({
     args: {
@@ -601,10 +625,11 @@ export const createQuest = mutation({
         locationId: v.optional(v.id("locations")),
         title: v.string(),
         description: v.string(),
-        rewards: v.string(),
+        rewards: v.optional(v.string()),
         rewardItemIds: v.optional(v.array(v.id("items"))),
         status: v.string(),
         source: v.optional(v.string()),
+        npcId: v.optional(v.id("npcs")),
     },
     handler: async (ctx, args) => {
         const identity = await getUser(ctx);

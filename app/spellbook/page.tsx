@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { useAuth } from '@workos-inc/authkit-nextjs/components';
-import { Loader2, BookOpen, Flame, Sparkles, Skull, Eye, Shield, Zap, Wind, Search, Filter, ArrowLeft } from 'lucide-react';
+import { Loader2, BookOpen, Flame, Sparkles, Skull, Eye, Shield, Zap, Search, Filter, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 
 export default function SpellbookPage() {
@@ -80,7 +80,7 @@ export default function SpellbookPage() {
                     <div className="text-center py-20 border-2 border-dashed border-stone-800 rounded-xl bg-stone-900/20">
                         <BookOpen className="w-16 h-16 mx-auto mb-4 text-stone-700" />
                         <h3 className="text-xl text-stone-400 font-bold mb-2">The Pages are Blank</h3>
-                        <p className="text-stone-500 mb-6 font-sans">You haven't inscribed any spells matching these criteria.</p>
+                        <p className="text-stone-500 mb-6 font-sans">You haven&apos;t inscribed any spells matching these criteria.</p>
                         <Link href="/forge/create/spell" className="inline-flex items-center gap-2 px-6 py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-bold font-sans transition-all">
                             <Sparkles size={18} /> Inscribe New Spell
                         </Link>
@@ -97,6 +97,7 @@ export default function SpellbookPage() {
     );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const SpellCard = ({ spell }: { spell: any }) => {
     const getIcon = (school: string) => {
         const s = school?.toLowerCase() || '';

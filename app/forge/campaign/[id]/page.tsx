@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
 "use client";
 
 import React, { useState } from 'react';
@@ -159,7 +160,7 @@ export default function CampaignManager() {
     const handleSaveRarityColors = async () => {
         setIsSubmitting(true);
         try {
-            await updateRarityColors({ campaignId, colors: rarityColors });
+            await updateRarityColors({ campaignId, rarityColors: rarityColors });
         } finally {
             setIsSubmitting(false);
         }

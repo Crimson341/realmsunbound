@@ -3,10 +3,10 @@
 import React, { useRef } from 'react';
 import { motion, useScroll, useTransform } from 'framer-motion';
 import {
-    Brain, Sparkles, Scroll, Zap, Users, Sword, Crown, Map,
-    Compass, Star, Hexagon, ChevronRight, Feather,
-    Eye, Anchor, Wind, Hourglass, Infinity as InfinityIcon,
-    Hammer, Sprout, BookOpen
+    Brain,
+    Users,
+    Compass, Star,
+    Hammer, Sprout, BookOpen, Feather
 } from 'lucide-react';
 
 // --- ASSETS ---
@@ -25,7 +25,7 @@ const GlowGradient = () => (
 
 // --- COMPONENTS ---
 
-const ThreadNode = ({ icon: Icon, title, subtitle, children, align = 'left', index }: { icon: any, title: string, subtitle: string, children: React.ReactNode, align?: 'left' | 'right', index: number }) => {
+const ThreadNode = ({ icon: Icon, title, subtitle, children, align = 'left', index }: { icon: React.ElementType, title: string, subtitle: string, children: React.ReactNode, align?: 'left' | 'right', index: number }) => {
     const isLeft = align === 'left';
 
     return (
@@ -193,7 +193,7 @@ export default function LorePage() {
                             subtitle="The Gathering"
                             title="Destiny is Shared"
                         >
-                            The hero's journey need not be solitary. Connect your timelines. Form parties. Forge alliances or declare wars. The state of the world is persistent and shared, a living tapestry woven by thousands of hands.
+                            The hero&apos;s journey need not be solitary. Connect your timelines. Form parties. Forge alliances or declare wars. The state of the world is persistent and shared, a living tapestry woven by thousands of hands.
                         </ThreadNode>
 
                     </div>

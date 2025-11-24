@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Send, Gem, Scroll, Crown, Check, ArrowRight } from 'lucide-react';
+import { Gem, Scroll, Crown, Check, ArrowRight } from 'lucide-react';
 
 const NewsletterSection = () => {
     const [email, setEmail] = useState('');
@@ -105,7 +105,7 @@ const NewsletterSection = () => {
                             <>
                                 <div className="text-center mb-8">
                                     <h3 className="font-serif text-2xl text-[#1a1d2e] mb-2">Secure Your Spot</h3>
-                                    <p className="text-gray-500 text-sm">Enter your email to receive the "Traveler's Starter Pack" code on launch day.</p>
+                                    <p className="text-gray-500 text-sm">Enter your email to receive the &quot;Traveler&apos;s Starter Pack&quot; code on launch day.</p>
                                 </div>
 
                                 <form onSubmit={handleSubmit} className="flex flex-col gap-4">

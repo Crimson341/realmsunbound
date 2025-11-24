@@ -1,11 +1,33 @@
 "use client";
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Play, Users, Scroll, Sparkles, Info, History, AlertCircle, Shield, Sword, Crown } from 'lucide-react';
+import { X, Play, Users, Scroll, Sparkles, History, Shield, Crown } from 'lucide-react';
 import Link from 'next/link';
 
+interface Character {
+    _id: string;
+    name: string;
+    class: string;
+    level: number;
+}
+
+interface Campaign {
+    _id: string;
+    title: string;
+    description: string;
+    imageUrl?: string;
+    xpRate: number;
+    activeCharacters?: Character[];
+    template?: {
+        version: string;
+        updates?: string[];
+    };
+    templateVersion?: string;
+    rules?: string;
+}
+
 interface RealmDetailsModalProps {
-    campaign: any;
+    campaign: Campaign | null;
     isOpen: boolean;
     onClose: () => void;
 }
@@ -280,7 +302,7 @@ export default function RealmDetailsModal({ campaign, isOpen, onClose }: RealmDe
                                             </h3>
                                             {campaign.activeCharacters && campaign.activeCharacters.length > 0 ? (
                                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                                    {campaign.activeCharacters.map((char: any) => (
+                                                    {campaign.activeCharacters.map((char: Character) => (
                                                         <motion.div 
                                                             whileHover={{ scale: 1.02, y: -2 }}
                                                             key={char._id} 
@@ -300,9 +322,6 @@ export default function RealmDetailsModal({ campaign, isOpen, onClose }: RealmDe
                                                                     </span>
                                                                 </div>
                                                             </div>
-                                                            {/* <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                <Sword size={14} className="text-stone-300" />
-                                                            </div> */}
                                                         </motion.div>
                                                     ))}
                                                 </div>

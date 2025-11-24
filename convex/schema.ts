@@ -1,9 +1,6 @@
 import { defineSchema, defineTable } from 'convex/server';
 import { v } from 'convex/values';
 
-// The schema is entirely optional.
-// You can delete this file (schema.ts) and the
-// app will continue to work.
 // The schema provides more precise TypeScript types.
 export default defineSchema({
   users: defineTable({
@@ -25,7 +22,33 @@ export default defineSchema({
     imageId: v.optional(v.id("_storage")),
     templateId: v.optional(v.id("templates")),
     templateVersion: v.optional(v.string()),
+    
+    // --- UNIVERSAL ENGINE FIELDS ---
+    worldBible: v.optional(v.string()), // The "God Text" for the AI (Lore, Physics, Tone)
+    aiPersona: v.optional(v.string()), // The personality of the Narrator
+    terminology: v.optional(v.string()), // JSON: {"mana": "Chakra", "spells": "Jutsu"}
+    statConfig: v.optional(v.string()), // JSON: Definition of stats [{"key": "nin", "label": "Ninjutsu"}]
+    theme: v.optional(v.string()), // Visual preset: 'fantasy', 'sci-fi', 'ninja'
   }).index("by_user", ["userId"]),
+
+  // New Table: Episodic & Semantic Memories
+  // Stores summarized chapters, key facts, and entity references for the AI
+  memories: defineTable({
+    userId: v.string(),
+    campaignId: v.id("campaigns"),
+    content: v.string(), // The actual memory text (summary, fact, or lore snippet)
+    type: v.string(), // 'summary', 'fact', 'conversation_chunk'
+    embedding: v.array(v.number()), // Vector embedding (768 dimensions for Gemini)
+    importance: v.optional(v.number()), // 1-10 scale for retrieval weighting
+    relatedId: v.optional(v.string()), // ID of a related Quest, NPC, or Location if specific
+    metadata: v.optional(v.string()), // JSON string for extra context
+  })
+  .index("by_campaign", ["campaignId"])
+  .vectorIndex("by_embedding", {
+    vectorField: "embedding",
+    dimensions: 768,
+    filterFields: ["campaignId"],
+  }),
 
   templates: defineTable({
     title: v.string(),
@@ -63,7 +86,15 @@ export default defineSchema({
     textColor: v.optional(v.string()), // Hex color for display
     spawnLocationIds: v.optional(v.array(v.id("locations"))),
     imageId: v.optional(v.id("_storage")),
-  }).index("by_user", ["userId"]),
+    source: v.optional(v.string()),
+    embedding: v.optional(v.array(v.number())), // Searchable
+  })
+  .index("by_user", ["userId"])
+  .vectorIndex("by_embedding", {
+    vectorField: "embedding",
+    dimensions: 768,
+    filterFields: ["campaignId"], // Note: items might not always have campaignId if global template? But here it's optional. Filter might fail if field is missing.
+  }),
 
   quests: defineTable({
     userId: v.string(),
@@ -76,7 +107,19 @@ export default defineSchema({
     status: v.string(),
     npcId: v.optional(v.id("npcs")),
     source: v.optional(v.string()), // 'creator' or 'ai'
-  }).index("by_user", ["userId"]),
+    nextQuestId: v.optional(v.id("quests")),
+    rewardReputation: v.optional(v.string()), // JSON: {"Mages Guild": 10}
+    rewardWorldUpdates: v.optional(v.string()), // JSON: [{"locationId": "...", "newDescription": "..."}]
+    rewardLoreIds: v.optional(v.array(v.id("lore"))),
+    rewardFollowerIds: v.optional(v.array(v.id("npcs"))),
+    embedding: v.optional(v.array(v.number())), // Searchable
+  })
+  .index("by_user", ["userId"])
+  .vectorIndex("by_embedding", {
+    vectorField: "embedding",
+    dimensions: 768,
+    filterFields: ["campaignId"],
+  }),
 
   locations: defineTable({
     userId: v.string(),
@@ -87,7 +130,14 @@ export default defineSchema({
     description: v.string(),
     neighbors: v.array(v.id("locations")), // Adjacency list
     imageId: v.optional(v.id("_storage")),
-  }).index("by_campaign", ["campaignId"]),
+    embedding: v.optional(v.array(v.number())), // Searchable
+  })
+  .index("by_campaign", ["campaignId"])
+  .vectorIndex("by_embedding", {
+    vectorField: "embedding",
+    dimensions: 768,
+    filterFields: ["campaignId"],
+  }),
 
   events: defineTable({
     userId: v.string(),
@@ -106,7 +156,14 @@ export default defineSchema({
     attitude: v.string(), // e.g. Friendly, Hostile
     locationId: v.optional(v.id("locations")),
     imageId: v.optional(v.id("_storage")),
-  }).index("by_campaign", ["campaignId"]),
+    embedding: v.optional(v.array(v.number())), // Searchable
+  })
+  .index("by_campaign", ["campaignId"])
+  .vectorIndex("by_embedding", {
+    vectorField: "embedding",
+    dimensions: 768,
+    filterFields: ["campaignId"],
+  }),
 
   monsters: defineTable({
     userId: v.string(),
@@ -117,7 +174,14 @@ export default defineSchema({
     damage: v.number(),
     dropItemIds: v.optional(v.array(v.id("items"))),
     locationId: v.optional(v.id("locations")),
-  }).index("by_campaign", ["campaignId"]),
+    embedding: v.optional(v.array(v.number())), // Searchable
+  })
+  .index("by_campaign", ["campaignId"])
+  .vectorIndex("by_embedding", {
+    vectorField: "embedding",
+    dimensions: 768,
+    filterFields: ["campaignId"],
+  }),
 
   effectsLibrary: defineTable({
     name: v.string(),
@@ -128,6 +192,22 @@ export default defineSchema({
     source: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
   }).index("by_category", ["category"]),
+
+  lore: defineTable({
+    userId: v.string(),
+    campaignId: v.id("campaigns"),
+    title: v.string(),
+    content: v.string(),
+    category: v.optional(v.string()), // e.g. History, Faction, Magic
+    imageId: v.optional(v.id("_storage")),
+    embedding: v.optional(v.array(v.number())), // Searchable
+  })
+  .index("by_campaign", ["campaignId"])
+  .vectorIndex("by_embedding", {
+    vectorField: "embedding",
+    dimensions: 768,
+    filterFields: ["campaignId"],
+  }),
 
   spells: defineTable({
     userId: v.string(),

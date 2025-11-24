@@ -38,6 +38,8 @@ const Navbar = () => {
 
         { name: 'Lore', href: '/lore' },
 
+        { name: 'Pricing', href: '/pricing' },
+
         { name: 'News', href: '/changelog' },
 
     ];

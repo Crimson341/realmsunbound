@@ -3,16 +3,17 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams } from 'next/navigation';
-import { useQuery } from 'convex/react';
+import { useQuery, useAction } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { Id } from '../../../convex/_generated/dataModel';
 import {
     Send, Heart, MapPin,
     Menu, X, ArrowLeft,
-    Loader2, Swords, Backpack, UserCircle
+    Loader2, Swords, Backpack, UserCircle, Compass, Search
 } from 'lucide-react';
 import Link from 'next/link';
 import CharacterSheetModal from '../../../components/CharacterSheetModal';
+import QuestDetailModal from '../../../components/QuestDetailModal';
 
 // --- TYPES ---
 
@@ -118,8 +119,17 @@ const streamNarrative = async (
                     if (dataEnd !== -1) {
                         dataString += internalTextBuffer.substring(0, dataEnd);
                         try {
-                            const json = JSON.parse(dataString);
+                            // Clean markdown code blocks if present
+                            const cleanJson = dataString.replace(/```json/g, '').replace(/```/g, '').trim();
+                            const json = JSON.parse(cleanJson);
                             onData(json);
+
+                            // Attach choices to the last message if available
+                            if (json.choices && Array.isArray(json.choices)) {
+                                onContent("", json.choices); // Pass choices via onContent or a new callback?
+                                // Actually, onData is better for state updates, but we need to attach to message history.
+                                // Let's update the onData callback in handleSendMessage/handleStartGame/handleAskQuest to handle this.
+                            }
                         } catch (e) {
                             console.error("JSON Parse Error in Stream", e);
                         }
@@ -266,12 +276,16 @@ export default function PlayPage() {
     const campaignId = params.campaignId as Id<"campaigns">;
 
     const data = useQuery(api.forge.getCampaignDetails, { campaignId });
+    const generateQuest = useAction(api.ai.generateQuest);
 
     const [messages, setMessages] = useState<Message[]>([]);
+    const [currentChoices, setCurrentChoices] = useState<string[]>([]);
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [isSidebarOpen, setSidebarOpen] = useState(false);
     const [isCharacterSheetOpen, setCharacterSheetOpen] = useState(false);
+    const [selectedQuest, setSelectedQuest] = useState<any>(null);
+    const [isGeneratingQuest, setIsGeneratingQuest] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
 
     // Game State
@@ -289,92 +303,234 @@ export default function PlayPage() {
         ];
     }, [data]);
 
-    useEffect(() => {
-        if (scrollRef.current) {
-            const { scrollHeight, clientHeight } = scrollRef.current;
-            scrollRef.current.scrollTo({ top: scrollHeight - clientHeight, behavior: 'smooth' });
+    const handleGenerateQuest = async () => {
+        if (!data || isGeneratingQuest) return;
+        
+        // Determine location
+        const location = data.locations?.find(l => l._id === currentLocationId) || data.locations?.[0];
+        if (!location) return;
+
+        setIsGeneratingQuest(true);
+        try {
+            await generateQuest({
+                campaignId: data.campaign._id,
+                locationId: location._id,
+                locationName: location.name,
+            });
+            // The query 'getCampaignDetails' will auto-update the quest list via Convex reactivity
+        } catch (error) {
+            console.error("Failed to generate quest:", error);
+        } finally {
+            setIsGeneratingQuest(false);
         }
-    }, [messages, isLoading]);
-
-    useEffect(() => {
-        if (data && messages.length === 0 && !isLoading) {
-            const startLocation = data.locations[0];
-            setCurrentLocationId(startLocation?._id || null);
-            handleStartGame(startLocation);
-        }
-    }, [data]);
-
-    const handleStartGame = async (startLocation: any) => {
-        if (!data) return;
-        setIsLoading(true);
-
-        const startPrompt = `
-            Start the adventure at ${startLocation?.name || "Unknown"}.
-            Describe the scene vividly (2 paragraphs). Address the player as "you".
-        `;
-
-        const payload = {
-            prompt: startPrompt,
-            history: [],
-            campaignId: data.campaign._id
-        };
-
-        await streamNarrative(
-            payload,
-            (delta) => {
-                setMessages(prev => {
-                    const last = prev[prev.length - 1];
-                    if (last?.role === 'model') {
-                        return [...prev.slice(0, -1), { ...last, content: last.content + delta }];
-                    }
-                    return [...prev, { role: 'model', content: delta }];
-                });
-            },
-            (gameData) => {
-                if (gameData.hp) setHp(gameData.hp);
-                if (gameData.locationId) setCurrentLocationId(gameData.locationId);
-            },
-            (err) => console.error(err)
-        );
-        setIsLoading(false);
     };
 
-    const handleSendMessage = async () => {
-        if (!input.trim() || isLoading || !data) return;
+        const handleAskQuest = async (questTitle: string) => {
+            if (!data || !selectedQuest) return;
 
-        const userMsg: Message = { role: 'user', content: input };
-        setMessages(prev => [...prev, userMsg]);
-        setInput("");
-        setIsLoading(true);
-
-        const payload = {
-            prompt: input,
-            history: messages.map(m => ({ role: m.role, content: m.content })),
-            campaignId: data.campaign._id
+            setCurrentChoices([]); // Clear previous choices
+    
+            const currentLocation = data.locations?.find(l => l._id === currentLocationId);
+            
+            const currentLocationName = currentLocation?.name || "Unknown Wilds";
+            const questLocationName = questLocation?.name || "Unknown Place";
+            
+            // Logic: If IDs match or strict equality check (assuming single area per quest for now)
+            const isLocal = currentLocation?._id === questLocation?._id;
+    
+            const prompt = `I ask around about the quest "${questTitle}".
+            
+            [SYSTEM NOTE: The player is currently at "${currentLocationName}". The quest is located in "${questLocationName}". 
+            ${isLocal 
+                ? "Since they are in the same area, the locals should know specific details, rumors, or where to find the quest giver."
+                : "Since they are far away from the quest location, the locals should barely know anything—maybe just a vague rumor or pointing the player to travel to " + questLocationName + "."}
+            ]`;
+    
+            // Close modal is handled by the modal itself calling onAsk then onClose, 
+            // or we can close it here: setSelectedQuest(null); (redundant but safe)
+            setSelectedQuest(null);
+    
+            // Reuse message sending logic
+            const userMsg: Message = { role: 'user', content: `I ask around about "${questTitle}"...` };
+            setMessages(prev => [...prev, userMsg]);
+            setIsLoading(true);
+    
+            const payload = {
+                prompt: prompt,
+                history: messages.map(m => ({ role: m.role, content: m.content })),
+                campaignId: data.campaign._id,
+                playerState: {
+                    name: data.character?.name || "Traveler",
+                    class: data.character?.class || "Unknown",
+                    level: data.character?.level || 1,
+                    hp: hp,
+                    maxHp: maxHp,
+                    inventory: data.inventory?.map((i: any) => i.name) || [],
+                    abilities: data.spells?.map((s: any) => s.name) || []
+                }
+            };
+    
+            await streamNarrative(
+                payload,
+                (delta) => {
+                    setMessages(prev => {
+                        const last = prev[prev.length - 1];
+                        if (last?.role === 'model') {
+                            return [...prev.slice(0, -1), { ...last, content: last.content + delta }];
+                        }
+                        return [...prev, { role: 'model', content: delta }];
+                    });
+                },
+                (gameData) => {
+                     if (gameData.hp) setHp(gameData.hp);
+                     if (gameData.choices) {
+                        const normalizedChoices = gameData.choices.map((c: any) => typeof c === 'string' ? c : c.text);
+                        setCurrentChoices(normalizedChoices);
+                        setMessages(prev => {
+                            const last = prev[prev.length - 1];
+                            if (last?.role === 'model') {
+                                return [...prev.slice(0, -1), { ...last, choices: normalizedChoices }];
+                            }
+                            return prev;
+                        });
+                     }
+                },
+                (err) => {
+                    console.error(err);
+                    setIsLoading(false);
+                }
+            );
+            setIsLoading(false);
         };
-
-        await streamNarrative(
-            payload,
-            (delta) => {
-                setMessages(prev => {
-                    const last = prev[prev.length - 1];
-                    if (last?.role === 'model') {
-                        return [...prev.slice(0, -1), { ...last, content: last.content + delta }];
-                    }
-                    return [...prev, { role: 'model', content: delta }];
-                });
-            },
-            (gameData) => {
-                 if (gameData.hp) setHp(gameData.hp);
-            },
-            (err) => {
-                console.error(err);
-                setIsLoading(false);
+    
+        useEffect(() => {
+            if (scrollRef.current) {
+                const { scrollHeight, clientHeight } = scrollRef.current;
+                scrollRef.current.scrollTo({ top: scrollHeight - clientHeight, behavior: 'smooth' });
             }
-        );
-        setIsLoading(false);
-    };
-
+        }, [messages, isLoading]);
+    
+        useEffect(() => {
+            if (data && messages.length === 0 && !isLoading) {
+                const startLocation = data.locations[0];
+                setCurrentLocationId(startLocation?._id || null);
+                handleStartGame(startLocation);
+            }
+        }, [data]);
+    
+        const handleStartGame = async (startLocation: any) => {
+            if (!data) return;
+            setIsLoading(true);
+    
+            const startPrompt = `
+                Start the adventure at ${startLocation?.name || "Unknown"}.
+                Describe the scene vividly (2 paragraphs). Address the player as "you".
+            `;
+    
+            const payload = {
+                prompt: startPrompt,
+                history: [],
+                campaignId: data.campaign._id,
+                playerState: {
+                    name: data.character?.name || "Traveler",
+                    class: data.character?.class || "Unknown",
+                    level: data.character?.level || 1,
+                    hp: hp,
+                    maxHp: maxHp,
+                    inventory: data.inventory?.map((i: any) => i.name) || [],
+                    abilities: data.spells?.map((s: any) => s.name) || []
+                }
+            };
+    
+            await streamNarrative(
+                payload,
+                (delta) => {
+                    setMessages(prev => {
+                        const last = prev[prev.length - 1];
+                        if (last?.role === 'model') {
+                            return [...prev.slice(0, -1), { ...last, content: last.content + delta }];
+                        }
+                        return [...prev, { role: 'model', content: delta }];
+                    });
+                },
+                (gameData) => {
+                    if (gameData.hp) setHp(gameData.hp);
+                    if (gameData.locationId) setCurrentLocationId(gameData.locationId);
+                    if (gameData.choices) {
+                        const normalizedChoices = gameData.choices.map((c: any) => typeof c === 'string' ? c : c.text);
+                        setCurrentChoices(normalizedChoices);
+                        setMessages(prev => {
+                            const last = prev[prev.length - 1];
+                            if (last?.role === 'model') {
+                                return [...prev.slice(0, -1), { ...last, choices: normalizedChoices }];
+                            }
+                            return prev;
+                        });
+                     }
+                },
+                (err) => console.error(err)
+            );
+            setIsLoading(false);
+        };
+    
+        const handleSendMessage = async (manualContent?: string) => {
+            const contentToSend = typeof manualContent === 'string' ? manualContent : input;
+            if (!contentToSend.trim() || isLoading || !data) return;
+            
+            setCurrentChoices([]); // Clear choices on action
+    
+            const userMsg: Message = { role: 'user', content: contentToSend };
+            setMessages(prev => [...prev, userMsg]);
+            setInput("");
+            setIsLoading(true);
+    
+            const payload = {
+                prompt: contentToSend,
+                history: messages.map(m => ({ role: m.role, content: m.content })),
+                campaignId: data.campaign._id,
+                playerState: {
+                    name: data.character?.name || "Traveler",
+                    class: data.character?.class || "Unknown",
+                    level: data.character?.level || 1,
+                    hp: hp,
+                    maxHp: maxHp,
+                    inventory: data.inventory?.map((i: any) => i.name) || [],
+                    abilities: data.spells?.map((s: any) => s.name) || []
+                }
+            };
+    
+            await streamNarrative(
+                payload,
+                (delta) => {
+                    setMessages(prev => {
+                        const last = prev[prev.length - 1];
+                        if (last?.role === 'model') {
+                            return [...prev.slice(0, -1), { ...last, content: last.content + delta }];
+                        }
+                        return [...prev, { role: 'model', content: delta }];
+                    });
+                },
+                (gameData) => {
+                     if (gameData.hp) setHp(gameData.hp);
+                     if (gameData.choices) {
+                        const normalizedChoices = gameData.choices.map((c: any) => typeof c === 'string' ? c : c.text);
+                        setCurrentChoices(normalizedChoices);
+                        setMessages(prev => {
+                            const last = prev[prev.length - 1];
+                            if (last?.role === 'model') {
+                                return [...prev.slice(0, -1), { ...last, choices: normalizedChoices }];
+                            }
+                            return prev;
+                        });
+                     }
+                },
+                (err) => {
+                    console.error(err);
+                    setIsLoading(false);
+                }
+            );
+            setIsLoading(false);
+        };
     if (!data) {
         return (
             <div className="h-screen flex items-center justify-center bg-genshin-dark text-genshin-gold">
@@ -387,19 +543,36 @@ export default function PlayPage() {
         <div className="flex h-screen bg-genshin-dark text-stone-200 font-sans overflow-hidden selection:bg-genshin-gold selection:text-genshin-dark">
             {/* LEFT SIDEBAR (Quests) */}
             <div className="hidden lg:flex w-72 bg-[#131520] border-r border-genshin-gold/10 flex-col z-20 shadow-[10px_0_30px_-10px_rgba(0,0,0,0.5)]">
-                <div className="p-6 border-b border-genshin-gold/10 bg-genshin-dark/50">
+                <div className="p-6 border-b border-genshin-gold/10 bg-genshin-dark/50 flex items-center justify-between">
                     <h2 className="font-serif font-bold text-genshin-gold tracking-wider flex items-center gap-2">
                         <Swords size={18} />
                         Quest Log
                     </h2>
+                    <button 
+                        onClick={handleGenerateQuest}
+                        disabled={isGeneratingQuest}
+                        className="p-1.5 rounded hover:bg-white/10 text-stone-400 hover:text-genshin-gold transition-all disabled:opacity-50 group relative"
+                    >
+                        {isGeneratingQuest ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+                        <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 px-2 py-1 bg-black text-xs rounded opacity-0 group-hover:opacity-100 whitespace-nowrap pointer-events-none z-50">
+                            Find Quest in Area
+                        </span>
+                    </button>
                 </div>
                 <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
                     {data.activeQuests && data.activeQuests.length > 0 ? (
                         <div className="space-y-4">
                             {data.activeQuests.map((quest: any, i: number) => (
-                                <div key={i} className="bg-genshin-dark/50 rounded-sm p-4 border border-genshin-gold/10 hover:border-genshin-gold/30 transition-colors group cursor-default shadow-sm">
-                                    <div className="font-bold text-genshin-gold mb-2 font-serif group-hover:text-white transition-colors text-sm">{quest.title}</div>
-                                    <div className="text-stone-500 text-xs leading-relaxed">{quest.objective}</div>
+                                <div 
+                                    key={i} 
+                                    onClick={() => setSelectedQuest(quest)}
+                                    className="bg-genshin-dark/50 rounded-sm p-4 border border-genshin-gold/10 hover:border-genshin-gold/30 transition-all group cursor-pointer shadow-sm hover:bg-white/5 active:scale-95"
+                                >
+                                    <div className="font-bold text-genshin-gold mb-2 font-serif group-hover:text-white transition-colors text-sm flex justify-between">
+                                        {quest.title}
+                                        {quest.source === 'ai' && <span className="text-[8px] uppercase tracking-widest border border-genshin-gold/20 px-1 rounded bg-genshin-gold/5">Dynamic</span>}
+                                    </div>
+                                    <div className="text-stone-500 text-xs leading-relaxed line-clamp-2 group-hover:text-stone-400">{quest.description}</div>
                                 </div>
                             ))}
                         </div>
@@ -407,7 +580,9 @@ export default function PlayPage() {
                         <div className="text-stone-600 italic text-sm border border-dashed border-stone-800 p-6 rounded-sm text-center">
                             No active quests.
                             <br/>
-                            <span className="text-xs text-stone-700 mt-2 block">Explore the world to find new adventures.</span>
+                            <span className="text-xs text-stone-700 mt-2 block">
+                                Explore or click the loupe to find rumors.
+                            </span>
                         </div>
                     )}
                 </div>
@@ -423,10 +598,20 @@ export default function PlayPage() {
                         </Link>
                         <div>
                             <h1 className="font-serif font-bold text-lg leading-none text-genshin-gold text-shadow-sm">{data.campaign.title}</h1>
-                            <div className="flex items-center gap-2 text-xs text-stone-500 mt-1 font-bold tracking-wide uppercase">
-                                <MapPin size={10} className="text-genshin-gold/50" />
-                                <span>{data.locations?.find(l => l._id === currentLocationId)?.name || "Unknown Location"}</span>
-                            </div>
+                            <SmartTooltip 
+                                content={
+                                    <p className="text-xs italic text-stone-400 max-w-[200px]">
+                                        {data.locations?.find(l => l._id === currentLocationId)?.description || "No description available."}
+                                    </p>
+                                }
+                            >
+                                <div className="flex items-center gap-2 text-xs text-stone-400 mt-1 font-bold tracking-wide uppercase hover:text-genshin-gold cursor-help transition-colors">
+                                    <MapPin size={12} className="text-genshin-gold" />
+                                    <span className="border-b border-dashed border-genshin-gold/30 pb-0.5">
+                                        {data.locations?.find(l => l._id === currentLocationId)?.name || "Unknown Location"}
+                                    </span>
+                                </div>
+                            </SmartTooltip>
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -472,6 +657,23 @@ export default function PlayPage() {
                 {/* Input */}
                 <div className="p-6 bg-gradient-to-t from-genshin-dark via-genshin-dark to-transparent">
                     <div className="max-w-3xl mx-auto relative">
+                        {/* Floating Action Buttons */}
+                        {currentChoices.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mb-4 justify-center">
+                                {currentChoices.map((choice, i) => (
+                                    <button
+                                        key={i}
+                                        onClick={() => handleSendMessage(choice)}
+                                        disabled={isLoading}
+                                        className="px-4 py-2 bg-genshin-dark/80 backdrop-blur-sm border border-genshin-gold/30 rounded-full text-xs font-bold text-genshin-gold hover:bg-genshin-gold hover:text-genshin-dark transition-all shadow-lg hover:shadow-genshin-gold/30 active:scale-95 animate-in fade-in slide-in-from-bottom-2 duration-300"
+                                        style={{ animationDelay: `${i * 50}ms` }}
+                                    >
+                                        {choice}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
                         <input
                             type="text"
                             value={input}
@@ -558,6 +760,15 @@ export default function PlayPage() {
                     character={data.character} 
                 />
             )}
+
+            {/* Quest Detail Modal */}
+            <QuestDetailModal
+                isOpen={!!selectedQuest}
+                onClose={() => setSelectedQuest(null)}
+                onAsk={handleAskQuest}
+                quest={selectedQuest}
+                locationName={data.locations?.find(l => l._id === selectedQuest?.locationId)?.name}
+            />
         </div>
     );
 }

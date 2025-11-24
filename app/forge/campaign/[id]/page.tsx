@@ -6,9 +6,19 @@ import { useParams } from 'next/navigation';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
-import { Map, Users, Scroll, Zap, Settings, Plus, Save, ArrowLeft, Loader2, Link as LinkIcon, Package, Skull, Palette, Sparkles } from 'lucide-react';
+import { Map, Users, Scroll, Zap, Settings, Plus, Save, ArrowLeft, Loader2, Link as LinkIcon, Package, Skull, Palette, Sparkles, ChevronDown, Sword, Shield, Crown } from 'lucide-react';
 import Link from 'next/link';
 import { MentionTextArea } from '@/components/MentionTextArea';
+import { motion } from 'framer-motion';
+
+const StarPattern = () => (
+    <div className="absolute inset-0 opacity-[0.03] pointer-events-none" 
+         style={{ 
+             backgroundImage: 'radial-gradient(#D4AF37 1px, transparent 1px)', 
+             backgroundSize: '32px 32px' 
+         }} 
+    />
+);
 
 export default function CampaignManager() {
     const params = useParams();
@@ -48,7 +58,10 @@ export default function CampaignManager() {
     const [questDesc, setQuestDesc] = useState("");
     const [questLocationId, setQuestLocationId] = useState("");
     const [questNpcId, setQuestNpcId] = useState("");
+    const [questNextId, setQuestNextId] = useState("");
     const [questRewardItemIds, setQuestRewardItemIds] = useState<Id<"items">[]>([]);
+    const [rewardReputation, setRewardReputation] = useState("");
+    const [rewardWorldUpdates, setRewardWorldUpdates] = useState("");
 
     // Item State
     const [itemName, setItemName] = useState("");
@@ -72,7 +85,7 @@ export default function CampaignManager() {
         "Epic": "#8b5cf6",
         "Legendary": "#f59e0b",
         "Artifact": "#ef4444",
-        "Custom": "#ffffff"
+        "Custom": "#43485C"
     });
 
     // Spell State
@@ -150,8 +163,12 @@ export default function CampaignManager() {
                 locationId: questLocationId ? (questLocationId as Id<"locations">) : undefined,
                 npcId: questNpcId ? (questNpcId as Id<"npcs">) : undefined,
                 rewardItemIds: questRewardItemIds.length > 0 ? questRewardItemIds : undefined,
+                nextQuestId: questNextId ? (questNextId as Id<"quests">) : undefined,
+                rewardReputation: rewardReputation,
+                rewardWorldUpdates: rewardWorldUpdates,
             });
-            setQuestTitle(""); setQuestDesc(""); setQuestLocationId(""); setQuestNpcId(""); setQuestRewardItemIds([]);
+            setQuestTitle(""); setQuestDesc(""); setQuestLocationId(""); setQuestNpcId(""); setQuestNextId(""); setQuestRewardItemIds([]);
+            setRewardReputation(""); setRewardWorldUpdates("");
         } finally {
             setIsSubmitting(false);
         }
@@ -242,33 +259,46 @@ export default function CampaignManager() {
     };
 
     if (!data) return (
-        <div className="h-screen bg-stone-950 flex flex-col items-center justify-center gap-4 text-stone-400">
-            <Loader2 className="animate-spin text-indigo-500" size={32} />
-            <span className="text-xs uppercase tracking-[0.3em] font-medium">Loading Forge...</span>
+        <div className="flex flex-col items-center justify-center h-screen bg-[#f8f9fa]">
+             <div className="relative w-20 h-20 flex items-center justify-center mb-4">
+                <motion.div className="absolute inset-0 border-4 border-[#e8e0c5] rounded-full" animate={{ scale: [1, 1.05, 1] }} transition={{ duration: 2, repeat: Infinity }} />
+                <motion.div className="absolute inset-2 border border-[#D4AF37] rounded-full border-dashed" animate={{ rotate: 360 }} transition={{ duration: 10, ease: "linear", repeat: Infinity }} />
+                <Settings size={24} className="text-[#D4AF37]" />
+            </div>
+            <span className="text-[#43485C] font-serif tracking-[0.2em] text-xs font-bold uppercase">Opening Grimoire...</span>
         </div>
     );
 
     return (
-        <div className="min-h-screen bg-[#0c0a09] text-stone-300 font-sans selection:bg-indigo-500/30 selection:text-indigo-200">
+        <div className="min-h-screen bg-[#f8f9fa] text-[#43485C] font-serif relative selection:bg-[#D4AF37] selection:text-white">
             
+             {/* Background */}
+            <div className="fixed inset-0 z-0 pointer-events-none bg-[#fcfcfc]">
+                 <div className="absolute inset-0 opacity-[0.03] bg-[url('https://www.transparenttextures.com/patterns/paper.png')]" />
+                 <StarPattern />
+            </div>
+
             {/* Header */}
-            <header className="border-b border-stone-800 bg-[#12100e]/90 backdrop-blur sticky top-0 z-40">
+            <header className="border-b border-[#D4AF37]/10 bg-white/80 backdrop-blur sticky top-0 z-40 shadow-sm">
                 <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                        <Link href="/forge" className="text-stone-500 hover:text-white transition-colors">
+                        <Link href="/forge" className="text-[#43485C]/50 hover:text-[#D4AF37] transition-colors">
                             <ArrowLeft size={20} />
                         </Link>
-                        <h1 className="text-xl font-serif font-bold text-stone-100">{campaign?.title}</h1>
+                        <div className="flex flex-col">
+                            <h1 className="text-xl font-bold text-[#43485C] tracking-tight leading-none">{campaign?.title}</h1>
+                            <span className="text-[10px] uppercase tracking-widest text-[#D4AF37] font-bold mt-0.5">Campaign Editor</span>
+                        </div>
                     </div>
-                    <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide">
+                    <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide py-2">
                         {['overview', 'realm', 'npcs', 'events', 'quests', 'items', 'spells', 'monsters', 'players'].map((tab) => (
                             <button
                                 key={tab}
                                 onClick={() => setActiveTab(tab as any)}
-                                className={`px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap ${
+                                className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap border ${
                                     activeTab === tab 
-                                    ? 'bg-stone-100 text-stone-900' 
-                                    : 'text-stone-500 hover:text-stone-300 hover:bg-stone-800'
+                                    ? 'bg-[#D4AF37] text-white border-[#D4AF37] shadow-md' 
+                                    : 'text-[#43485C]/60 border-transparent hover:bg-[#D4AF37]/10 hover:text-[#D4AF37]'
                                 }`}
                             >
                                 {tab}
@@ -278,58 +308,59 @@ export default function CampaignManager() {
                 </div>
             </header>
 
-            <div className="max-w-7xl mx-auto px-6 py-8">
+            <div className="max-w-7xl mx-auto px-6 py-8 relative z-10">
                 <div className="space-y-8">
 
                     {/* OVERVIEW TAB */}
                     {activeTab === 'overview' && (
                         <div className="space-y-6">
-                            <div className="bg-stone-900/50 border border-stone-800 rounded-xl p-8">
-                                <h2 className="text-2xl font-serif font-bold text-white mb-4">Campaign Overview</h2>
-                                <p className="text-stone-400 leading-relaxed max-w-3xl">{campaign?.description}</p>
-                                <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4">
-                                    <div className="p-4 bg-stone-800/50 rounded-lg border border-stone-700">
-                                        <div className="text-2xl font-bold text-white mb-1">{locations?.length || 0}</div>
-                                        <div className="text-xs text-stone-500 uppercase tracking-wider">Locations</div>
-                                    </div>
-                                    <div className="p-4 bg-stone-800/50 rounded-lg border border-stone-700">
-                                        <div className="text-2xl font-bold text-white mb-1">{npcs?.length || 0}</div>
-                                        <div className="text-xs text-stone-500 uppercase tracking-wider">NPCs</div>
-                                    </div>
-                                    <div className="p-4 bg-stone-800/50 rounded-lg border border-stone-700">
-                                        <div className="text-2xl font-bold text-white mb-1">{items?.length || 0}</div>
-                                        <div className="text-xs text-stone-500 uppercase tracking-wider">Items</div>
-                                    </div>
-                                    <div className="p-4 bg-stone-800/50 rounded-lg border border-stone-700">
-                                        <div className="text-2xl font-bold text-white mb-1">{monsters?.length || 0}</div>
-                                        <div className="text-xs text-stone-500 uppercase tracking-wider">Monsters</div>
-                                    </div>
+                            <div className="bg-white border border-[#D4AF37]/20 rounded-[2rem] p-8 shadow-lg relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-[#D4AF37]/5 rounded-bl-full -mr-8 -mt-8" />
+                                <h2 className="text-3xl font-bold text-[#43485C] mb-4 flex items-center gap-3">
+                                    <Crown size={28} className="text-[#D4AF37]" />
+                                    Campaign Overview
+                                </h2>
+                                <p className="text-[#43485C]/70 leading-relaxed max-w-3xl font-sans text-lg">{campaign?.description}</p>
+                                <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-6">
+                                    {[
+                                        { label: "Locations", value: locations?.length || 0, icon: Map },
+                                        { label: "NPCs", value: npcs?.length || 0, icon: Users },
+                                        { label: "Items", value: items?.length || 0, icon: Package },
+                                        { label: "Monsters", value: monsters?.length || 0, icon: Skull },
+                                    ].map((stat, i) => (
+                                        <div key={i} className="p-6 bg-[#f8f9fa] rounded-2xl border border-[#D4AF37]/10 flex flex-col items-center justify-center gap-2 group hover:border-[#D4AF37]/30 transition-colors">
+                                            <stat.icon className="text-[#D4AF37]/50 group-hover:text-[#D4AF37] transition-colors" size={24} />
+                                            <div className="text-3xl font-bold text-[#43485C]">{stat.value}</div>
+                                            <div className="text-[10px] text-[#43485C]/50 uppercase tracking-widest font-bold">{stat.label}</div>
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
                         </div>
                     )}
 
-                    {/* QUESTS TAB (Restored from snippet) */}
+                    {/* QUESTS TAB */}
                     {activeTab === 'quests' && (
                         <div className="grid md:grid-cols-3 gap-8">
-                            {/* Quest List - Placeholder as I don't have the list implementation in snippet but I can guess */}
                             <div className="md:col-span-2 space-y-4">
-                                <h3 className="text-xl font-bold text-white mb-4">Quests</h3>
-                                <div className="text-stone-500 text-sm italic">
-                                    Quest list visualization would go here.
+                                <h3 className="text-xl font-bold text-[#43485C] mb-4 flex items-center gap-2">
+                                    <Scroll className="text-[#D4AF37]" /> Active Quests
+                                </h3>
+                                <div className="bg-white border border-[#D4AF37]/10 rounded-2xl p-8 text-center text-[#43485C]/50 italic font-sans">
+                                    Visualization of existing quests coming soon to the archives.
                                 </div>
                             </div>
 
                             {/* Create Quest Form */}
-                            <div className="bg-stone-900/50 border border-stone-800 rounded-xl p-6 h-fit">
-                                <h3 className="text-lg font-bold text-white mb-4">Add Quest</h3>
+                            <div className="bg-white border border-[#D4AF37]/20 rounded-2xl p-6 h-fit shadow-lg">
+                                <h3 className="text-lg font-bold text-[#43485C] mb-6 border-b border-[#D4AF37]/10 pb-4">Add New Quest</h3>
                                 <form onSubmit={handleCreateQuest} className="space-y-4">
                                     <Input label="Title" placeholder="Retrieve the Ancient Relic" value={questTitle} onChange={(e: any) => setQuestTitle(e.target.value)} required />
 
                                     <div className="space-y-1">
-                                        <label className="text-xs font-bold text-stone-500 uppercase tracking-wider">Quest Giver (NPC)</label>
+                                        <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Quest Giver</label>
                                         <select
-                                            className="w-full bg-stone-950 border border-stone-800 rounded p-2 text-white text-sm focus:outline-none focus:border-indigo-500 transition-colors"
+                                            className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm focus:outline-none focus:border-[#D4AF37] transition-colors appearance-none"
                                             value={questNpcId}
                                             onChange={(e) => setQuestNpcId(e.target.value)}
                                         >
@@ -341,9 +372,9 @@ export default function CampaignManager() {
                                     </div>
 
                                     <div className="space-y-1">
-                                        <label className="text-xs font-bold text-stone-500 uppercase tracking-wider">Location (Hub)</label>
+                                        <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Location (Hub)</label>
                                         <select
-                                            className="w-full bg-stone-950 border border-stone-800 rounded p-2 text-white text-sm focus:outline-none focus:border-indigo-500 transition-colors"
+                                            className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm focus:outline-none focus:border-[#D4AF37] transition-colors appearance-none"
                                             value={questLocationId}
                                             onChange={(e) => setQuestLocationId(e.target.value)}
                                         >
@@ -355,10 +386,25 @@ export default function CampaignManager() {
                                     </div>
 
                                     <div className="space-y-1">
-                                        <label className="text-xs font-bold text-stone-500 uppercase tracking-wider">Reward Items (Hold Ctrl/Cmd)</label>
+                                        <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Unlocks Next Quest (Chain)</label>
+                                        <select
+                                            className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm focus:outline-none focus:border-[#D4AF37] transition-colors appearance-none"
+                                            value={questNextId}
+                                            onChange={(e) => setQuestNextId(e.target.value)}
+                                        >
+                                            <option value="">None</option>
+                                            {data?.quests?.map((q: any) => (
+                                                <option key={q._id} value={q._id}>{q.title}</option>
+                                            ))}
+                                        </select>
+                                        <p className="text-[10px] text-[#43485C]/50 ml-1">Completing this quest will set the selected quest to &quot;Active&quot;.</p>
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Reward Items</label>
                                         <select
                                             multiple
-                                            className="w-full bg-stone-950 border border-stone-800 rounded p-2 text-white text-sm focus:outline-none focus:border-indigo-500 transition-colors min-h-[80px]"
+                                            className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm focus:outline-none focus:border-[#D4AF37] transition-colors min-h-[80px]"
                                             value={questRewardItemIds}
                                             onChange={(e) => setQuestRewardItemIds(Array.from(e.target.selectedOptions, option => option.value as Id<"items">))}
                                         >
@@ -368,16 +414,30 @@ export default function CampaignManager() {
                                         </select>
                                     </div>
 
-                                    <MentionTextArea 
-                                        label="Description" 
-                                        placeholder="Find the relic hidden in the deep caves... (Type @ to mention)" 
-                                        value={questDesc} 
-                                        onChange={(e: any) => setQuestDesc(e.target.value)} 
-                                        suggestions={mentionSuggestions}
-                                        required 
-                                    />
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Reward Reputation (JSON)</label>
+                                        <Input placeholder='{"Mages Guild": 10}' value={rewardReputation} onChange={(e: any) => setRewardReputation(e.target.value)} />
+                                    </div>
 
-                                    <button type="submit" disabled={isSubmitting} className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded transition-colors text-sm flex items-center justify-center gap-2">
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">World Updates (JSON)</label>
+                                        <TextArea placeholder='[{"locationId": "...", "newDescription": "..."}]' value={rewardWorldUpdates} onChange={(e: any) => setRewardWorldUpdates(e.target.value)} />
+                                    </div>
+
+                                    <div className="space-y-1">
+                                         <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Description</label>
+                                        <MentionTextArea 
+                                            label="" 
+                                            placeholder="Find the relic hidden in the deep caves... (Type @ to mention)" 
+                                            value={questDesc} 
+                                            onChange={(e: any) => setQuestDesc(e.target.value)} 
+                                            suggestions={mentionSuggestions}
+                                            required 
+                                            className="bg-[#f8f9fa] border-[#D4AF37]/20 rounded-xl text-[#43485C] placeholder:text-[#43485C]/30"
+                                        />
+                                    </div>
+
+                                    <button type="submit" disabled={isSubmitting} className="w-full py-3 bg-[#D4AF37] hover:bg-[#eac88f] text-white font-bold rounded-full transition-all shadow-lg hover:shadow-[#D4AF37]/20 text-sm flex items-center justify-center gap-2 uppercase tracking-widest mt-4">
                                         {isSubmitting ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />}
                                         Add Quest
                                     </button>
@@ -390,25 +450,27 @@ export default function CampaignManager() {
                     {activeTab === 'npcs' && (
                         <div className="grid md:grid-cols-3 gap-8">
                             <div className="md:col-span-2 space-y-4">
-                                <h3 className="text-xl font-bold text-white mb-4">NPCs</h3>
+                                <h3 className="text-xl font-bold text-[#43485C] mb-4 flex items-center gap-2">
+                                    <Users className="text-[#D4AF37]" /> Inhabitants
+                                </h3>
                                 {npcs?.length === 0 ? (
-                                    <div className="text-center py-12 border-2 border-dashed border-stone-800 rounded-xl">
-                                        <Users className="mx-auto text-stone-600 mb-2" size={32} />
-                                        <p className="text-stone-500">No NPCs populated yet.</p>
+                                    <div className="text-center py-12 border-2 border-dashed border-[#D4AF37]/20 rounded-2xl bg-white/50">
+                                        <Users className="mx-auto text-[#D4AF37]/50 mb-2" size={32} />
+                                        <p className="text-[#43485C]/50 font-sans">No NPCs populated yet.</p>
                                     </div>
                                 ) : (
                                     <div className="grid sm:grid-cols-2 gap-4">
                                         {npcs?.map((npc) => (
-                                            <div key={npc._id} className="bg-stone-900 border border-stone-800 p-4 rounded-lg hover:border-indigo-500/50 transition-colors">
+                                            <div key={npc._id} className="bg-white border border-[#D4AF37]/10 p-5 rounded-2xl hover:shadow-md transition-all group">
                                                 <div className="flex justify-between items-start mb-2">
-                                                    <h4 className="font-bold text-white">{npc.name}</h4>
-                                                    <span className={`text-xs px-2 py-1 rounded ${npc.attitude === 'Hostile' ? 'bg-red-900/30 text-red-400' :
-                                                        npc.attitude === 'Friendly' ? 'bg-emerald-900/30 text-emerald-400' :
-                                                            'bg-stone-800 text-stone-400'
+                                                    <h4 className="font-bold text-[#43485C] group-hover:text-[#D4AF37] transition-colors">{npc.name}</h4>
+                                                    <span className={`text-[10px] px-2 py-1 rounded-full font-bold uppercase tracking-wider ${npc.attitude === 'Hostile' ? 'bg-red-100 text-red-500' :
+                                                        npc.attitude === 'Friendly' ? 'bg-emerald-100 text-emerald-600' :
+                                                            'bg-stone-100 text-stone-500'
                                                         }`}>{npc.attitude}</span>
                                                 </div>
-                                                <p className="text-xs text-indigo-400 font-bold mb-2">{npc.role}</p>
-                                                <p className="text-xs text-stone-500 line-clamp-2">{npc.description}</p>
+                                                <p className="text-xs text-[#D4AF37] font-bold mb-2 uppercase tracking-wide">{npc.role}</p>
+                                                <p className="text-xs text-[#43485C]/60 line-clamp-2 font-sans leading-relaxed">{npc.description}</p>
                                             </div>
                                         ))}
                                     </div>
@@ -416,15 +478,15 @@ export default function CampaignManager() {
                             </div>
 
                             {/* Create NPC Form */}
-                            <div className="bg-stone-900/50 border border-stone-800 rounded-xl p-6 h-fit">
-                                <h3 className="text-lg font-bold text-white mb-4">Add NPC</h3>
+                            <div className="bg-white border border-[#D4AF37]/20 rounded-2xl p-6 h-fit shadow-lg">
+                                <h3 className="text-lg font-bold text-[#43485C] mb-6 border-b border-[#D4AF37]/10 pb-4">Add NPC</h3>
                                 <form onSubmit={handleCreateNPC} className="space-y-4">
                                     <Input label="Name" placeholder="Garrick the Guard" value={npcName} onChange={(e: any) => setNpcName(e.target.value)} required />
                                     <Input label="Role" placeholder="Gatekeeper" value={npcRole} onChange={(e: any) => setNpcRole(e.target.value)} required />
                                     <div className="space-y-1">
-                                        <label className="text-xs font-bold text-stone-500 uppercase tracking-wider">Attitude</label>
+                                        <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Attitude</label>
                                         <select
-                                            className="w-full bg-stone-950 border border-stone-800 rounded p-2 text-white text-sm focus:outline-none focus:border-indigo-500 transition-colors"
+                                            className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm focus:outline-none focus:border-[#D4AF37] transition-colors appearance-none"
                                             value={npcAttitude}
                                             onChange={(e) => setNpcAttitude(e.target.value)}
                                         >
@@ -434,9 +496,9 @@ export default function CampaignManager() {
                                         </select>
                                     </div>
                                     <div className="space-y-1">
-                                        <label className="text-xs font-bold text-stone-500 uppercase tracking-wider">Current Location</label>
+                                        <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Current Location</label>
                                         <select
-                                            className="w-full bg-stone-950 border border-stone-800 rounded p-2 text-white text-sm focus:outline-none focus:border-indigo-500 transition-colors"
+                                            className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm focus:outline-none focus:border-[#D4AF37] transition-colors appearance-none"
                                             value={npcLocationId}
                                             onChange={(e) => setNpcLocationId(e.target.value)}
                                         >
@@ -447,7 +509,7 @@ export default function CampaignManager() {
                                         </select>
                                     </div>
                                     <TextArea label="Description" placeholder="Stern but bribable..." value={npcDesc} onChange={(e: any) => setNpcDesc(e.target.value)} required />
-                                    <button type="submit" disabled={isSubmitting} className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded transition-colors text-sm flex items-center justify-center gap-2">
+                                    <button type="submit" disabled={isSubmitting} className="w-full py-3 bg-[#D4AF37] hover:bg-[#eac88f] text-white font-bold rounded-full transition-all shadow-lg hover:shadow-[#D4AF37]/20 text-sm flex items-center justify-center gap-2 uppercase tracking-widest mt-4">
                                         {isSubmitting ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />}
                                         Add NPC
                                     </button>
@@ -460,58 +522,60 @@ export default function CampaignManager() {
                     {activeTab === 'items' && (
                         <div className="space-y-8">
                             {/* Rarity Color Picker */}
-                            <div className="bg-stone-900/50 rounded-lg border border-stone-800 p-6">
+                            <div className="bg-white rounded-[2rem] border border-[#D4AF37]/20 p-8 shadow-sm">
                                 <div className="flex items-center justify-between mb-6">
                                     <div className="flex items-center gap-2">
-                                        <Palette className="text-indigo-400" />
-                                        <h3 className="text-xl font-bold">Rarity Colors</h3>
+                                        <Palette className="text-[#D4AF37]" />
+                                        <h3 className="text-xl font-bold text-[#43485C]">Rarity Colors</h3>
                                     </div>
                                     <button
                                         onClick={handleSaveRarityColors}
                                         disabled={isSubmitting}
-                                        className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-bold transition-colors flex items-center gap-2 disabled:opacity-50"
+                                        className="bg-[#43485C] hover:bg-[#2d3142] text-white px-6 py-2 rounded-full font-bold transition-colors flex items-center gap-2 disabled:opacity-50 text-sm uppercase tracking-wider shadow-lg"
                                     >
                                         {isSubmitting ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
-                                        Save Colors
+                                        Save Config
                                     </button>
                                 </div>
-                                <div className="grid md:grid-cols-5 gap-4">
+                                <div className="grid md:grid-cols-5 gap-6">
                                     {Object.entries(rarityColors).map(([rarity, color]) => (
-                                        <div key={rarity} className="space-y-2">
-                                            <label className="text-sm font-medium text-stone-300">{rarity}</label>
-                                            <div className="flex gap-2 items-center">
-                                                <input
-                                                    type="color"
-                                                    value={color}
-                                                    onChange={(e) => setRarityColors({ ...rarityColors, [rarity]: e.target.value })}
-                                                    className="w-12 h-12 rounded border border-stone-700 cursor-pointer"
-                                                />
-                                                <div className="flex-1 bg-stone-800 rounded px-3 py-2">
-                                                    <span style={{ color }}>{color}</span>
+                                        <div key={rarity} className="space-y-2 group">
+                                            <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider">{rarity}</label>
+                                            <div className="flex gap-3 items-center">
+                                                <div className="relative w-10 h-10 rounded-full overflow-hidden shadow-md border border-black/10 group-hover:scale-110 transition-transform">
+                                                    <input
+                                                        type="color"
+                                                        value={color}
+                                                        onChange={(e) => setRarityColors({ ...rarityColors, [rarity]: e.target.value })}
+                                                        className="absolute -top-2 -left-2 w-16 h-16 cursor-pointer p-0 border-0"
+                                                    />
+                                                </div>
+                                                <div className="flex-1 bg-[#f8f9fa] rounded-lg px-3 py-2 border border-black/5">
+                                                    <span className="font-mono text-xs text-[#43485C]">{color}</span>
                                                 </div>
                                             </div>
-                                            <div className="text-sm" style={{ color }}>Preview Text</div>
                                         </div>
                                     ))}
                                 </div>
                             </div>
 
                             {/* Create Item Form */}
-                            <div className="bg-stone-900/50 rounded-lg border border-stone-800 p-6">
-                                <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
-                                    <Package className="text-emerald-400" />
+                            <div className="bg-white rounded-[2rem] border border-[#D4AF37]/20 p-8 shadow-lg relative overflow-hidden">
+                                 <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-transparent via-[#D4AF37]/30 to-transparent" />
+                                <h3 className="text-xl font-bold mb-8 flex items-center gap-2 text-[#43485C]">
+                                    <Package className="text-[#D4AF37]" />
                                     Forge Item
                                 </h3>
-                                <form onSubmit={handleCreateItem} className="space-y-4">
-                                    <div className="grid md:grid-cols-2 gap-4">
+                                <form onSubmit={handleCreateItem} className="space-y-6">
+                                    <div className="grid md:grid-cols-2 gap-6">
                                         <Input label="Name" value={itemName} onChange={(e: any) => setItemName(e.target.value)} required />
                                         <Input label="Type" value={itemType} onChange={(e: any) => setItemType(e.target.value)} required />
                                     </div>
-                                    <div className="grid md:grid-cols-2 gap-4">
+                                    <div className="grid md:grid-cols-2 gap-6">
                                         <div>
-                                            <label className="text-xs font-bold text-stone-500 uppercase tracking-wider">Rarity</label>
+                                            <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Rarity</label>
                                             <select
-                                                className="w-full bg-stone-950 border border-stone-800 rounded p-2 text-white text-sm focus:outline-none focus:border-indigo-500 transition-colors"
+                                                className="w-full mt-1 bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-4 text-[#43485C] text-sm focus:outline-none focus:border-[#D4AF37] transition-colors appearance-none"
                                                 value={itemRarity}
                                                 onChange={(e) => setItemRarity(e.target.value)}
                                             >
@@ -523,11 +587,11 @@ export default function CampaignManager() {
                                         </div>
                                         <Input label="Usage / Charges" value={itemUsage} onChange={(e: any) => setItemUsage(e.target.value)} placeholder="3 charges, bonus action" />
                                     </div>
-                                    <div className="grid md:grid-cols-2 gap-4">
+                                    <div className="grid md:grid-cols-2 gap-6">
                                         <div className="space-y-2">
-                                            <label className="text-xs font-bold text-stone-500 uppercase tracking-wider">Linked Spell (optional)</label>
+                                            <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Linked Spell (optional)</label>
                                             <select
-                                                className="w-full bg-stone-950 border border-stone-800 rounded p-2 text-white text-sm focus:outline-none focus:border-purple-500 transition-colors"
+                                                className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-4 text-[#43485C] text-sm focus:outline-none focus:border-[#D4AF37] transition-colors appearance-none"
                                                 value={itemSpellId}
                                                 onChange={(e) => setItemSpellId(e.target.value)}
                                             >
@@ -536,27 +600,24 @@ export default function CampaignManager() {
                                                     <option key={spell._id} value={spell._id}>{spell.name} (Lvl {spell.level})</option>
                                                 ))}
                                             </select>
-                                            {itemSpellId && (
-                                                <p className="text-[11px] text-stone-500">This item is associated with the selected spell.</p>
-                                            )}
                                         </div>
                                         <div />
                                     </div>
-                                    <div className="grid md:grid-cols-2 gap-4">
+                                    <div className="grid md:grid-cols-2 gap-6">
                                         <div className="space-y-2">
-                                            <label className="text-xs font-bold text-stone-500 uppercase tracking-wider">Effects</label>
-                                            <div className="flex gap-2 text-xs">
+                                            <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Effects</label>
+                                            <div className="flex gap-2 text-xs mb-2">
                                                 <button
                                                     type="button"
                                                     onClick={() => setEffectMode('library')}
-                                                    className={`px-3 py-1 rounded border ${effectMode === 'library' ? 'border-emerald-500 text-emerald-400' : 'border-stone-700 text-stone-400'}`}
+                                                    className={`px-4 py-1.5 rounded-full font-bold transition-colors ${effectMode === 'library' ? 'bg-[#D4AF37] text-white' : 'bg-[#f8f9fa] text-[#43485C]/60 hover:bg-[#D4AF37]/10'}`}
                                                 >
                                                     Use Library
                                                 </button>
                                                 <button
                                                     type="button"
                                                     onClick={() => setEffectMode('custom')}
-                                                    className={`px-3 py-1 rounded border ${effectMode === 'custom' ? 'border-indigo-500 text-indigo-300' : 'border-stone-700 text-stone-400'}`}
+                                                    className={`px-4 py-1.5 rounded-full font-bold transition-colors ${effectMode === 'custom' ? 'bg-[#D4AF37] text-white' : 'bg-[#f8f9fa] text-[#43485C]/60 hover:bg-[#D4AF37]/10'}`}
                                                 >
                                                     Custom
                                                 </button>
@@ -564,7 +625,7 @@ export default function CampaignManager() {
                                             {effectMode === 'library' ? (
                                                 <div className="space-y-2">
                                                     <select
-                                                        className="w-full bg-stone-950 border border-stone-800 rounded p-2 text-white text-sm focus:outline-none focus:border-emerald-500 transition-colors"
+                                                        className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-4 text-[#43485C] text-sm focus:outline-none focus:border-[#D4AF37] transition-colors appearance-none"
                                                         value={itemEffectId}
                                                         onChange={(e) => setItemEffectId(e.target.value)}
                                                     >
@@ -576,7 +637,7 @@ export default function CampaignManager() {
                                                         ))}
                                                     </select>
                                                     {itemEffectId && (
-                                                        <div className="text-xs text-stone-300 bg-stone-800/60 border border-stone-700 rounded p-2">
+                                                        <div className="text-xs text-[#43485C]/70 bg-[#D4AF37]/5 border border-[#D4AF37]/10 rounded-xl p-3 font-sans">
                                                             {effectsLibrary?.find(e => e._id === itemEffectId)?.mechanics || effectsLibrary?.find(e => e._id === itemEffectId)?.summary}
                                                         </div>
                                                     )}
@@ -588,97 +649,62 @@ export default function CampaignManager() {
                                         <TextArea label="Special Abilities" value={itemSpecial} onChange={(e: any) => setItemSpecial(e.target.value)} placeholder="Once per day unleash a cone of flame" />
                                     </div>
                                     <TextArea label="Physical Description" value={itemDescription} onChange={(e: any) => setItemDescription(e.target.value)} placeholder="Ebony greatsword with a jagged edge" required />
-                                    <div className="grid md:grid-cols-2 gap-4">
+                                    <div className="grid md:grid-cols-2 gap-6">
                                         <TextArea label="Requirements / Attunement" value={itemRequirements} onChange={(e: any) => setItemRequirements(e.target.value)} placeholder="Requires attunement by a fighter of level 5+" />
                                         <TextArea label="Lore & Notes" value={itemLore} onChange={(e: any) => setItemLore(e.target.value)} placeholder="Crafted for the marsh sentinels" />
                                     </div>
-                                    <button
-                                        type="submit"
-                                        disabled={isSubmitting}
-                                        className="w-full bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-3 rounded-lg font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-                                    >
-                                        {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : <Plus size={20} />}
-                                        Create Item
-                                    </button>
+                                    <div className="pt-4">
+                                        <button
+                                            type="submit"
+                                            disabled={isSubmitting}
+                                            className="w-full bg-[#43485C] hover:bg-[#2d3142] text-white px-6 py-4 rounded-full font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg hover:shadow-xl text-sm uppercase tracking-widest"
+                                        >
+                                            {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : <Plus size={20} />}
+                                            Create Item
+                                        </button>
+                                    </div>
                                 </form>
                             </div>
 
                             {/* Items List */}
-                            <div className="bg-stone-900/50 rounded-lg border border-stone-800 p-6">
-                                <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-                                    <Package className="text-yellow-400" />
+                            <div className="bg-white rounded-[2rem] border border-[#D4AF37]/20 p-8">
+                                <h3 className="text-xl font-bold mb-6 flex items-center gap-2 text-[#43485C]">
+                                    <Package className="text-[#D4AF37]" />
                                     Campaign Items ({items?.length || 0})
                                 </h3>
-                                            {items && items.length > 0 ? (
-                                                <div className="grid md:grid-cols-3 gap-4">
-                                                    {items.map((item) => (
-                                                        <div key={item._id} className="bg-stone-800/50 rounded-lg p-4 border border-stone-700 space-y-2">
-                                                            <div className="flex items-start justify-between gap-2">
+                                {items && items.length > 0 ? (
+                                    <div className="grid md:grid-cols-3 gap-6">
+                                        {items.map((item) => (
+                                            <div key={item._id} className="bg-[#f8f9fa] rounded-2xl p-5 border border-[#D4AF37]/10 hover:shadow-md transition-all group space-y-3">
+                                                <div className="flex items-start justify-between gap-2">
                                                     <div>
-                                                        <h4 className="font-bold" style={{ color: item.textColor || '#fff' }}>{item.name}</h4>
-                                                        <p className="text-xs uppercase tracking-wide text-stone-500">{item.type}</p>
+                                                        <h4 className="font-bold text-lg" style={{ color: rarityColors[item.rarity as keyof typeof rarityColors] || '#43485C' }}>{item.name}</h4>
+                                                        <p className="text-[10px] uppercase tracking-wide text-[#43485C]/50 font-bold">{item.type}</p>
                                                     </div>
-                                                    <span className="text-xs px-2 py-1 rounded border border-stone-700" style={{ color: rarityColors[item.rarity as keyof typeof rarityColors] || '#fff' }}>
+                                                    <span className="text-[10px] px-2 py-1 rounded-full border border-black/5 font-bold uppercase" style={{ color: rarityColors[item.rarity as keyof typeof rarityColors] || '#43485C', backgroundColor: (rarityColors[item.rarity as keyof typeof rarityColors] || '#43485C') + '10' }}>
                                                         {item.rarity}
                                                     </span>
                                                 </div>
                                                 {item.description && (
-                                                    <p className="text-sm text-stone-300">{item.description}</p>
+                                                    <p className="text-sm text-[#43485C]/70 font-sans leading-relaxed line-clamp-3">{item.description}</p>
                                                 )}
-                                                {item.effects && (
-                                                    <div className="text-xs text-indigo-200 bg-indigo-950/20 border border-indigo-900 rounded p-2">
-                                                        <span className="font-semibold text-indigo-300">Effects:</span> {item.effects}
-                                                    </div>
-                                                )}
-                                                {item.effectId && effectsLibrary && (
-                                                    (() => {
-                                                        const eff = effectsLibrary.find((e) => e._id === item.effectId);
-                                                        if (!eff) return null;
-                                                        return (
-                                                            <div className="text-xs bg-stone-900 border border-stone-700 rounded p-2 text-stone-200">
-                                                                <div className="flex items-center justify-between">
-                                                                    <span className="font-semibold text-emerald-300">{eff.name}</span>
-                                                                    <span className="text-[10px] uppercase tracking-wide text-stone-500">{eff.category}</span>
-                                                                </div>
-                                                                <div className="text-stone-300 mt-1">{eff.summary}</div>
-                                                                {eff.mechanics && <div className="text-stone-400 mt-1">{eff.mechanics}</div>}
-                                                                {eff.duration && <div className="text-stone-500 mt-1 text-[11px]">Duration: {eff.duration}</div>}
-                                                            </div>
-                                                        );
-                                                    })()
-                                                )}
-                                                {item.spawnLocationIds && item.spawnLocationIds.length > 0 && (
-                                                    <div className="text-[11px] text-stone-400 flex flex-wrap gap-1">
-                                                        <span className="font-semibold text-stone-300">Locations:</span>
-                                                        {item.spawnLocationIds.map((locId) => {
-                                                            const loc = locations?.find((l) => l._id === locId);
-                                                            return loc ? (
-                                                                <span key={locId} className="bg-stone-900 border border-stone-700 px-2 py-1 rounded">
-                                                                    {loc.name}
-                                                                </span>
-                                                            ) : null;
-                                                        })}
-                                                    </div>
-                                                )}
-                                                {item.specialAbilities && (
-                                                    <div className="text-xs text-amber-200 bg-amber-900/10 border border-amber-800 rounded p-2">
-                                                        <span className="font-semibold text-amber-300">Special:</span> {item.specialAbilities}
-                                                    </div>
-                                                )}
-                                                {(item.usage || item.requirements) && (
-                                                    <div className="grid grid-cols-1 gap-2 text-xs text-stone-400">
-                                                        {item.usage && <div><span className="font-semibold text-stone-300">Usage:</span> {item.usage}</div>}
-                                                        {item.requirements && <div><span className="font-semibold text-stone-300">Req:</span> {item.requirements}</div>}
-                                                    </div>
-                                                )}
-                                                {item.lore && (
-                                                    <p className="text-xs text-stone-500 border-t border-stone-700 pt-2">{item.lore}</p>
-                                                )}
+                                                <div className="pt-3 border-t border-[#D4AF37]/10 space-y-2">
+                                                    {item.effects && (
+                                                        <div className="text-xs text-[#43485C]/80 bg-white border border-[#D4AF37]/10 rounded-lg p-2">
+                                                            <span className="font-bold text-[#D4AF37]">Effects:</span> {item.effects}
+                                                        </div>
+                                                    )}
+                                                    {item.specialAbilities && (
+                                                        <div className="text-xs text-[#43485C]/80 bg-white border border-[#D4AF37]/10 rounded-lg p-2">
+                                                            <span className="font-bold text-[#D4AF37]">Special:</span> {item.specialAbilities}
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
                                 ) : (
-                                    <p className="text-stone-500 text-center py-8">No items yet. Create items in the main Forge.</p>
+                                    <p className="text-[#43485C]/40 text-center py-12 font-sans">No items yet. Create items in the main Forge.</p>
                                 )}
                             </div>
                         </div>
@@ -687,168 +713,50 @@ export default function CampaignManager() {
                     {/* SPELLS TAB */}
                     {activeTab === 'spells' && (
                         <div className="space-y-8">
-                            <div className="bg-stone-900/50 rounded-lg border border-stone-800 p-6">
-                                <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
-                                    <Sparkles className="text-purple-300" />
+                            <div className="bg-white rounded-[2rem] border border-[#D4AF37]/20 p-8 shadow-lg relative">
+                                <div className="absolute top-0 right-0 w-full h-2 bg-gradient-to-l from-transparent via-[#D4AF37]/30 to-transparent" />
+                                <h3 className="text-xl font-bold mb-8 flex items-center gap-2 text-[#43485C]">
+                                    <Sparkles className="text-[#D4AF37]" />
                                     Forge Spell
                                 </h3>
-                                <form onSubmit={handleCreateSpell} className="space-y-4">
-                                    <div className="grid md:grid-cols-2 gap-4">
+                                <form onSubmit={handleCreateSpell} className="space-y-6">
+                                    <div className="grid md:grid-cols-2 gap-6">
                                         <Input label="Name" value={spellName} onChange={(e: any) => setSpellName(e.target.value)} required />
                                         <Input label="School" value={spellSchool} onChange={(e: any) => setSpellSchool(e.target.value)} />
                                     </div>
-                                    <div className="grid md:grid-cols-3 gap-4">
+                                    <div className="grid md:grid-cols-3 gap-6">
                                         <Input label="Level" type="number" min={0} value={spellLevel} onChange={(e: any) => setSpellLevel(parseInt(e.target.value) || 0)} />
                                         <Input label="Casting Time" value={spellCastingTime} onChange={(e: any) => setSpellCastingTime(e.target.value)} />
                                         <Input label="Range" value={spellRange} onChange={(e: any) => setSpellRange(e.target.value)} />
                                     </div>
-                                    <div className="grid md:grid-cols-3 gap-4">
+                                    <div className="grid md:grid-cols-3 gap-6">
                                         <Input label="Components" value={spellComponents} onChange={(e: any) => setSpellComponents(e.target.value)} />
                                         <Input label="Duration" value={spellDuration} onChange={(e: any) => setSpellDuration(e.target.value)} />
                                         <Input label="Save / DC" value={spellSave} onChange={(e: any) => setSpellSave(e.target.value)} placeholder="DEX save" />
                                     </div>
-                                    <div className="grid md:grid-cols-3 gap-4">
-                                        <div className="flex items-center gap-2">
-                                            <input type="checkbox" checked={spellConcentration} onChange={(e) => setSpellConcentration(e.target.checked)} className="h-4 w-4" />
-                                            <label className="text-sm text-stone-300">Concentration</label>
+                                    <div className="grid md:grid-cols-3 gap-6">
+                                        <div className="flex items-center gap-2 bg-[#f8f9fa] p-4 rounded-xl border border-[#D4AF37]/10">
+                                            <input type="checkbox" checked={spellConcentration} onChange={(e) => setSpellConcentration(e.target.checked)} className="h-4 w-4 accent-[#D4AF37]" />
+                                            <label className="text-sm font-bold text-[#43485C] uppercase tracking-wider text-xs">Concentration</label>
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                            <input type="checkbox" checked={spellRitual} onChange={(e) => setSpellRitual(e.target.checked)} className="h-4 w-4" />
-                                            <label className="text-sm text-stone-300">Ritual</label>
+                                        <div className="flex items-center gap-2 bg-[#f8f9fa] p-4 rounded-xl border border-[#D4AF37]/10">
+                                            <input type="checkbox" checked={spellRitual} onChange={(e) => setSpellRitual(e.target.checked)} className="h-4 w-4 accent-[#D4AF37]" />
+                                            <label className="text-sm font-bold text-[#43485C] uppercase tracking-wider text-xs">Ritual</label>
                                         </div>
-                                        <Input label="Tags (comma-separated)" value={spellTags} onChange={(e: any) => setSpellTags(e.target.value)} placeholder="fire, aoe, damage" />
+                                        <Input label="Tags" value={spellTags} onChange={(e: any) => setSpellTags(e.target.value)} placeholder="fire, aoe, damage" />
                                     </div>
-                                    <div className="grid md:grid-cols-2 gap-4">
-                                        <Input label="Damage Dice" value={spellDamageDice} onChange={(e: any) => setSpellDamageDice(e.target.value)} placeholder="8d6" />
-                                        <Input label="Damage Type" value={spellDamageType} onChange={(e: any) => setSpellDamageType(e.target.value)} placeholder="Fire" />
+                                    
+                                    <div className="pt-4">
+                                        <button
+                                            type="submit"
+                                            disabled={isSubmitting}
+                                            className="w-full bg-[#43485C] hover:bg-[#2d3142] text-white px-6 py-4 rounded-full font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg hover:shadow-xl text-sm uppercase tracking-widest"
+                                        >
+                                            {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : <Plus size={20} />}
+                                            Create Spell
+                                        </button>
                                     </div>
-                                    <div className="grid md:grid-cols-2 gap-4">
-                                        <Input label="Area Shape" value={spellAreaShape} onChange={(e: any) => setSpellAreaShape(e.target.value)} placeholder="Sphere, Cone, Line" />
-                                        <Input label="Area Size" value={spellAreaSize} onChange={(e: any) => setSpellAreaSize(e.target.value)} placeholder="20 ft radius" />
-                                    </div>
-                                    <TextArea label="Higher Levels" value={spellHigherLevels} onChange={(e: any) => setSpellHigherLevels(e.target.value)} placeholder="Add 1d6 per slot above 3rd" />
-                                    <div className="grid md:grid-cols-2 gap-4">
-                                        <div className="space-y-2">
-                                            <label className="text-xs font-bold text-stone-500 uppercase tracking-wider">Effect (library)</label>
-                                            <select
-                                                className="w-full bg-stone-950 border border-stone-800 rounded p-2 text-white text-sm focus:outline-none focus:border-emerald-500 transition-colors"
-                                                value={spellEffectId}
-                                                onChange={(e) => setSpellEffectId(e.target.value)}
-                                            >
-                                                <option value="">None</option>
-                                                {effectsLibrary?.map((eff) => (
-                                                    <option key={eff._id} value={eff._id}>{eff.name} — {eff.summary}</option>
-                                                ))}
-                                            </select>
-                                            {spellEffectId && (
-                                                <div className="text-xs text-stone-300 bg-stone-800/60 border border-stone-700 rounded p-2">
-                                                    {effectsLibrary?.find(e => e._id === spellEffectId)?.mechanics || effectsLibrary?.find(e => e._id === spellEffectId)?.summary}
-                                                </div>
-                                            )}
-                                        </div>
-                                        <TextArea label="Damage / Heal" value={`${spellDamageDice || ''} ${spellDamageType || ''}`.trim()} onChange={(e: any) => {
-                                            const val = e.target.value;
-                                            // If user types like "8d6 fire", split first token as dice, rest as type
-                                            const [dice, ...rest] = val.split(' ');
-                                            setSpellDamageDice(dice);
-                                            setSpellDamageType(rest.join(' '));
-                                        }} placeholder="8d6 fire (DEX save half)" />
-                                    </div>
-                                    <TextArea label="Description" value={spellDescription} onChange={(e: any) => setSpellDescription(e.target.value)} placeholder="A burst of flame erupts..." />
-                                    <TextArea label="Notes" value={spellNotes} onChange={(e: any) => setSpellNotes(e.target.value)} placeholder="Concentration ends if casting other spells." />
-                                    <button
-                                        type="submit"
-                                        disabled={isSubmitting}
-                                        className="w-full bg-purple-600 hover:bg-purple-500 text-white px-6 py-3 rounded-lg font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-                                    >
-                                        {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : <Plus size={20} />}
-                                        Create Spell
-                                    </button>
                                 </form>
-                            </div>
-
-                            <div className="bg-stone-900/50 rounded-lg border border-stone-800 p-6">
-                                <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-                                    <Sparkles className="text-purple-300" />
-                                    Campaign Spells ({spells?.length || 0})
-                                </h3>
-                                <div className="flex flex-wrap gap-3 mb-4 text-sm">
-                                    <input
-                                        placeholder="Filter by tag"
-                                        className="bg-stone-950 border border-stone-800 rounded px-3 py-2 text-white"
-                                        value={spellFilterTag}
-                                        onChange={(e) => setSpellFilterTag(e.target.value)}
-                                    />
-                                    <label className="flex items-center gap-2 text-stone-400">
-                                        <input type="checkbox" checked={spellFilterConc} onChange={(e) => setSpellFilterConc(e.target.checked)} /> Concentration only
-                                    </label>
-                                    <label className="flex items-center gap-2 text-stone-400">
-                                        <input type="checkbox" checked={spellFilterRitual} onChange={(e) => setSpellFilterRitual(e.target.checked)} /> Ritual only
-                                    </label>
-                                </div>
-                                {spells && spells.length > 0 ? (
-                                    <div className="grid md:grid-cols-3 gap-4">
-                                        {spells
-                                            .filter((spell) => {
-                                                const matchTag = spellFilterTag ? (spell.tags || []).some(t => t.toLowerCase().includes(spellFilterTag.toLowerCase())) : true;
-                                                const matchConc = spellFilterConc ? spell.concentration === true : true;
-                                                const matchRitual = spellFilterRitual ? spell.ritual === true : true;
-                                                return matchTag && matchConc && matchRitual;
-                                            })
-                                            .map((spell) => (
-                                                <div key={spell._id} className="bg-stone-800/50 rounded-lg p-4 border border-stone-700 space-y-2">
-                                                    <div className="flex items-start justify-between">
-                                                        <div>
-                                                            <h4 className="font-bold text-white">{spell.name}</h4>
-                                                            <p className="text-xs text-stone-500 uppercase tracking-wide">Level {spell.level} • {spell.school}</p>
-                                                        </div>
-                                                    <span className="text-[11px] bg-stone-900 border border-stone-700 px-2 py-1 rounded">{spell.castingTime}</span>
-                                                    </div>
-                                                    <div className="text-xs text-stone-400 flex flex-col gap-1">
-                                                        <span>Range: {spell.range}</span>
-                                                        {spell.components && <span>Components: {spell.components}</span>}
-                                                        <span>Duration: {spell.duration}</span>
-                                                        {spell.save && <span>Save: {spell.save}</span>}
-                                                        {(spell.concentration || spell.ritual) && (
-                                                            <span className="text-emerald-300">{spell.concentration ? 'Concentration' : ''} {spell.ritual ? 'Ritual' : ''}</span>
-                                                        )}
-                                                        {spell.tags && spell.tags.length > 0 && (
-                                                            <span className="text-[11px] text-stone-500">Tags: {spell.tags.join(', ')}</span>
-                                                        )}
-                                                    </div>
-                                                    {spell.effectId && effectsLibrary && (() => {
-                                                        const eff = effectsLibrary.find(e => e._id === spell.effectId);
-                                                        if (!eff) return null;
-                                                        return (
-                                                        <div className="text-xs bg-stone-900 border border-stone-700 rounded p-2 text-stone-200">
-                                                            <div className="flex items-center justify-between">
-                                                                <span className="font-semibold text-emerald-300">{eff.name}</span>
-                                                                <span className="text-[10px] uppercase tracking-wide text-stone-500">{eff.category}</span>
-                                                            </div>
-                                                            <div className="text-stone-300 mt-1">{eff.summary}</div>
-                                                            {eff.mechanics && <div className="text-stone-400 mt-1">{eff.mechanics}</div>}
-                                                        </div>
-                                                    );
-                                                })()}
-                                                {(spell.damageDice || spell.damageType) && (
-                                                    <div className="text-xs text-red-200 bg-red-900/10 border border-red-800 rounded p-2">
-                                                        {(spell.damageDice || '')} {spell.damageType || ''}
-                                                    </div>
-                                                )}
-                                                {(spell.areaShape || spell.areaSize) && (
-                                                    <div className="text-xs text-stone-200 bg-stone-900 border border-stone-700 rounded p-2">
-                                                        Area: {spell.areaShape || ''} {spell.areaSize || ''}
-                                                    </div>
-                                                )}
-                                                {spell.higherLevels && <p className="text-xs text-indigo-200 bg-indigo-950/20 border border-indigo-900 rounded p-2">Higher Levels: {spell.higherLevels}</p>}
-                                                {spell.description && <p className="text-sm text-stone-300">{spell.description}</p>}
-                                                {spell.notes && <p className="text-xs text-stone-500 border-t border-stone-800 pt-2">{spell.notes}</p>}
-                                            </div>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <p className="text-stone-500 text-center py-8">No spells yet. Forge your first spell above.</p>
-                                )}
                             </div>
                         </div>
                     )}
@@ -856,30 +764,20 @@ export default function CampaignManager() {
                     {/* MONSTERS TAB */}
                     {activeTab === 'monsters' && (
                         <div className="space-y-8">
-                            {/* Create Monster Form */}
-                            <div className="bg-stone-900/50 rounded-lg border border-stone-800 p-6">
-                                <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
+                            <div className="bg-white rounded-[2rem] border border-[#D4AF37]/20 p-8 shadow-lg">
+                                <h3 className="text-xl font-bold mb-6 flex items-center gap-2 text-[#43485C]">
                                     <Skull className="text-red-400" />
                                     Create Monster
                                 </h3>
-                                <form onSubmit={handleCreateMonster} className="space-y-4">
-                                    <div className="grid md:grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-sm font-medium mb-2">Name</label>
-                                            <input
-                                                type="text"
-                                                value={monsterName}
-                                                onChange={(e) => setMonsterName(e.target.value)}
-                                                className="w-full bg-stone-800 border border-stone-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
-                                                required
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium mb-2">Location</label>
+                                <form onSubmit={handleCreateMonster} className="space-y-6">
+                                    <div className="grid md:grid-cols-2 gap-6">
+                                        <Input label="Name" value={monsterName} onChange={(e: any) => setMonsterName(e.target.value)} required />
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Location</label>
                                             <select
                                                 value={monsterLocationId}
                                                 onChange={(e) => setMonsterLocationId(e.target.value)}
-                                                className="w-full bg-stone-800 border border-stone-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+                                                className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-4 text-[#43485C] text-sm focus:outline-none focus:border-[#D4AF37] transition-colors appearance-none"
                                             >
                                                 <option value="">No Location</option>
                                                 {locations?.map((loc) => (
@@ -888,107 +786,44 @@ export default function CampaignManager() {
                                             </select>
                                         </div>
                                     </div>
-                                    <div>
-                                        <label className="block text-sm font-medium mb-2">Description</label>
-                                        <textarea
-                                            value={monsterDesc}
-                                            onChange={(e) => setMonsterDesc(e.target.value)}
-                                            className="w-full bg-stone-800 border border-stone-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
-                                            rows={3}
-                                            required
-                                        />
+                                    <TextArea label="Description" value={monsterDesc} onChange={(e: any) => setMonsterDesc(e.target.value)} required />
+                                    <div className="grid md:grid-cols-2 gap-6">
+                                        <Input label="Health" type="number" value={monsterHealth} onChange={(e: any) => setMonsterHealth(parseInt(e.target.value))} min={1} required />
+                                        <Input label="Damage" type="number" value={monsterDamage} onChange={(e: any) => setMonsterDamage(parseInt(e.target.value))} min={1} required />
                                     </div>
-                                    <div className="grid md:grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-sm font-medium mb-2">Health</label>
-                                            <input
-                                                type="number"
-                                                value={monsterHealth}
-                                                onChange={(e) => setMonsterHealth(parseInt(e.target.value))}
-                                                className="w-full bg-stone-800 border border-stone-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
-                                                min="1"
-                                                required
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium mb-2">Damage</label>
-                                            <input
-                                                type="number"
-                                                value={monsterDamage}
-                                                onChange={(e) => setMonsterDamage(parseInt(e.target.value))}
-                                                className="w-full bg-stone-800 border border-stone-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
-                                                min="1"
-                                                required
-                                            />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium mb-2">Item Drops (hold Ctrl/Cmd to select multiple)</label>
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Item Drops</label>
                                         <select
                                             multiple
                                             value={monsterDropIds}
                                             onChange={(e) => setMonsterDropIds(Array.from(e.target.selectedOptions, option => option.value as Id<"items">))}
-                                            className="w-full bg-stone-800 border border-stone-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500 min-h-[100px]"
+                                            className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-4 text-[#43485C] text-sm focus:outline-none focus:border-[#D4AF37] transition-colors min-h-[100px]"
                                         >
                                             {items?.map((item) => (
                                                 <option key={item._id} value={item._id}>{item.name} ({item.rarity})</option>
                                             ))}
                                         </select>
                                     </div>
-                                    <button
-                                        type="submit"
-                                        disabled={isSubmitting}
-                                        className="w-full bg-red-600 hover:bg-red-500 text-white px-6 py-3 rounded-lg font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-                                    >
-                                        {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : <Plus size={20} />}
-                                        Create Monster
-                                    </button>
-                                </form>
-                            </div>
-
-                            {/* Monsters List */}
-                            <div className="bg-stone-900/50 rounded-lg border border-stone-800 p-6">
-                                <h3 className="text-xl font-bold mb-4">Monsters ({monsters?.length || 0})</h3>
-                                {monsters && monsters.length > 0 ? (
-                                    <div className="grid md:grid-cols-2 gap-4">
-                                        {monsters.map((monster) => (
-                                            <div key={monster._id} className="bg-stone-800/50 rounded-lg p-4 border border-stone-700">
-                                                <h4 className="font-bold text-red-400 mb-2">{monster.name}</h4>
-                                                <p className="text-sm text-stone-400 mb-3">{monster.description}</p>
-                                                <div className="grid grid-cols-2 gap-2 text-sm">
-                                                    <div className="text-green-400">❤️ {monster.health} HP</div>
-                                                    <div className="text-orange-400">⚔️ {monster.damage} DMG</div>
-                                                </div>
-                                                {monster.dropItemIds && monster.dropItemIds.length > 0 && (
-                                                    <div className="mt-3 pt-3 border-t border-stone-700">
-                                                        <p className="text-xs text-stone-500 mb-1">Drops:</p>
-                                                        <div className="flex flex-wrap gap-1">
-                                                            {monster.dropItemIds.map((itemId) => {
-                                                                const item = items?.find(i => i._id === itemId);
-                                                                return item ? (
-                                                                    <span key={itemId} className="text-xs bg-stone-700 px-2 py-1 rounded" style={{ color: item.textColor || '#fff' }}>
-                                                                        {item.name}
-                                                                    </span>
-                                                                ) : null;
-                                                            })}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ))}
+                                    <div className="pt-4">
+                                        <button
+                                            type="submit"
+                                            disabled={isSubmitting}
+                                            className="w-full bg-[#43485C] hover:bg-[#2d3142] text-white px-6 py-4 rounded-full font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg text-sm uppercase tracking-widest"
+                                        >
+                                            {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : <Plus size={20} />}
+                                            Create Monster
+                                        </button>
                                     </div>
-                                ) : (
-                                    <p className="text-stone-500 text-center py-8">No monsters yet. Create your first monster above!</p>
-                                )}
+                                </form>
                             </div>
                         </div>
                     )}
 
                     {activeTab === 'players' && (
-                        <div className="text-center py-20">
-                            <Users className="mx-auto text-stone-700 mb-4" size={48} />
-                            <h3 className="text-xl font-bold text-stone-300">Player Management</h3>
-                            <p className="text-stone-500 max-w-md mx-auto mt-2">
+                        <div className="text-center py-20 bg-white rounded-[2rem] border border-[#D4AF37]/20 shadow-sm">
+                            <Users className="mx-auto text-[#D4AF37]/50 mb-4" size={48} />
+                            <h3 className="text-xl font-bold text-[#43485C]">Player Management</h3>
+                            <p className="text-[#43485C]/50 max-w-md mx-auto mt-2 font-sans">
                                 Invite players to your campaign and manage their starter inventories here.
                             </p>
                         </div>
@@ -1002,20 +837,20 @@ export default function CampaignManager() {
 
 // --- UI Components ---
 const Input = ({ label, ...props }: any) => (
-    <div className="space-y-1">
-        <label className="text-xs font-bold text-stone-500 uppercase tracking-wider">{label}</label>
+    <div className="space-y-2">
+        <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">{label}</label>
         <input
-            className="w-full bg-stone-950 border border-stone-800 rounded p-2 text-white text-sm focus:outline-none focus:border-indigo-500 transition-colors"
+            className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-4 text-[#43485C] text-sm focus:outline-none focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/10 transition-all placeholder:text-[#43485C]/30 shadow-inner font-sans"
             {...props}
         />
     </div>
 );
 
 const TextArea = ({ label, ...props }: any) => (
-    <div className="space-y-1">
-        <label className="text-xs font-bold text-stone-500 uppercase tracking-wider">{label}</label>
+    <div className="space-y-2">
+        <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">{label}</label>
         <textarea
-            className="w-full bg-stone-950 border border-stone-800 rounded p-2 text-white text-sm focus:outline-none focus:border-indigo-500 transition-colors min-h-[80px]"
+            className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-4 text-[#43485C] text-sm focus:outline-none focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/10 transition-all min-h-[100px] placeholder:text-[#43485C]/30 shadow-inner font-sans"
             {...props}
         />
     </div>

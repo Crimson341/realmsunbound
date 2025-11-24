@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import { api } from "./_generated/api";
 
 // Helper to generate context
-const generateWorldContext = (campaignData: any) => {
+const generateWorldContext = (campaignData: any, playerState?: any) => {
     const { 
       campaign, 
       locations, 
@@ -14,9 +14,27 @@ const generateWorldContext = (campaignData: any) => {
       rules 
     } = campaignData;
 
-    return `
-    You are the Dungeon Master for a TTRPG campaign.
+    // Parse terminology if it exists
+    let terms = { spells: "Spells", mana: "Mana", class: "Class", level: "Level" };
+    if (campaign.terminology) {
+        try {
+            const customTerms = JSON.parse(campaign.terminology);
+            terms = { ...terms, ...customTerms };
+        } catch (e) { /* ignore */ }
+    }
+
+    let context = `
+    ROLE: ${campaign.aiPersona || "You are the Dungeon Master for a TTRPG campaign."}
+    
+    WORLD BIBLE (THE ABSOLUTE TRUTH):
+    ${campaign.worldBible || campaign.description}
+    
     STRICTLY ADHERE to the following world details. 
+    
+    SYSTEM TERMINOLOGY:
+    - Magic/Abilities are called: "${terms.spells}"
+    - Energy/Resource is called: "${terms.mana}"
+    - Character Archetype is called: "${terms.class}"
     
     CRITICAL RULES:
     1. Do NOT invent new NPCs, Locations, or Quests unless absolutely necessary for the immediate narrative flow. 
@@ -42,12 +60,34 @@ const generateWorldContext = (campaignData: any) => {
     
     ITEMS (Key):
     ${items.slice(0, 20).map((i: any) => `- ${i.name} (${i.type}): ${i.description}`).join('\n')}
-    
+    `;
+
+    if (playerState) {
+      context += `
+    PLAYER CHARACTER:
+    - Name: ${playerState.name}
+    - ${terms.class}: ${playerState.class} (${terms.level} ${playerState.level})
+    - Status: ${playerState.hp} / ${playerState.maxHp} HP
+    - Inventory: ${playerState.inventory ? playerState.inventory.join(", ") : "Empty"}
+    - ${terms.spells}: ${playerState.abilities ? playerState.abilities.join(", ") : "None"}
+      `;
+
+      if (playerState.reputation) {
+        context += `
+    FACTION REPUTATION:
+    ${JSON.stringify(playerState.reputation, null, 2)}
+    `;
+      }
+    }
+
+    context += `
     IMPORTANT:
-    - Maintain the tone of the campaign.
+    - Maintain the tone defined in the WORLD BIBLE.
     - If the user asks to go to a location not in this list, guide them to a known nearby location or describe the travel based on the environment.
     - Use the defined Rules for any mechanics.
     `;
+
+    return context;
 };
 
 export const generateNarrative = action({
@@ -73,12 +113,20 @@ export const generateNarrative = action({
         return "Error: Campaign not found.";
     }
 
+    // Dynamic Context Retrieval (RAG)
+    const dynamicContext: string = await ctx.runAction((api as any).lib.context.retrieveRelevantContext, {
+      campaignId: args.campaignId,
+      query: args.prompt,
+    });
+
+    // Note: generateNarrative doesn't support playerState yet as it's a simpler action. 
+    // Use chatStream for full features.
     const worldContext = generateWorldContext(campaignData);
 
     const contents = [
       {
         role: "user",
-        parts: [{ text: worldContext }] // Preload context as the first message
+        parts: [{ text: worldContext + "\n\nRELEVANT MEMORIES & LORE:\n" + dynamicContext }] // Preload context as the first message
       },
       ...args.history.map((msg) => ({
         role: msg.role === "user" ? "user" : "model",
@@ -140,7 +188,7 @@ export const generateNarrative = action({
 });
 
 export const chatStream = httpAction(async (ctx, request) => {
-  const { prompt, history, campaignId } = await request.json();
+  const { prompt, history, campaignId, playerState } = await request.json();
 
   const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
@@ -161,12 +209,29 @@ export const chatStream = httpAction(async (ctx, request) => {
       return new Response("Campaign not found", { status: 404, headers: corsHeaders });
   }
 
-  const worldContext = generateWorldContext(campaignData);
+  // Dynamic Context Retrieval (RAG)
+  // We need to run this as a query/action before streaming
+  // Since this is an httpAction, we can call runAction
+  const dynamicContext: string = await ctx.runAction((api as any).lib.context.retrieveRelevantContext, {
+      campaignId: campaignId,
+      query: prompt,
+  });
+
+  // Automatic Memory Summarization
+  // Trigger every 10 turns (20 messages) to keep memories fresh
+  if (history.length > 0 && history.length % 20 === 0) {
+      await ctx.scheduler.runAfter(0, (api as any).lib.memory.summarizeSession, {
+          campaignId: campaignId,
+          chatHistory: history.slice(-20), // Summarize the last 20 messages
+      });
+  }
+
+  const worldContext = generateWorldContext(campaignData, playerState);
 
   const contents = [
     {
       role: "user",
-      parts: [{ text: worldContext }]
+      parts: [{ text: worldContext + "\n\nRELEVANT MEMORIES & LORE:\n" + dynamicContext }]
     },
     ...history.map((msg: any) => ({
       role: msg.role === "user" ? "user" : "model",
@@ -205,4 +270,93 @@ export const chatStream = httpAction(async (ctx, request) => {
           ...corsHeaders
       }
   });
+});
+
+export const generateQuest = action({
+  args: {
+    campaignId: v.id("campaigns"),
+    locationId: v.id("locations"),
+    locationName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error("GEMINI_API_KEY is not set");
+    }
+
+    const campaignData = await ctx.runQuery((api as any).forge.getCampaignDetails, {
+      campaignId: args.campaignId 
+    });
+
+    if (!campaignData) {
+        throw new Error("Campaign not found");
+    }
+
+    const worldContext = generateWorldContext(campaignData);
+
+    const prompt = `
+    Generate a unique, engaging quest located in or near "${args.locationName}".
+    
+    The quest should fit the campaign tone.
+    Include:
+    1. Title
+    2. Description (hook + objective)
+    3. A reward item (Name, Type, Rarity, Effects, Description).
+    
+    Respond in this STRICT JSON format:
+    {
+      "title": "Quest Title",
+      "description": "Full quest description...",
+      "rewards": [
+        {
+          "name": "Item Name",
+          "type": "Weapon/Armor/Potion/etc",
+          "rarity": "Common/Rare/Legendary",
+          "effects": "Short effect description",
+          "description": "Flavor text"
+        }
+      ]
+    }
+    Do not wrap in markdown.
+    `;
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            { role: "user", parts: [{ text: worldContext }] },
+            { role: "user", parts: [{ text: prompt }] }
+          ],
+          generationConfig: { responseMimeType: "application/json" }
+        }),
+      }
+    );
+
+    if (!response.ok) throw new Error("AI Request Failed");
+
+    const data = await response.json();
+    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+    
+    try {
+        const cleanText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+        const questData = JSON.parse(cleanText);
+
+        await ctx.runMutation((api as any).forge.saveGeneratedQuest, {
+            campaignId: args.campaignId,
+            locationId: args.locationId,
+            title: questData.title,
+            description: questData.description,
+            rewards: questData.rewards || [],
+            source: "ai"
+        });
+
+        return questData;
+    } catch (e) {
+        console.error("Failed to parse/save quest", e);
+        throw new Error("Failed to generate quest");
+    }
+  }
 });

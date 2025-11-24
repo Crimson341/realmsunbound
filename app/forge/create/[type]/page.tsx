@@ -5,8 +5,18 @@ import React, { useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useMutation } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
-import { Upload, Save, ArrowLeft, Loader2 } from 'lucide-react';
+import { Upload, Save, ArrowLeft, Loader2, PenTool } from 'lucide-react';
 import Link from 'next/link';
+import { motion } from 'framer-motion';
+
+const StarPattern = () => (
+    <div className="absolute inset-0 opacity-[0.03] pointer-events-none" 
+         style={{ 
+             backgroundImage: 'radial-gradient(#D4AF37 1px, transparent 1px)', 
+             backgroundSize: '32px 32px' 
+         }} 
+    />
+);
 
 export default function CreateEntityPage() {
     const params = useParams();
@@ -89,38 +99,52 @@ export default function CreateEntityPage() {
     };
 
     return (
-        <div className="min-h-screen bg-genshin-dark text-stone-200 font-sans pt-24 px-6 selection:bg-genshin-gold selection:text-genshin-dark">
-            <div className="max-w-3xl mx-auto">
-                <Link href="/forge" className="inline-flex items-center gap-2 text-stone-500 hover:text-genshin-gold mb-8 transition-colors group">
+        <div className="min-h-screen bg-[#f8f9fa] text-[#43485C] font-serif selection:bg-[#D4AF37] selection:text-white relative overflow-hidden p-6 md:p-12">
+            {/* Background */}
+            <div className="fixed inset-0 z-0 pointer-events-none bg-[#fcfcfc]">
+                 <div className="absolute inset-0 opacity-[0.03] bg-[url('https://www.transparenttextures.com/patterns/paper.png')]" />
+                 <StarPattern />
+                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(255,255,255,0)_50%,rgba(212,175,55,0.03)_100%)]" />
+            </div>
+
+            <div className="max-w-3xl mx-auto relative z-10">
+                <Link href="/forge" className="inline-flex items-center gap-2 text-[#43485C]/50 hover:text-[#D4AF37] mb-8 transition-colors group font-bold text-sm uppercase tracking-widest">
                     <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" /> Back to Forge
                 </Link>
 
-                <div className="bg-[#1f2235]/50 backdrop-blur-sm border border-genshin-gold/20 rounded-sm p-8 shadow-xl relative overflow-hidden">
-                    {/* Decorative corner */}
-                    <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-genshin-gold/10 to-transparent pointer-events-none"></div>
-
-                    <h1 className="text-3xl font-serif font-bold text-genshin-gold mb-8 capitalize flex items-center gap-3">
-                        <span className="w-2 h-8 bg-genshin-gold rounded-sm inline-block"></span>
-                        Forge New {type}
-                    </h1>
+                <motion.div 
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-white/80 backdrop-blur-md border border-[#D4AF37]/20 rounded-[2rem] p-8 md:p-12 shadow-xl relative overflow-hidden"
+                >
+                    {/* Decorative Header */}
+                    <div className="flex items-center gap-4 mb-8">
+                        <div className="w-12 h-12 bg-[#D4AF37]/10 rounded-full flex items-center justify-center text-[#D4AF37]">
+                            <PenTool size={24} />
+                        </div>
+                        <div>
+                            <h1 className="text-3xl font-bold text-[#43485C] capitalize">Forge New {type}</h1>
+                            <p className="text-[#43485C]/50 text-sm font-sans">Add a new entry to your archives.</p>
+                        </div>
+                    </div>
 
                     <form onSubmit={handleSubmit} className="space-y-8">
 
                         {/* Image Upload */}
                         <div
                             onClick={() => imageInputRef.current?.click()}
-                            className={`h-48 border-2 border-dashed rounded-sm flex flex-col items-center justify-center cursor-pointer transition-all duration-300 group ${image ? 'border-genshin-gold bg-genshin-gold/10' : 'border-genshin-gold/30 hover:border-genshin-gold hover:bg-genshin-gold/5'}`}
+                            className={`h-48 border-2 border-dashed rounded-xl flex flex-col items-center justify-center cursor-pointer transition-all duration-300 group bg-[#f8f9fa] ${image ? 'border-[#D4AF37] bg-[#D4AF37]/5' : 'border-[#D4AF37]/30 hover:border-[#D4AF37] hover:bg-[#D4AF37]/5'}`}
                         >
                             {image ? (
                                 <div className="text-center">
-                                    <p className="text-genshin-gold font-medium font-serif text-lg">{image.name}</p>
-                                    <p className="text-xs text-stone-400 mt-2 uppercase tracking-wider">Click to change</p>
+                                    <p className="text-[#D4AF37] font-bold text-lg">{image.name}</p>
+                                    <p className="text-xs text-[#43485C]/60 mt-2 uppercase tracking-wider font-bold">Click to change</p>
                                 </div>
                             ) : (
                                 <>
-                                    <Upload className="text-stone-500 group-hover:text-genshin-gold mb-3 transition-colors" size={32} />
-                                    <p className="text-stone-400 group-hover:text-genshin-gold font-medium font-serif transition-colors">Upload Image</p>
-                                    <p className="text-xs text-stone-600 mt-1 group-hover:text-stone-500">JPG, PNG, WEBP</p>
+                                    <Upload className="text-[#43485C]/40 group-hover:text-[#D4AF37] mb-3 transition-colors" size={32} />
+                                    <p className="text-[#43485C]/60 group-hover:text-[#D4AF37] font-bold transition-colors">Upload Cover Image</p>
+                                    <p className="text-xs text-[#43485C]/40 mt-1 font-sans">JPG, PNG, WEBP</p>
                                 </>
                             )}
                             <input
@@ -176,11 +200,11 @@ export default function CreateEntityPage() {
                         </div>
 
                         {/* Submit */}
-                        <div className="pt-8 border-t border-genshin-gold/10">
+                        <div className="pt-8 border-t border-[#D4AF37]/10">
                             <button
                                 type="submit"
                                 disabled={isSubmitting}
-                                className="w-full py-4 bg-genshin-gold hover:bg-[#eac88f] text-genshin-dark font-bold rounded-sm transition-all shadow-lg hover:shadow-genshin-gold/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-serif tracking-widest uppercase"
+                                className="w-full py-4 bg-[#D4AF37] hover:bg-[#eac88f] text-white font-bold rounded-full transition-all shadow-lg hover:shadow-[#D4AF37]/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-serif tracking-widest uppercase hover:-translate-y-0.5"
                             >
                                 {isSubmitting ? <Loader2 className="animate-spin" /> : <Save size={20} />}
                                 {isSubmitting ? 'Forging...' : 'Create Entity'}
@@ -188,7 +212,7 @@ export default function CreateEntityPage() {
                         </div>
 
                     </form>
-                </div>
+                </motion.div>
             </div>
         </div>
     );
@@ -197,9 +221,9 @@ export default function CreateEntityPage() {
 // --- UI Components ---
 const Input = ({ label, fontMono, ...props }: any) => (
     <div className="space-y-2">
-        <label className="text-xs font-bold text-genshin-gold/70 uppercase tracking-wider font-serif ml-1">{label}</label>
+        <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider font-serif ml-1">{label}</label>
         <input
-            className={`w-full bg-[#181b2c] border border-genshin-gold/30 rounded-sm p-3 text-stone-200 focus:outline-none focus:border-genshin-gold focus:ring-1 focus:ring-genshin-gold/20 transition-colors placeholder:text-stone-600 ${fontMono ? 'font-mono' : ''}`}
+            className={`w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-4 text-[#43485C] focus:outline-none focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/10 transition-all placeholder:text-[#43485C]/30 shadow-inner ${fontMono ? 'font-mono' : 'font-sans'}`}
             {...props}
         />
     </div>
@@ -207,9 +231,9 @@ const Input = ({ label, fontMono, ...props }: any) => (
 
 const TextArea = ({ label, fontMono, ...props }: any) => (
     <div className="space-y-2">
-        <label className="text-xs font-bold text-genshin-gold/70 uppercase tracking-wider font-serif ml-1">{label}</label>
+        <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider font-serif ml-1">{label}</label>
         <textarea
-            className={`w-full bg-[#181b2c] border border-genshin-gold/30 rounded-sm p-3 text-stone-200 focus:outline-none focus:border-genshin-gold focus:ring-1 focus:ring-genshin-gold/20 transition-colors min-h-[120px] placeholder:text-stone-600 ${fontMono ? 'font-mono text-sm' : ''}`}
+            className={`w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-4 text-[#43485C] focus:outline-none focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/10 transition-all min-h-[120px] placeholder:text-[#43485C]/30 shadow-inner ${fontMono ? 'font-mono text-sm' : 'font-sans'}`}
             {...props}
         />
     </div>

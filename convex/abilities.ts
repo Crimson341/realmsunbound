@@ -24,9 +24,14 @@ export const getPlayerAbilities = query({
             )
             .first();
 
-        const cooldowns = gameState?.activeCooldowns
-            ? JSON.parse(gameState.activeCooldowns)
-            : {};
+        let cooldowns: Record<string, number> = {};
+        if (gameState?.activeCooldowns) {
+            try {
+                cooldowns = JSON.parse(gameState.activeCooldowns);
+            } catch {
+                console.error("Failed to parse activeCooldowns in getPlayerAbilities");
+            }
+        }
 
         // Return spells with cooldown status
         return spells.map((spell) => ({
@@ -59,6 +64,24 @@ export const getPlayerEnergy = query({
             energy: gameState.energy ?? 100,
             maxEnergy: gameState.maxEnergy ?? 100,
         };
+    },
+});
+
+// Get player's current gold (source of truth for gold tracking)
+export const getPlayerGold = query({
+    args: {
+        campaignId: v.id("campaigns"),
+        playerId: v.string(),
+    },
+    handler: async (ctx, args) => {
+        const gameState = await ctx.db
+            .query("playerGameState")
+            .withIndex("by_campaign_and_player", (q) =>
+                q.eq("campaignId", args.campaignId).eq("playerId", args.playerId)
+            )
+            .first();
+
+        return gameState?.gold ?? 0;
     },
 });
 
@@ -98,10 +121,15 @@ export const useAbility = mutation({
         }
 
         // Check cooldown
-        const cooldowns = gameState.activeCooldowns
-            ? JSON.parse(gameState.activeCooldowns)
-            : {};
-        if (cooldowns[args.spellId] > 0) {
+        let cooldowns: Record<string, number> = {};
+        if (gameState.activeCooldowns) {
+            try {
+                cooldowns = JSON.parse(gameState.activeCooldowns);
+            } catch {
+                console.error("Failed to parse activeCooldowns in useAbility");
+            }
+        }
+        if (typeof cooldowns[args.spellId] === 'number' && cooldowns[args.spellId] > 0) {
             return {
                 success: false,
                 message: `Ability on cooldown (${cooldowns[args.spellId]} turns)`,
@@ -214,11 +242,19 @@ export const tickCooldowns = mutation({
 
         if (!gameState?.activeCooldowns) return;
 
-        const cooldowns = JSON.parse(gameState.activeCooldowns);
+        let cooldowns: Record<string, number> = {};
+        try {
+            cooldowns = JSON.parse(gameState.activeCooldowns);
+        } catch {
+            console.error("Failed to parse activeCooldowns in tickCooldowns");
+            return;
+        }
+
         const newCooldowns: Record<string, number> = {};
 
         for (const [spellId, turns] of Object.entries(cooldowns)) {
-            const remaining = (turns as number) - 1;
+            if (typeof turns !== 'number') continue;
+            const remaining = Math.max(0, turns - 1);
             if (remaining > 0) {
                 newCooldowns[spellId] = remaining;
             }
@@ -325,4 +361,5 @@ function parseDamageDice(dice: string): number {
     }
     return total + modifier;
 }
+
 

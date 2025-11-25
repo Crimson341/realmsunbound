@@ -408,7 +408,7 @@ export function TradeModal({
             </div>
           ) : (
             <div className="space-y-2">
-              {tradeInventory.map((item) => (
+              {tradeInventory.filter((item): item is NonNullable<typeof item> => item !== null).map((item) => (
                 <button
                   key={item.id}
                   onClick={() => setSelectedItem(item as TradeItem)}
@@ -705,4 +705,5 @@ export function TradingNPCsList({
     </>
   );
 }
+
 

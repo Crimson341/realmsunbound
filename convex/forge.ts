@@ -617,6 +617,12 @@ export const createLocation = mutation({
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) throw new Error("Unauthorized");
 
+        // Verify campaign ownership
+        const campaign = await ctx.db.get(args.campaignId);
+        if (!campaign || campaign.userId !== identity.tokenIdentifier) {
+            throw new Error("Unauthorized: You don't own this campaign");
+        }
+
         return await ctx.db.insert("locations", {
             userId: identity.tokenIdentifier,
             campaignId: args.campaignId,
@@ -639,6 +645,12 @@ export const createEvent = mutation({
     handler: async (ctx, args) => {
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) throw new Error("Unauthorized");
+
+        // Verify campaign ownership
+        const campaign = await ctx.db.get(args.campaignId);
+        if (!campaign || campaign.userId !== identity.tokenIdentifier) {
+            throw new Error("Unauthorized: You don't own this campaign");
+        }
 
         return await ctx.db.insert("events", {
             userId: identity.tokenIdentifier,
@@ -680,6 +692,12 @@ export const createNPC = mutation({
     handler: async (ctx, args) => {
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) throw new Error("Unauthorized");
+
+        // Verify campaign ownership
+        const campaign = await ctx.db.get(args.campaignId);
+        if (!campaign || campaign.userId !== identity.tokenIdentifier) {
+            throw new Error("Unauthorized: You don't own this campaign");
+        }
 
         // Set defaults for health if not provided
         const maxHealth = args.maxHealth ?? 20;
@@ -731,6 +749,12 @@ export const createQuest = mutation({
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) throw new Error("Unauthorized");
 
+        // Verify campaign ownership
+        const campaign = await ctx.db.get(args.campaignId);
+        if (!campaign || campaign.userId !== identity.tokenIdentifier) {
+            throw new Error("Unauthorized: You don't own this campaign");
+        }
+
         return await ctx.db.insert("quests", {
             userId: identity.tokenIdentifier,
             campaignId: args.campaignId,
@@ -760,6 +784,12 @@ export const createMonster = mutation({
     handler: async (ctx, args) => {
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) throw new Error("Unauthorized");
+
+        // Verify campaign ownership
+        const campaign = await ctx.db.get(args.campaignId);
+        if (!campaign || campaign.userId !== identity.tokenIdentifier) {
+            throw new Error("Unauthorized: You don't own this campaign");
+        }
 
         return await ctx.db.insert("monsters", {
             userId: identity.tokenIdentifier,
@@ -800,6 +830,12 @@ export const createSpell = mutation({
     handler: async (ctx, args) => {
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) throw new Error("Unauthorized");
+
+        // Verify campaign ownership
+        const campaign = await ctx.db.get(args.campaignId);
+        if (!campaign || campaign.userId !== identity.tokenIdentifier) {
+            throw new Error("Unauthorized: You don't own this campaign");
+        }
 
         return await ctx.db.insert("spells", {
             userId: identity.tokenIdentifier,
@@ -1973,7 +2009,16 @@ export const updateNPCFaction = mutation({
     handler: async (ctx, args) => {
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) throw new Error("Unauthorized");
-        
+
+        // Verify NPC exists and user owns the campaign
+        const npc = await ctx.db.get(args.npcId);
+        if (!npc) throw new Error("NPC not found");
+
+        const campaign = await ctx.db.get(npc.campaignId);
+        if (!campaign || campaign.userId !== identity.tokenIdentifier) {
+            throw new Error("Unauthorized: You don't own this campaign");
+        }
+
         await ctx.db.patch(args.npcId, {
             factionId: args.factionId,
         });
@@ -1989,7 +2034,16 @@ export const setNPCEssential = mutation({
     handler: async (ctx, args) => {
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) throw new Error("Unauthorized");
-        
+
+        // Verify NPC exists and user owns the campaign
+        const npc = await ctx.db.get(args.npcId);
+        if (!npc) throw new Error("NPC not found");
+
+        const campaign = await ctx.db.get(npc.campaignId);
+        if (!campaign || campaign.userId !== identity.tokenIdentifier) {
+            throw new Error("Unauthorized: You don't own this campaign");
+        }
+
         await ctx.db.patch(args.npcId, {
             isEssential: args.isEssential,
         });
@@ -2009,7 +2063,13 @@ export const createFaction = mutation({
     handler: async (ctx, args) => {
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) throw new Error("Unauthorized");
-        
+
+        // Verify campaign ownership
+        const campaign = await ctx.db.get(args.campaignId);
+        if (!campaign || campaign.userId !== identity.tokenIdentifier) {
+            throw new Error("Unauthorized: You don't own this campaign");
+        }
+
         return await ctx.db.insert("factions", {
             campaignId: args.campaignId,
             name: args.name,
@@ -2043,7 +2103,13 @@ export const createRegion = mutation({
     handler: async (ctx, args) => {
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) throw new Error("Unauthorized");
-        
+
+        // Verify campaign ownership
+        const campaign = await ctx.db.get(args.campaignId);
+        if (!campaign || campaign.userId !== identity.tokenIdentifier) {
+            throw new Error("Unauthorized: You don't own this campaign");
+        }
+
         return await ctx.db.insert("regions", {
             campaignId: args.campaignId,
             name: args.name,

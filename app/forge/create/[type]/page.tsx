@@ -54,8 +54,23 @@ export default function CreateEntityPage() {
                     headers: { "Content-Type": image.type },
                     body: image,
                 });
-                const { storageId } = await result.json();
-                imageId = storageId;
+
+                if (!result.ok) {
+                    throw new Error(`Image upload failed: ${result.status} ${result.statusText}`);
+                }
+
+                let uploadResponse;
+                try {
+                    uploadResponse = await result.json();
+                } catch {
+                    throw new Error("Image upload failed: Invalid response from server");
+                }
+
+                if (!uploadResponse?.storageId) {
+                    throw new Error("Image upload failed: No storage ID returned");
+                }
+
+                imageId = uploadResponse.storageId;
             }
 
             if (type === 'campaign') {

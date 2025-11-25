@@ -76,8 +76,15 @@ export const getCampDetails = query({
             })
         );
         
-        // Parse resources
-        const resources = camp.resources ? JSON.parse(camp.resources) : { gold: 0, food: 0, materials: 0 };
+        // Parse resources (with error handling)
+        let resources = { gold: 0, food: 0, materials: 0 };
+        if (camp.resources) {
+            try {
+                resources = JSON.parse(camp.resources);
+            } catch {
+                console.error("Failed to parse camp resources in getCampDetails");
+            }
+        }
         
         return {
             ...camp,
@@ -135,7 +142,14 @@ export const recruitFollower = mutation({
         }
         
         // Check recruitment cost
-        const resources = camp.resources ? JSON.parse(camp.resources) : { gold: 0 };
+        let resources = { gold: 0, food: 0, materials: 0 };
+        if (camp.resources) {
+            try {
+                resources = JSON.parse(camp.resources);
+            } catch {
+                console.error("Failed to parse camp resources in recruitFollower");
+            }
+        }
         const cost = npc.recruitCost || 100;
         
         if (resources.gold < cost) {
@@ -258,6 +272,9 @@ export const changeFollowerRole = mutation({
     },
 });
 
+// Camp grid size constants
+const CAMP_GRID_SIZE = 5;
+
 // Update follower position on camp map
 export const updateFollowerPosition = mutation({
     args: {
@@ -268,29 +285,33 @@ export const updateFollowerPosition = mutation({
         positionY: v.number(),
     },
     handler: async (ctx, args) => {
+        // Server-side position validation - clamp to valid grid positions
+        const clampedX = Math.max(0, Math.min(CAMP_GRID_SIZE - 1, Math.floor(args.positionX)));
+        const clampedY = Math.max(0, Math.min(CAMP_GRID_SIZE - 1, Math.floor(args.positionY)));
+
         const camps = await ctx.db
             .query("playerCamps")
             .withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId))
             .collect();
-        
+
         const camp = camps.find((c) => c.playerId === args.playerId);
-        if (!camp) return { success: false };
-        
+        if (!camp) return { success: false, message: "Camp not found" };
+
         const followerIndex = camp.followers.findIndex((f) => f.npcId === args.npcId);
-        if (followerIndex === -1) return { success: false };
-        
+        if (followerIndex === -1) return { success: false, message: "Follower not found" };
+
         const updatedFollowers = [...camp.followers];
         updatedFollowers[followerIndex] = {
             ...updatedFollowers[followerIndex],
-            positionX: args.positionX,
-            positionY: args.positionY,
+            positionX: clampedX,
+            positionY: clampedY,
         };
-        
+
         await ctx.db.patch(camp._id, {
             followers: updatedFollowers,
         });
-        
-        return { success: true };
+
+        return { success: true, positionX: clampedX, positionY: clampedY };
     },
 });
 
@@ -313,9 +334,16 @@ export const addResources = mutation({
         
         const camp = camps.find((c) => c.playerId === args.playerId);
         if (!camp) return { success: false };
-        
-        const resources = camp.resources ? JSON.parse(camp.resources) : { gold: 0, food: 0, materials: 0 };
-        
+
+        let resources = { gold: 0, food: 0, materials: 0 };
+        if (camp.resources) {
+            try {
+                resources = JSON.parse(camp.resources);
+            } catch {
+                console.error("Failed to parse camp resources in addResources");
+            }
+        }
+
         await ctx.db.patch(camp._id, {
             resources: JSON.stringify({
                 gold: resources.gold + (args.gold || 0),
@@ -443,4 +471,5 @@ export const shouldCampBeAttacked = query({
         };
     },
 });
+
 

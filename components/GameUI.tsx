@@ -631,3 +631,4 @@ export const RewardsQueue: React.FC<RewardsQueueProps> = ({ rewards, onRewardCom
     );
 };
 
+

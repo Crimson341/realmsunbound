@@ -241,7 +241,14 @@ export const useItem = mutation({
                 // Add buff to player state
                 if (playerStates.length > 0) {
                     const playerState = playerStates[0];
-                    const currentBuffs = playerState.activeBuffs ? JSON.parse(playerState.activeBuffs) : [];
+                    let currentBuffs: Array<{ stat: string | undefined; amount: number | undefined; endsAt: number; source: string }> = [];
+                    if (playerState.activeBuffs) {
+                        try {
+                            currentBuffs = JSON.parse(playerState.activeBuffs);
+                        } catch {
+                            console.error("Failed to parse activeBuffs in useItem");
+                        }
+                    }
                     currentBuffs.push({
                         stat: effect.stat,
                         amount: effect.amount,
@@ -357,15 +364,24 @@ function getEffectDescription(effect: ItemEffect, itemName: string): string {
 
 // --- EQUIPMENT ---
 
+// Valid equipment slots
+const VALID_EQUIPMENT_SLOTS = ["weapon", "armor", "accessory", "helmet", "boots", "ring", "amulet"] as const;
+type EquipmentSlot = typeof VALID_EQUIPMENT_SLOTS[number];
+
 // Equip an item
 export const equipItem = mutation({
     args: {
         campaignId: v.id("campaigns"),
         playerId: v.string(),
         itemId: v.id("items"),
-        slot: v.string(), // "weapon", "armor", "accessory"
+        slot: v.string(), // "weapon", "armor", "accessory", etc.
     },
     handler: async (ctx, args) => {
+        // Validate slot
+        if (!VALID_EQUIPMENT_SLOTS.includes(args.slot as EquipmentSlot)) {
+            return { success: false, message: `Invalid equipment slot: ${args.slot}` };
+        }
+
         const inventory = await ctx.db
             .query("playerInventory")
             .withIndex("by_campaign_and_player", (q) => 
@@ -469,4 +485,5 @@ export const getEquippedItems = query({
         return slots;
     },
 });
+
 

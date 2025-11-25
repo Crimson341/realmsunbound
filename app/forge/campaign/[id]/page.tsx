@@ -821,7 +821,7 @@ export default function CampaignManager() {
                                         <Input label="School" value={spellSchool} onChange={(e: any) => setSpellSchool(e.target.value)} />
                                     </div>
                                     <div className="grid md:grid-cols-3 gap-6">
-                                        <Input label="Level" type="number" min={0} value={spellLevel} onChange={(e: any) => setSpellLevel(parseInt(e.target.value) || 0)} />
+                                        <Input label="Level" type="number" min={0} value={spellLevel} onChange={(e: any) => setSpellLevel(Math.max(0, parseInt(e.target.value, 10) || 0))} />
                                         <Input label="Casting Time" value={spellCastingTime} onChange={(e: any) => setSpellCastingTime(e.target.value)} />
                                         <Input label="Range" value={spellRange} onChange={(e: any) => setSpellRange(e.target.value)} />
                                     </div>
@@ -884,8 +884,8 @@ export default function CampaignManager() {
                                     </div>
                                     <TextArea label="Description" value={monsterDesc} onChange={(e: any) => setMonsterDesc(e.target.value)} required />
                                     <div className="grid md:grid-cols-2 gap-6">
-                                        <Input label="Health" type="number" value={monsterHealth} onChange={(e: any) => setMonsterHealth(parseInt(e.target.value))} min={1} required />
-                                        <Input label="Damage" type="number" value={monsterDamage} onChange={(e: any) => setMonsterDamage(parseInt(e.target.value))} min={1} required />
+                                        <Input label="Health" type="number" value={monsterHealth} onChange={(e: any) => setMonsterHealth(Math.max(1, parseInt(e.target.value, 10) || 1))} min={1} required />
+                                        <Input label="Damage" type="number" value={monsterDamage} onChange={(e: any) => setMonsterDamage(Math.max(1, parseInt(e.target.value, 10) || 1))} min={1} required />
                                     </div>
                                     <div className="space-y-1">
                                         <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Item Drops</label>

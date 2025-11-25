@@ -59,22 +59,28 @@ const streamNarrative = async (
     payload: any,
     onContent: (delta: string) => void,
     onData: (data: any) => void,
-    onError: (err: any) => void
-) => {
+    onError: (err: any) => void,
+    timeoutMs: number = 60000
+): Promise<boolean> => {
     const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL!;
     if (!convexUrl) {
         onError(new Error("NEXT_PUBLIC_CONVEX_URL not set"));
-        return;
+        return false;
     }
-    const httpUrl = convexUrl.includes("convex.cloud") 
-        ? convexUrl.replace("convex.cloud", "convex.site") 
+    const httpUrl = convexUrl.includes("convex.cloud")
+        ? convexUrl.replace("convex.cloud", "convex.site")
         : convexUrl;
+
+    // Create abort controller for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
         const response = await fetch(`${httpUrl}/api/stream-narrative`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
+            signal: controller.signal,
         });
 
         if (!response.ok) throw new Error(await response.text());
@@ -160,8 +166,19 @@ const streamNarrative = async (
                 }
             }
         }
+
+        // Cleanup reader
+        reader.releaseLock();
+        return true;
     } catch (e) {
-        onError(e);
+        if (e instanceof Error && e.name === 'AbortError') {
+            onError(new Error('Request timed out'));
+        } else {
+            onError(e);
+        }
+        return false;
+    } finally {
+        clearTimeout(timeoutId);
     }
 };
 
@@ -172,6 +189,15 @@ const SmartTooltip = ({ children, content, className }: { children: React.ReactN
     const [position, setPosition] = useState<'top' | 'bottom'>('top');
     const timerRef = useRef<NodeJS.Timeout | null>(null);
     const ref = useRef<HTMLDivElement>(null);
+
+    // Cleanup timer on unmount to prevent memory leaks
+    useEffect(() => {
+        return () => {
+            if (timerRef.current) {
+                clearTimeout(timerRef.current);
+            }
+        };
+    }, []);
 
     const handleEnter = () => {
         if (ref.current) {
@@ -303,6 +329,12 @@ export default function PlayPage() {
         playerIdForAbilities ? { campaignId, playerId: playerIdForAbilities } : "skip"
     );
     const executeAbility = useMutation(api.abilities.useAbility);
+
+    // --- GOLD QUERY (source of truth for gold tracking) ---
+    const dbGold = useQuery(
+        api.abilities.getPlayerGold,
+        playerIdForAbilities ? { campaignId, playerId: playerIdForAbilities } : "skip"
+    );
     
     // Parse campaign terminology (for custom names like "Chakra" instead of "Energy")
     const terminology = useMemo(() => {
@@ -347,7 +379,9 @@ export default function PlayPage() {
     const [bountyAmount, setBountyAmount] = useState(0);
     const [isJailed, setIsJailed] = useState(false);
     const [killedNpcs, setKilledNpcs] = useState<string[]>([]);
-    const [gold, setGold] = useState(0);
+
+    // Use database gold as source of truth, with local state for optimistic updates
+    const gold = dbGold ?? 0;
     
     // --- ENERGY/ABILITY STATE ---
     const [energy, setEnergy] = useState(100);
@@ -632,24 +666,26 @@ export default function PlayPage() {
             }
         };
 
-        await streamNarrative(
-            payload,
-            (delta) => {
-                setMessages(prev => {
-                    const last = prev[prev.length - 1];
-                    if (last?.role === 'model') {
-                        return [...prev.slice(0, -1), { ...last, content: last.content + delta }];
-                    }
-                    return [...prev, { role: 'model', content: delta }];
-                });
-            },
-            handleGameData,
-            (err) => {
-                console.error(err);
-                setIsLoading(false);
-            }
-        );
-        setIsLoading(false);
+        try {
+            await streamNarrative(
+                payload,
+                (delta) => {
+                    setMessages(prev => {
+                        const last = prev[prev.length - 1];
+                        if (last?.role === 'model') {
+                            return [...prev.slice(0, -1), { ...last, content: last.content + delta }];
+                        }
+                        return [...prev, { role: 'model', content: delta }];
+                    });
+                },
+                handleGameData,
+                (err) => {
+                    console.error("Stream error (handleAskQuest):", err);
+                }
+            );
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     // --- AUTO SCROLL ---
@@ -699,21 +735,24 @@ export default function PlayPage() {
             }
         };
 
-        await streamNarrative(
-            payload,
-            (delta) => {
-                setMessages(prev => {
-                    const last = prev[prev.length - 1];
-                    if (last?.role === 'model') {
-                        return [...prev.slice(0, -1), { ...last, content: last.content + delta }];
-                    }
-                    return [...prev, { role: 'model', content: delta }];
-                });
-            },
-            handleGameData,
-            (err) => console.error(err)
-        );
-        setIsLoading(false);
+        try {
+            await streamNarrative(
+                payload,
+                (delta) => {
+                    setMessages(prev => {
+                        const last = prev[prev.length - 1];
+                        if (last?.role === 'model') {
+                            return [...prev.slice(0, -1), { ...last, content: last.content + delta }];
+                        }
+                        return [...prev, { role: 'model', content: delta }];
+                    });
+                },
+                handleGameData,
+                (err) => console.error("Stream error (handleStartGame):", err)
+            );
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     // --- SEND MESSAGE ---
@@ -747,24 +786,26 @@ export default function PlayPage() {
             }
         };
 
-        await streamNarrative(
-            payload,
-            (delta) => {
-                setMessages(prev => {
-                    const last = prev[prev.length - 1];
-                    if (last?.role === 'model') {
-                        return [...prev.slice(0, -1), { ...last, content: last.content + delta }];
-                    }
-                    return [...prev, { role: 'model', content: delta }];
-                });
-            },
-            handleGameData,
-            (err) => {
-                console.error(err);
-                setIsLoading(false);
-            }
-        );
-        setIsLoading(false);
+        try {
+            await streamNarrative(
+                payload,
+                (delta) => {
+                    setMessages(prev => {
+                        const last = prev[prev.length - 1];
+                        if (last?.role === 'model') {
+                            return [...prev.slice(0, -1), { ...last, content: last.content + delta }];
+                        }
+                        return [...prev, { role: 'model', content: delta }];
+                    });
+                },
+                handleGameData,
+                (err) => {
+                    console.error("Stream error (handleSendMessage):", err);
+                }
+            );
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     // --- HANDLE ENTER KEY ---
@@ -1183,7 +1224,7 @@ export default function PlayPage() {
                                 campaignId={campaignId}
                                 locationId={currentLocationId as Id<"locations">}
                                 playerId={playerId}
-                                onLootComplete={(items, lootedGold) => {
+                                onLootComplete={(items) => {
                                     // Add rewards to queue
                                     items.forEach(item => {
                                         addReward({
@@ -1192,9 +1233,7 @@ export default function PlayPage() {
                                             xp: 0,
                                         });
                                     });
-                                    if (lootedGold > 0) {
-                                        setGold(prev => prev + lootedGold);
-                                    }
+                                    // Gold is now synced automatically via getPlayerGold query
                                 }}
                             />
                         )}

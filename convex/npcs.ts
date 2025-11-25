@@ -631,3 +631,4 @@ export const getTradingNPCsAtLocation = query({
     },
 });
 
+

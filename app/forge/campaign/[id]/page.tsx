@@ -10,6 +10,7 @@ import { Map, Users, Scroll, Zap, Settings, Plus, Save, ArrowLeft, Loader2, Link
 import Link from 'next/link';
 import { MentionTextArea } from '@/components/MentionTextArea';
 import { motion } from 'framer-motion';
+import { useTheme } from '@/components/ThemeProvider';
 
 const StarPattern = () => (
     <div className="absolute inset-0 opacity-[0.03] pointer-events-none" 
@@ -37,6 +38,8 @@ export default function CampaignManager() {
 
     const [activeTab, setActiveTab] = useState<'overview' | 'realm' | 'npcs' | 'events' | 'quests' | 'items' | 'spells' | 'monsters' | 'players'>('overview');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const { theme, mounted } = useTheme();
+    const dark = mounted ? theme === 'dark' : false;
 
     // Form States
     const [locName, setLocName] = useState("");
@@ -275,34 +278,34 @@ export default function CampaignManager() {
     };
 
     if (!data) return (
-        <div className="flex flex-col items-center justify-center h-screen bg-[#f8f9fa]">
+        <div className={`flex flex-col items-center justify-center h-screen ${dark ? 'bg-[#0f1119]' : 'bg-[#f8f9fa]'}`}>
              <div className="relative w-20 h-20 flex items-center justify-center mb-4">
-                <motion.div className="absolute inset-0 border-4 border-[#e8e0c5] rounded-full" animate={{ scale: [1, 1.05, 1] }} transition={{ duration: 2, repeat: Infinity }} />
+                <motion.div className={`absolute inset-0 border-4 rounded-full ${dark ? 'border-[#2a2d3e]' : 'border-[#e8e0c5]'}`} animate={{ scale: [1, 1.05, 1] }} transition={{ duration: 2, repeat: Infinity }} />
                 <motion.div className="absolute inset-2 border border-[#D4AF37] rounded-full border-dashed" animate={{ rotate: 360 }} transition={{ duration: 10, ease: "linear", repeat: Infinity }} />
                 <Settings size={24} className="text-[#D4AF37]" />
             </div>
-            <span className="text-[#43485C] font-serif tracking-[0.2em] text-xs font-bold uppercase">Opening Grimoire...</span>
+            <span className={`font-serif tracking-[0.2em] text-xs font-bold uppercase ${dark ? 'text-[#e8e6e3]' : 'text-[#43485C]'}`}>Opening Grimoire...</span>
         </div>
     );
 
     return (
-        <div className="min-h-screen bg-[#f8f9fa] text-[#43485C] font-serif relative selection:bg-[#D4AF37] selection:text-white">
+        <div className={`min-h-screen font-serif relative selection:bg-[#D4AF37] selection:text-white ${dark ? 'bg-[#0f1119] text-[#e8e6e3]' : 'bg-[#f8f9fa] text-[#43485C]'}`}>
             
              {/* Background */}
-            <div className="fixed inset-0 z-0 pointer-events-none bg-[#fcfcfc]">
+            <div className={`fixed inset-0 z-0 pointer-events-none ${dark ? 'bg-[#0a0c12]' : 'bg-[#fcfcfc]'}`}>
                  <div className="absolute inset-0 opacity-[0.03] bg-[url('https://www.transparenttextures.com/patterns/paper.png')]" />
                  <StarPattern />
             </div>
 
             {/* Header */}
-            <header className="border-b border-[#D4AF37]/10 bg-white/80 backdrop-blur sticky top-0 z-40 shadow-sm">
+            <header className={`border-b backdrop-blur sticky top-0 z-40 shadow-sm ${dark ? 'border-[#D4AF37]/10 bg-[#1a1d2e]/80' : 'border-[#D4AF37]/10 bg-white/80'}`}>
                 <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                        <Link href="/forge" className="text-[#43485C]/50 hover:text-[#D4AF37] transition-colors">
+                        <Link href="/forge" className={`hover:text-[#D4AF37] transition-colors ${dark ? 'text-gray-500' : 'text-[#43485C]/50'}`}>
                             <ArrowLeft size={20} />
                         </Link>
                         <div className="flex flex-col">
-                            <h1 className="text-xl font-bold text-[#43485C] tracking-tight leading-none">{campaign?.title}</h1>
+                            <h1 className={`text-xl font-bold tracking-tight leading-none ${dark ? 'text-[#e8e6e3]' : 'text-[#43485C]'}`}>{campaign?.title}</h1>
                             <span className="text-[10px] uppercase tracking-widest text-[#D4AF37] font-bold mt-0.5">Campaign Editor</span>
                         </div>
                     </div>
@@ -314,7 +317,9 @@ export default function CampaignManager() {
                                 className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap border ${
                                     activeTab === tab 
                                     ? 'bg-[#D4AF37] text-white border-[#D4AF37] shadow-md' 
-                                    : 'text-[#43485C]/60 border-transparent hover:bg-[#D4AF37]/10 hover:text-[#D4AF37]'
+                                    : dark 
+                                        ? 'text-gray-400 border-transparent hover:bg-[#D4AF37]/10 hover:text-[#D4AF37]'
+                                        : 'text-[#43485C]/60 border-transparent hover:bg-[#D4AF37]/10 hover:text-[#D4AF37]'
                                 }`}
                             >
                                 {tab}

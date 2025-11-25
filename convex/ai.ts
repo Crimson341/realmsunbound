@@ -3,15 +3,18 @@ import { v } from "convex/values";
 import { api } from "./_generated/api";
 
 // Helper to generate context
-const generateWorldContext = (campaignData: any, playerState?: any) => {
+const generateWorldContext = (campaignData: any, playerState?: any, worldState?: any) => {
     const { 
       campaign, 
       locations, 
-      npcs, 
+      npcs,
+      deadNpcs,
       monsters, 
       items,
       quests,
-      rules 
+      factions,
+      regions,
+      bountyEnabled
     } = campaignData;
 
     // Parse terminology if it exists
@@ -20,7 +23,7 @@ const generateWorldContext = (campaignData: any, playerState?: any) => {
         try {
             const customTerms = JSON.parse(campaign.terminology);
             terms = { ...terms, ...customTerms };
-        } catch (e) { /* ignore */ }
+        } catch { /* ignore */ }
     }
 
     let context = `
@@ -41,6 +44,8 @@ const generateWorldContext = (campaignData: any, playerState?: any) => {
     2. PRIORITIZE using the provided Lists of NPCs, Locations, and Quests.
     3. If the user asks about a character or place not in the list, check if an existing one fits first.
     4. Only create new content if the user explicitly asks for something that doesn't exist, and even then, try to tie it to existing lore.
+    5. DEAD NPCs CANNOT appear, speak, or interact - they are GONE FOREVER.
+    6. NPCs only know about deaths/events if it makes sense (local knowledge, same faction, rumors spreading).
     
     CAMPAIGN: ${campaign.title}
     DESCRIPTION: ${campaign.description}
@@ -49,8 +54,28 @@ const generateWorldContext = (campaignData: any, playerState?: any) => {
     LOCATIONS:
     ${locations.map((l: any) => `- ${l.name} (${l.type}): ${l.description}`).join('\n')}
     
-    NPCs (USE THESE FIRST):
-    ${npcs.map((n: any) => `- ${n.name} (${n.role}, ${n.attitude}): ${n.description} (Location: ${locations.find((l: any) => l._id === n.locationId)?.name || 'Unknown'})`).join('\n')}
+    NPCs (LIVING - USE THESE):
+    ${npcs.map((n: any) => {
+        const location = locations.find((l: any) => l._id === n.locationId);
+        const faction = factions?.find((f: any) => f._id === n.factionId);
+        return `- ${n.name} (${n.role}, ${n.attitude}): ${n.description} | Location: ${location?.name || 'Unknown'}${faction ? ` | Faction: ${faction.name}` : ''}${n.isRecruitable ? ' | [RECRUITABLE]' : ''}${n.isEssential ? ' | [ESSENTIAL - Cannot die]' : ''}`;
+    }).join('\n')}
+    
+    ${deadNpcs && deadNpcs.length > 0 ? `
+    DEAD NPCs (DO NOT USE - FOR REFERENCE ONLY):
+    ${deadNpcs.map((n: any) => `- ${n.name} (${n.role}): Died from "${n.deathCause}" | Killed by: ${n.killedBy || 'Unknown'}`).join('\n')}
+    IMPORTANT: These NPCs are DEAD. They cannot appear in scenes. Other NPCs may reference their deaths if they would realistically know.
+    ` : ''}
+
+    ${factions && factions.length > 0 ? `
+    FACTIONS:
+    ${factions.map((f: any) => `- ${f.name}: ${f.description}${f.territory ? ` | Territory: ${f.territory}` : ''}`).join('\n')}
+    ` : ''}
+
+    ${regions && regions.length > 0 ? `
+    REGIONS:
+    ${regions.map((r: any) => `- ${r.name}: ${r.description || 'No description'}${r.governingFactionId ? ` | Governed by faction` : ''}`).join('\n')}
+    ` : ''}
     
     QUESTS (ACTIVE/AVAILABLE):
     ${quests.map((q: any) => `- ${q.title}: ${q.description} (Giver: ${npcs.find((n: any) => n._id === q.npcId)?.name || 'Unknown'}, Status: ${q.status})`).join('\n')}
@@ -59,7 +84,7 @@ const generateWorldContext = (campaignData: any, playerState?: any) => {
     ${monsters.map((m: any) => `- ${m.name}: ${m.description}`).join('\n')}
     
     ITEMS (Key):
-    ${items.slice(0, 20).map((i: any) => `- ${i.name} (${i.type}): ${i.description}`).join('\n')}
+    ${items.slice(0, 20).map((i: any) => `- ${i.name} (${i.type}): ${i.description || i.effects}${i.usable ? ' [USABLE]' : ''}${i.consumable ? ' [CONSUMABLE]' : ''}`).join('\n')}
     `;
 
     if (playerState) {
@@ -80,11 +105,69 @@ const generateWorldContext = (campaignData: any, playerState?: any) => {
       }
     }
 
+    // Add world state context (bounties, rumors, camp)
+    if (worldState) {
+      if (worldState.bounty && bountyEnabled) {
+        context += `
+    BOUNTY STATUS:
+    - Total Bounty: ${worldState.bounty.totalBounty} gold
+    - Danger Level: ${worldState.bounty.dangerLevel}
+    - Wanted in regions: ${worldState.bounty.activeBounties?.map((b: any) => b.regionName).join(', ') || 'None'}
+    IMPORTANT: If bounty is high, guards will be hostile. Bounty hunters may ambush the player. NPCs may refuse service or report to guards.
+    `;
+      }
+
+      if (worldState.isJailed) {
+        context += `
+    JAILED STATUS:
+    - The player is currently IMPRISONED
+    - They cannot freely explore until released or escape
+    - Offer options: serve time, attempt escape (skill check), bribe guards
+    `;
+      }
+
+      if (worldState.rumors && worldState.rumors.length > 0) {
+        context += `
+    LOCAL RUMORS (NPCs at this location know these):
+    ${worldState.rumors.map((r: any) => `- [${r.type.toUpperCase()}] ${r.content}${r.isRecent ? ' (Recent news!)' : ''}`).join('\n')}
+    IMPORTANT: NPCs should organically mention these rumors when relevant. Don't info-dump them all at once.
+    `;
+      }
+
+      if (worldState.npcsAtLocation && worldState.npcsAtLocation.length > 0) {
+        context += `
+    NPCs PRESENT AT CURRENT LOCATION:
+    ${worldState.npcsAtLocation.map((n: any) => `- ${n.name} (${n.role}) - ${n.attitude}`).join('\n')}
+    `;
+      }
+
+      if (worldState.deadAtLocation && worldState.deadAtLocation.length > 0) {
+        context += `
+    DEATHS AT THIS LOCATION (for atmosphere/reference):
+    ${worldState.deadAtLocation.map((n: any) => `- ${n.name} was ${n.deathCause} by ${n.killedBy}`).join('\n')}
+    NPCs here may reference these deaths sadly or fearfully.
+    `;
+      }
+
+      if (worldState.camp) {
+        context += `
+    PLAYER'S CAMP - "${worldState.camp.name}":
+    - Location: ${worldState.camp.locationName || 'Unknown'}
+    - Followers: ${worldState.camp.followers?.map((f: any) => `${f.npc?.name} (${f.role})`).join(', ') || 'None'}
+    - Resources: Gold: ${worldState.camp.resources?.gold || 0}, Food: ${worldState.camp.resources?.food || 0}
+    The player can return to their camp to rest, manage followers, or store items.
+    `;
+      }
+    }
+
     context += `
     IMPORTANT:
     - Maintain the tone defined in the WORLD BIBLE.
     - If the user asks to go to a location not in this list, guide them to a known nearby location or describe the travel based on the environment.
     - Use the defined Rules for any mechanics.
+    - NEVER have dead NPCs appear or interact in any way.
+    - NPCs should only know information they would realistically have access to (same location, same faction, rumors that have spread).
+    ${bountyEnabled ? '- Track criminal actions. Theft, assault, and murder create bounties and have consequences.' : ''}
     `;
 
     return context;
@@ -188,7 +271,7 @@ export const generateNarrative = action({
 });
 
 export const chatStream = httpAction(async (ctx, request) => {
-  const { prompt, history, campaignId, playerState } = await request.json();
+  const { prompt, history, campaignId, playerState, currentLocationId, playerId } = await request.json();
 
   const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
@@ -226,7 +309,112 @@ export const chatStream = httpAction(async (ctx, request) => {
       });
   }
 
-  const worldContext = generateWorldContext(campaignData, playerState);
+  // Fetch additional world state for enhanced AI context
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const worldState: any = {};
+  
+  try {
+    // Get bounty status if bounty system is enabled and player ID provided
+    if (campaignData.bountyEnabled && playerId) {
+      const bountyStatus = await ctx.runQuery((api as any).bounty.getBountyStatus, {
+        campaignId: campaignId,
+        playerId: playerId,
+      });
+      worldState.bounty = bountyStatus;
+      
+      // Check jail status
+      const jailStatus = await ctx.runQuery((api as any).bounty.checkJailStatus, {
+        campaignId: campaignId,
+        playerId: playerId,
+      });
+      worldState.isJailed = jailStatus.isJailed;
+    }
+    
+    // Get location-based context (NPCs present, rumors)
+    if (currentLocationId) {
+      const knowledgeContext = await ctx.runQuery((api as any).world.getNPCKnowledgeContext, {
+        campaignId: campaignId,
+        currentLocationId: currentLocationId,
+      });
+      worldState.npcsAtLocation = knowledgeContext.npcsAtLocation;
+      worldState.rumors = knowledgeContext.rumorsHere;
+      worldState.deadAtLocation = knowledgeContext.deadAtLocation;
+    }
+    
+    // Get player camp if exists
+    if (playerId) {
+      const camp = await ctx.runQuery((api as any).camp.getCampDetails, {
+        campaignId: campaignId,
+        playerId: playerId,
+      });
+      if (camp) {
+        worldState.camp = camp;
+      }
+    }
+  } catch (e) {
+    // Silently continue if any world state queries fail
+    console.error("Failed to fetch world state:", e);
+  }
+
+  const worldContext = generateWorldContext(campaignData, playerState, worldState);
+
+  // Enhanced prompt for game events
+  const bountyEnabled = campaignData.bountyEnabled;
+  const gameEventInstructions = `
+IMPORTANT: Respond in this EXACT format:
+
+<narrative>
+[Write vivid, immersive narrative text here. Describe what happens, what the player sees, hears, and feels. Be dramatic and engaging.]
+</narrative>
+
+<data>
+{
+  "choices": ["Action 1", "Action 2", "Action 3"],
+  "context": "explore|combat|social|rest",
+  "gameEvent": {
+    "type": "exploration|combat|social|skillCheck|reward|npcDeath|crime|recruitment",
+    "combat": { "enemyName": "Enemy Name", "enemyHP": 20, "enemyMaxHP": 20, "isPlayerTurn": true },
+    "skillCheck": { "skill": "Perception", "roll": 15, "modifier": 3, "target": 12, "success": true },
+    "reward": { "item": "Item Name", "rarity": "common|uncommon|rare|epic|legendary", "xp": 50 },
+    "npcDeath": { "npcName": "NPC Name", "npcId": "npc_id_if_known", "cause": "How they died", "killedBy": "player|npc_name" },
+    "crime": { "type": "murder|theft|assault|trespassing", "description": "What happened", "bountyAmount": 100 },
+    "recruitment": { "npcName": "NPC Name", "npcId": "npc_id", "cost": 100, "role": "companion|guard|worker" }
+  },
+  "hp": ${playerState?.hp || 20},
+  "xpGained": 0,
+  "current_location": "Location Name"
+}
+</data>
+
+GAME EVENT RULES:
+1. Set "context" based on the current situation:
+   - "explore" = wandering, investigating, traveling
+   - "combat" = fighting enemies (MUST include combat object)
+   - "social" = talking to NPCs
+   - "rest" = camping, recovering, downtime
+
+2. Include "gameEvent" when something significant happens:
+   - Combat starts/continues: type="combat" with enemy stats
+   - Skill check needed: type="skillCheck" with roll results (roll a d20 + modifier vs target)
+   - Player finds loot: type="reward" with item details
+   - NPC dies: type="npcDeath" - ONLY use for named NPCs from the NPC list, not random enemies
+   - Player commits a crime: type="crime" ${bountyEnabled ? '(ACTIVE - track all crimes!)' : '(disabled for this realm)'}
+   - Player can recruit an NPC: type="recruitment" - only if NPC is marked [RECRUITABLE]
+   
+3. Rarity levels: "common" (gray), "uncommon" (green), "rare" (blue), "epic" (purple), "legendary" (gold)
+
+4. Award XP for: defeating enemies (10-50), completing objectives (25-100), good roleplay (5-15)
+
+5. Adjust player HP when they take damage or heal
+
+6. Choices should be 2-4 contextual actions the player can take
+
+SPECIAL RULES:
+- If an NPC marked [ESSENTIAL] would die, they instead fall unconscious and recover later
+- NPCs marked [RECRUITABLE] can be invited to join the player's camp for a gold cost
+- If the player kills a named NPC, ALWAYS include an npcDeath event so it's tracked
+${bountyEnabled ? '- Criminal actions (murder, theft, assault) should trigger a crime event with appropriate bounty' : ''}
+${worldState.isJailed ? '- The player is JAILED. Limit actions to jail-appropriate choices: wait, attempt escape, bribe, serve time' : ''}`;
 
   const contents = [
     {
@@ -239,7 +427,7 @@ export const chatStream = httpAction(async (ctx, request) => {
     })),
     {
       role: "user",
-      parts: [{ text: prompt + "\n\nIMPORTANT: Respond in this EXACT format:\n<narrative>\n[Write the narrative text here...]\n</narrative>\n<data>\n[JSON object with 'choices', 'rewards', 'current_location', 'completed_quests']\n</data>" }],
+      parts: [{ text: prompt + "\n\n" + gameEventInstructions }],
     }
   ];
 

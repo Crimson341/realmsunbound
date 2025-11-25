@@ -10,7 +10,8 @@ import Link from 'next/link';
 import { 
     Shield, Map, User, Plus, Scroll, 
     Sparkles, Crown, Gem, ChevronRight, Bell, 
-    Settings, LayoutDashboard, Star, Compass, Zap
+    Settings, LayoutDashboard, Star, Compass, Zap,
+    Backpack, MessageSquare, Sword
 } from 'lucide-react';
 
 // --- TYPES ---
@@ -27,6 +28,27 @@ interface Campaign {
     xpRate?: number;
     character?: Character;
     creatorName?: string;
+}
+
+interface HeroCharacter {
+    _id: string;
+    name: string;
+    class: string;
+    level: number;
+    stats: string;
+    campaignId?: string;
+    campaignTitle: string;
+    campaignImageUrl: string | null;
+    characterImageUrl: string | null;
+    itemCount: number;
+    spellCount: number;
+    inventoryPreview: Array<{
+        _id: string;
+        name: string;
+        type: string;
+        rarity: string;
+        textColor?: string;
+    }>;
 }
 
 // --- ASSETS & ICONS ---
@@ -112,8 +134,9 @@ export default function UserDashboard() {
     const myCharacters = useQuery(api.forge.getMyCharacters);
     const myItems = useQuery(api.forge.getMyItems);
     const mySpells = useQuery(api.forge.getMySpells);
+    const heroesStats = useQuery(api.forge.getMyHeroesStats);
 
-    const dataLoading = !myCampaigns || !playedCampaigns || !myCharacters || !myItems || !mySpells;
+    const dataLoading = !myCampaigns || !playedCampaigns || !myCharacters || !myItems || !mySpells || !heroesStats;
     const [showLoadingScreen, setShowLoadingScreen] = useState(true);
 
     useEffect(() => {
@@ -175,6 +198,7 @@ export default function UserDashboard() {
                         <NavButton href="/roster" icon={<User size={18} />} label="Characters" dark={dark} />
                         <NavButton href="/artifacts" icon={<Gem size={18} />} label="Artifacts" dark={dark} />
                         <NavButton href="/spellbook" icon={<Scroll size={18} />} label="Spellbook" dark={dark} />
+                        <NavButton href="/hub" icon={<MessageSquare size={18} />} label="My Hub" dark={dark} />
                         
                         <div className="py-6 px-2">
                             <div className="h-[1px] w-12 bg-[#D4AF37]/30" />
@@ -224,11 +248,13 @@ export default function UserDashboard() {
                             
                             {/* Stats Row */}
                             <div className="flex items-center justify-between px-4">
-                                <StatContent title="Active Quests" value={playedCampaigns?.length?.toString() || "0"} icon={<Shield className="text-[#D4AF37]" size={24} />} dark={dark} />
+                                <StatContent title="Total Level" value={heroesStats?.totalLevel?.toString() || "0"} icon={<Shield className="text-[#D4AF37]" size={24} />} dark={dark} />
                                 <div className="h-12 w-[1px] bg-[#D4AF37]/10" />
-                                <StatContent title="Heroes" value={myCharacters?.length?.toString() || "0"} icon={<User className="text-blue-500" size={24} />} dark={dark} />
+                                <StatContent title="Heroes" value={heroesStats?.characters?.length?.toString() || "0"} icon={<User className="text-blue-500" size={24} />} dark={dark} />
                                 <div className="h-12 w-[1px] bg-[#D4AF37]/10" />
-                                <StatContent title="Relics" value={myItems?.length?.toString() || "0"} icon={<Crown className="text-purple-500" size={24} />} dark={dark} />
+                                <StatContent title="Relics" value={heroesStats?.totalItems?.toString() || "0"} icon={<Crown className="text-purple-500" size={24} />} dark={dark} />
+                                <div className="h-12 w-[1px] bg-[#D4AF37]/10" />
+                                <StatContent title="Spells" value={heroesStats?.totalSpells?.toString() || "0"} icon={<Scroll className="text-cyan-500" size={24} />} dark={dark} />
                             </div>
 
                             {/* Main Hero */}
@@ -255,12 +281,34 @@ export default function UserDashboard() {
                                 </div>
                             </section>
 
+                            {/* Heroes Section */}
+                            <section>
+                                <SectionHeader title="My Heroes" icon={<Sword size={18} />} dark={dark} />
+                                
+                                {heroesStats?.characters && heroesStats.characters.length > 0 ? (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                        {heroesStats.characters.map((hero: HeroCharacter) => (
+                                            <HeroCard key={hero._id} hero={hero} dark={dark} />
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className={`text-center py-12 rounded-2xl border border-dashed ${dark ? 'border-[#D4AF37]/20 bg-[#1a1d2e]/30' : 'border-[#D4AF37]/20 bg-white/30'}`}>
+                                        <User size={48} className={`mx-auto mb-4 ${dark ? 'text-gray-600' : 'text-gray-300'}`} />
+                                        <p className={`text-sm font-bold mb-2 ${dark ? 'text-gray-500' : 'text-gray-400'}`}>No heroes yet</p>
+                                        <p className={`text-xs mb-4 ${dark ? 'text-gray-600' : 'text-gray-400'}`}>Create a character to begin your adventure</p>
+                                        <Link href="/roster" className="inline-flex items-center gap-2 px-4 py-2 bg-[#D4AF37] text-white text-xs font-bold uppercase tracking-wide rounded-lg hover:bg-[#c5a028] transition-colors">
+                                            <Plus size={14} /> Create Hero
+                                        </Link>
+                                    </div>
+                                )}
+                            </section>
+
                             {/* Bottom Grid */}
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
                                 
                                 {/* Party Setup */}
                                 <div className="lg:col-span-2">
-                                    <SectionHeader title="Active Campaigns" icon={<User size={18} />} dark={dark} />
+                                    <SectionHeader title="Active Campaigns" icon={<Map size={18} />} dark={dark} />
                                     
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         {playedCampaigns && playedCampaigns.length > 0 ? (
@@ -279,11 +327,11 @@ export default function UserDashboard() {
                                         )}
                                         
                                         {/* Add Slot */}
-                                        <Link href="/forge/create/campaign" className={`flex items-center gap-4 p-4 rounded-xl border border-dashed transition-all group ${dark ? 'border-[#D4AF37]/30 text-[#8d99ae] hover:text-[#D4AF37] hover:bg-[#D4AF37]/5' : 'border-[#D4AF37]/30 text-[#8d99ae] hover:text-[#D4AF37] hover:bg-[#D4AF37]/5'}`}>
+                                        <Link href="/realms" className={`flex items-center gap-4 p-4 rounded-xl border border-dashed transition-all group ${dark ? 'border-[#D4AF37]/30 text-[#8d99ae] hover:text-[#D4AF37] hover:bg-[#D4AF37]/5' : 'border-[#D4AF37]/30 text-[#8d99ae] hover:text-[#D4AF37] hover:bg-[#D4AF37]/5'}`}>
                                             <div className="w-12 h-12 rounded-full border border-dashed border-[#D4AF37]/30 flex items-center justify-center group-hover:border-[#D4AF37]">
                                                 <Plus size={18} />
                                             </div>
-                                            <span className="text-xs font-bold uppercase tracking-widest">Start New Adventure</span>
+                                            <span className="text-xs font-bold uppercase tracking-widest">Browse Realms</span>
                                         </Link>
                                     </div>
                                 </div>
@@ -397,3 +445,164 @@ const CommissionItem = ({ title, completed, dark }: { title: string, completed?:
         )}
     </div>
 );
+
+// Hero Card Component for displaying character stats from realms
+const HeroCard = ({ hero, dark }: { hero: HeroCharacter, dark?: boolean }) => {
+    const maxLevel = 90;
+    const levelProgress = (hero.level / maxLevel) * 100;
+    
+    // Parse stats JSON
+    let parsedStats: Record<string, number> = {};
+    try {
+        parsedStats = JSON.parse(hero.stats || '{}');
+    } catch {
+        parsedStats = {};
+    }
+    
+    const statEntries = Object.entries(parsedStats).slice(0, 4);
+
+    return (
+        <div className={`rounded-2xl overflow-hidden border transition-all hover:shadow-lg group ${
+            dark 
+                ? 'bg-[#1a1d2e]/60 border-[#D4AF37]/10 hover:border-[#D4AF37]/30' 
+                : 'bg-white/60 border-[#D4AF37]/10 hover:border-[#D4AF37]/30'
+        }`}>
+            {/* Header with Campaign Image */}
+            <div className="relative h-24 overflow-hidden">
+                {hero.campaignImageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img 
+                        src={hero.campaignImageUrl} 
+                        alt={hero.campaignTitle} 
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    />
+                ) : (
+                    <div className={`w-full h-full ${dark ? 'bg-gradient-to-br from-[#2a2d3e] to-[#1a1d2e]' : 'bg-gradient-to-br from-gray-200 to-gray-100'}`} />
+                )}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                
+                {/* Campaign Title */}
+                <div className="absolute bottom-2 left-3 right-3">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-[#D4AF37]">
+                        {hero.campaignTitle}
+                    </p>
+                </div>
+
+                {/* Character Avatar */}
+                <div className={`absolute -bottom-6 right-4 w-14 h-14 rounded-full border-4 shadow-lg overflow-hidden ${
+                    dark ? 'border-[#1a1d2e] bg-[#2a2d3e]' : 'border-white bg-gray-100'
+                }`}>
+                    {hero.characterImageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={hero.characterImageUrl} alt={hero.name} className="w-full h-full object-cover" />
+                    ) : (
+                        <div className="w-full h-full flex items-center justify-center text-lg font-bold text-[#D4AF37]">
+                            {hero.name[0]}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Content */}
+            <div className="p-4 pt-2">
+                {/* Name & Class */}
+                <div className="mb-3">
+                    <h4 className={`font-bold text-lg font-serif ${dark ? 'text-[#e8e6e3]' : 'text-[#43485C]'}`}>
+                        {hero.name}
+                    </h4>
+                    <p className={`text-xs font-bold uppercase tracking-wider ${dark ? 'text-gray-500' : 'text-gray-400'}`}>
+                        {hero.class}
+                    </p>
+                </div>
+
+                {/* Level Progress */}
+                <div className="mb-4">
+                    <div className="flex justify-between items-center mb-1">
+                        <span className={`text-xs font-bold ${dark ? 'text-gray-500' : 'text-gray-400'}`}>Level</span>
+                        <span className="text-sm font-bold text-[#D4AF37]">{hero.level} / {maxLevel}</span>
+                    </div>
+                    <div className={`h-2 rounded-full overflow-hidden ${dark ? 'bg-[#2a2d3e]' : 'bg-gray-200'}`}>
+                        <motion.div 
+                            className="h-full bg-gradient-to-r from-[#D4AF37] to-[#f0d78c]"
+                            initial={{ width: 0 }}
+                            animate={{ width: `${levelProgress}%` }}
+                            transition={{ duration: 0.8, ease: "easeOut" }}
+                        />
+                    </div>
+                </div>
+
+                {/* Stats Grid */}
+                {statEntries.length > 0 && (
+                    <div className="grid grid-cols-2 gap-2 mb-4">
+                        {statEntries.map(([key, value]) => (
+                            <div key={key} className={`px-2 py-1 rounded-lg ${dark ? 'bg-[#151821]' : 'bg-gray-50'}`}>
+                                <p className={`text-[10px] uppercase tracking-wider ${dark ? 'text-gray-600' : 'text-gray-400'}`}>
+                                    {key}
+                                </p>
+                                <p className={`text-sm font-bold ${dark ? 'text-[#e8e6e3]' : 'text-[#43485C]'}`}>
+                                    {value}
+                                </p>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {/* Items & Spells Count */}
+                <div className="flex gap-4 mb-4">
+                    <div className="flex items-center gap-2">
+                        <Backpack size={14} className="text-purple-500" />
+                        <span className={`text-xs font-bold ${dark ? 'text-gray-400' : 'text-gray-500'}`}>
+                            {hero.itemCount} Items
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <Scroll size={14} className="text-cyan-500" />
+                        <span className={`text-xs font-bold ${dark ? 'text-gray-400' : 'text-gray-500'}`}>
+                            {hero.spellCount} Spells
+                        </span>
+                    </div>
+                </div>
+
+                {/* Inventory Preview */}
+                {hero.inventoryPreview.length > 0 && (
+                    <div>
+                        <p className={`text-[10px] font-bold uppercase tracking-widest mb-2 ${dark ? 'text-gray-600' : 'text-gray-400'}`}>
+                            Inventory
+                        </p>
+                        <div className="grid grid-cols-4 gap-1.5">
+                            {hero.inventoryPreview.map((item) => (
+                                <div 
+                                    key={item._id}
+                                    className={`aspect-square rounded-lg border flex items-center justify-center text-[10px] font-bold cursor-help group/item relative ${
+                                        dark ? 'bg-[#151821] border-[#2a2d3e]' : 'bg-gray-50 border-gray-200'
+                                    }`}
+                                    style={{ color: item.textColor || (dark ? '#e8e6e3' : '#43485C') }}
+                                    title={`${item.name} (${item.rarity})`}
+                                >
+                                    {item.name[0]}
+                                    {/* Tooltip */}
+                                    <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 rounded text-[10px] whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity pointer-events-none z-10 ${
+                                        dark ? 'bg-[#1a1d2e] text-[#e8e6e3]' : 'bg-gray-800 text-white'
+                                    }`}>
+                                        {item.name}
+                                    </div>
+                                </div>
+                            ))}
+                            {/* Empty slots */}
+                            {Array.from({ length: Math.max(0, 8 - hero.inventoryPreview.length) }).map((_, i) => (
+                                <div 
+                                    key={`empty-${i}`}
+                                    className={`aspect-square rounded-lg border border-dashed flex items-center justify-center ${
+                                        dark ? 'border-[#2a2d3e]' : 'border-gray-200'
+                                    }`}
+                                >
+                                    <div className={`w-1 h-1 rounded-full ${dark ? 'bg-[#2a2d3e]' : 'bg-gray-300'}`} />
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};

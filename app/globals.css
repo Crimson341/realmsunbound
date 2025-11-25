@@ -202,3 +202,194 @@ body {
   left: 30px;
   background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
 }
+
+/* ===== GAME UI ANIMATIONS ===== */
+
+/* Screen shake for damage/critical hits */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
+  20%, 40%, 60%, 80% { transform: translateX(4px); }
+}
+
+.animate-shake {
+  animation: shake 0.4s ease-in-out;
+}
+
+/* Heavy shake for critical hits */
+@keyframes shake-heavy {
+  0%, 100% { transform: translate(0, 0); }
+  10%, 30%, 50%, 70%, 90% { transform: translate(-8px, 2px); }
+  20%, 40%, 60%, 80% { transform: translate(8px, -2px); }
+}
+
+.animate-shake-heavy {
+  animation: shake-heavy 0.5s ease-in-out;
+}
+
+/* Shimmer effect for legendary/epic items */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.4) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite linear;
+}
+
+/* Dice roll 3D rotation */
+@keyframes dice-roll {
+  0% { transform: rotateX(0deg) rotateY(0deg) rotateZ(0deg); }
+  25% { transform: rotateX(360deg) rotateY(180deg) rotateZ(90deg); }
+  50% { transform: rotateX(720deg) rotateY(360deg) rotateZ(180deg); }
+  75% { transform: rotateX(1080deg) rotateY(540deg) rotateZ(270deg); }
+  100% { transform: rotateX(1440deg) rotateY(720deg) rotateZ(360deg); }
+}
+
+.animate-dice-roll {
+  animation: dice-roll 1.5s cubic-bezier(0.25, 0.1, 0.25, 1);
+  transform-style: preserve-3d;
+}
+
+/* Pulse glow for active elements */
+@keyframes pulse-glow {
+  0%, 100% { 
+    box-shadow: 0 0 5px currentColor, 0 0 10px currentColor; 
+    opacity: 1;
+  }
+  50% { 
+    box-shadow: 0 0 20px currentColor, 0 0 40px currentColor; 
+    opacity: 0.8;
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* XP bar fill animation */
+@keyframes xp-fill {
+  0% { width: 0%; }
+  100% { width: var(--xp-percent, 0%); }
+}
+
+.animate-xp-fill {
+  animation: xp-fill 1s ease-out forwards;
+}
+
+/* Level up celebration */
+@keyframes level-up-burst {
+  0% { 
+    transform: scale(0) rotate(-180deg); 
+    opacity: 0;
+  }
+  50% { 
+    transform: scale(1.2) rotate(10deg); 
+    opacity: 1;
+  }
+  100% { 
+    transform: scale(1) rotate(0deg); 
+    opacity: 1;
+  }
+}
+
+.animate-level-up {
+  animation: level-up-burst 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Slide in from right for toasts */
+@keyframes slide-in-right {
+  0% { 
+    transform: translateX(100%); 
+    opacity: 0;
+  }
+  100% { 
+    transform: translateX(0); 
+    opacity: 1;
+  }
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.3s ease-out;
+}
+
+/* Fade out for disappearing elements */
+@keyframes fade-out {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.animate-fade-out {
+  animation: fade-out 0.3s ease-out forwards;
+}
+
+/* HP bar danger pulse when low */
+@keyframes hp-danger {
+  0%, 100% { 
+    background-color: #ef4444;
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+  }
+  50% { 
+    background-color: #dc2626;
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.8);
+  }
+}
+
+.animate-hp-danger {
+  animation: hp-danger 1s ease-in-out infinite;
+}
+
+/* Combat flash overlays */
+.screen-flash-damage {
+  animation: flash-red 0.3s ease-out;
+}
+
+@keyframes flash-red {
+  0% { background-color: rgba(239, 68, 68, 0.4); }
+  100% { background-color: transparent; }
+}
+
+.screen-flash-heal {
+  animation: flash-green 0.5s ease-out;
+}
+
+@keyframes flash-green {
+  0% { background-color: rgba(34, 197, 94, 0.3); }
+  100% { background-color: transparent; }
+}
+
+.screen-flash-critical {
+  animation: flash-orange 0.4s ease-out;
+}
+
+@keyframes flash-orange {
+  0% { background-color: rgba(249, 115, 22, 0.5); }
+  100% { background-color: transparent; }
+}
+
+.screen-flash-levelup {
+  animation: flash-gold 0.6s ease-out;
+}
+
+@keyframes flash-gold {
+  0% { background-color: rgba(212, 175, 55, 0.4); }
+  100% { background-color: transparent; }
+}
+
+/* Rarity border glows */
+.rarity-common { --rarity-color: #9ca3af; }
+.rarity-uncommon { --rarity-color: #22c55e; }
+.rarity-rare { --rarity-color: #3b82f6; }
+.rarity-epic { --rarity-color: #a855f7; }
+.rarity-legendary { --rarity-color: #f59e0b; }
+
+.rarity-glow {
+  box-shadow: 0 0 10px var(--rarity-color), 0 0 20px var(--rarity-color);
+}

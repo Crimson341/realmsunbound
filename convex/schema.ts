@@ -23,13 +23,27 @@ export default defineSchema({
     templateId: v.optional(v.id("templates")),
     templateVersion: v.optional(v.string()),
     
+    // --- DISCOVERY & CATEGORIZATION ---
+    genre: v.optional(v.string()), // 'fantasy', 'sci-fi', 'anime', 'realism', 'historical', 'horror', 'mythology'
+    isFeatured: v.optional(v.boolean()), // Admin-curated featured realms
+    isPublic: v.optional(v.boolean()), // Whether realm is discoverable (default true)
+    viewCount: v.optional(v.number()), // For popularity tracking
+    playCount: v.optional(v.number()), // Number of times played
+    tags: v.optional(v.array(v.string())), // Additional tags for filtering
+    
     // --- UNIVERSAL ENGINE FIELDS ---
     worldBible: v.optional(v.string()), // The "God Text" for the AI (Lore, Physics, Tone)
     aiPersona: v.optional(v.string()), // The personality of the Narrator
     terminology: v.optional(v.string()), // JSON: {"mana": "Chakra", "spells": "Jutsu"}
     statConfig: v.optional(v.string()), // JSON: Definition of stats [{"key": "nin", "label": "Ninjutsu"}]
     theme: v.optional(v.string()), // Visual preset: 'fantasy', 'sci-fi', 'ninja'
-  }).index("by_user", ["userId"]),
+    
+    // --- WORLD SYSTEMS ---
+    bountyEnabled: v.optional(v.boolean()), // Enable bounty/crime system for this campaign
+  })
+    .index("by_user", ["userId"])
+    .index("by_genre", ["genre"])
+    .index("by_featured", ["isFeatured"]),
 
   // New Table: Episodic & Semantic Memories
   // Stores summarized chapters, key facts, and entity references for the AI
@@ -88,12 +102,19 @@ export default defineSchema({
     imageId: v.optional(v.id("_storage")),
     source: v.optional(v.string()),
     embedding: v.optional(v.array(v.number())), // Searchable
+    
+    // --- USABILITY SYSTEM ---
+    usable: v.optional(v.boolean()), // Can this item be used from inventory?
+    useEffect: v.optional(v.string()), // JSON: { type: "heal", amount: 20 } or { type: "buff", stat: "strength", duration: 60 }
+    consumable: v.optional(v.boolean()), // Disappears after use?
+    quantity: v.optional(v.number()), // Stack count for consumables
   })
   .index("by_user", ["userId"])
+  .index("by_campaign", ["campaignId"])
   .vectorIndex("by_embedding", {
     vectorField: "embedding",
     dimensions: 768,
-    filterFields: ["campaignId"], // Note: items might not always have campaignId if global template? But here it's optional. Filter might fail if field is missing.
+    filterFields: ["campaignId"],
   }),
 
   quests: defineTable({
@@ -157,8 +178,40 @@ export default defineSchema({
     locationId: v.optional(v.id("locations")),
     imageId: v.optional(v.id("_storage")),
     embedding: v.optional(v.array(v.number())), // Searchable
+    
+    // --- HEALTH & COMBAT STATS ---
+    health: v.optional(v.number()), // Current health
+    maxHealth: v.optional(v.number()), // Maximum health (default 20)
+    damage: v.optional(v.number()), // Damage they deal (default 5)
+    armorClass: v.optional(v.number()), // Difficulty to hit (default 10)
+    
+    // --- INVENTORY & LOOT SYSTEM ---
+    inventoryItems: v.optional(v.array(v.id("items"))), // Items the NPC carries
+    dropItems: v.optional(v.array(v.id("items"))), // Items dropped on death (can be subset of inventory)
+    gold: v.optional(v.number()), // Gold the NPC carries
+    hasBeenLooted: v.optional(v.boolean()), // Whether body has been searched
+    
+    // --- TRADING SYSTEM ---
+    willTrade: v.optional(v.boolean()), // Whether NPC is willing to trade
+    tradeInventory: v.optional(v.array(v.id("items"))), // Items available for trade
+    tradePriceModifier: v.optional(v.number()), // Price multiplier (1.0 = normal, 1.5 = expensive)
+    
+    // --- DEATH & FACTION SYSTEM ---
+    isDead: v.optional(v.boolean()), // Has this NPC been killed?
+    deathCause: v.optional(v.string()), // How they died (for narrative)
+    killedBy: v.optional(v.string()), // "player" or NPC name
+    deathTimestamp: v.optional(v.number()), // When they died
+    factionId: v.optional(v.id("factions")), // Which faction they belong to
+    isEssential: v.optional(v.boolean()), // Cannot be killed (story-critical)
+    
+    // --- RECRUITMENT SYSTEM ---
+    isRecruitable: v.optional(v.boolean()), // Can be recruited to player camp
+    recruitCost: v.optional(v.number()), // Gold cost to recruit
+    loyalty: v.optional(v.number()), // 0-100, affects if they'll leave/betray
   })
   .index("by_campaign", ["campaignId"])
+  .index("by_faction", ["factionId"])
+  .index("by_location", ["locationId"])
   .vectorIndex("by_embedding", {
     vectorField: "embedding",
     dimensions: 768,
@@ -231,5 +284,157 @@ export default defineSchema({
     ritual: v.optional(v.boolean()),
     tags: v.optional(v.array(v.string())),
     notes: v.optional(v.string()),
+    // --- COMBAT ABILITY SYSTEM ---
+    energyCost: v.optional(v.number()), // Cost in mana/chakra/energy to cast
+    cooldown: v.optional(v.number()), // Turns before can use again (0 = instant)
+    damage: v.optional(v.number()), // Direct damage amount
+    healing: v.optional(v.number()), // Healing amount
+    buffEffect: v.optional(v.string()), // JSON: { stat: "strength", amount: 5, duration: 3 }
+    debuffEffect: v.optional(v.string()), // JSON: { stat: "defense", amount: -3, duration: 2 }
+    isPassive: v.optional(v.boolean()), // Always active, no energy cost
+    iconEmoji: v.optional(v.string()), // Emoji icon for display (e.g., "🔥", "⚡")
   }).index("by_campaign", ["campaignId"]).index("by_user", ["userId"]),
+
+  // --- CREATOR HUB TABLES ---
+  // Each creator has one hub for their fans/community
+  hubs: defineTable({
+    creatorId: v.string(),        // tokenIdentifier of the creator
+    name: v.string(),             // Hub name
+    description: v.optional(v.string()),
+    imageId: v.optional(v.id("_storage")),
+  }).index("by_creator", ["creatorId"]),
+
+  // Chat channels within a hub (general, quest-help, off-topic, etc.)
+  hubChannels: defineTable({
+    hubId: v.id("hubs"),
+    name: v.string(),             // "general", "quest-help", etc.
+    description: v.optional(v.string()),
+    order: v.number(),            // Display order
+  }).index("by_hub", ["hubId"]),
+
+  // Real-time chat messages in a channel
+  hubMessages: defineTable({
+    channelId: v.id("hubChannels"),
+    userId: v.string(),           // tokenIdentifier of sender
+    userName: v.string(),         // Cached display name
+    userAvatar: v.optional(v.string()),
+    content: v.string(),
+  }).index("by_channel", ["channelId"]),
+
+  // --- WORLD SYSTEMS ---
+
+  // Factions - groups that NPCs can belong to
+  factions: defineTable({
+    campaignId: v.id("campaigns"),
+    name: v.string(),
+    description: v.string(),
+    territory: v.optional(v.string()), // Description of their territory
+    headquartersId: v.optional(v.id("locations")), // Main base location
+    allies: v.optional(v.array(v.id("factions"))), // Allied factions
+    enemies: v.optional(v.array(v.id("factions"))), // Enemy factions
+    imageId: v.optional(v.id("_storage")),
+  }).index("by_campaign", ["campaignId"]),
+
+  // Regions - groups of locations for bounty tracking
+  regions: defineTable({
+    campaignId: v.id("campaigns"),
+    name: v.string(),
+    description: v.optional(v.string()),
+    locationIds: v.array(v.id("locations")), // Locations in this region
+    governingFactionId: v.optional(v.id("factions")), // Who controls this region
+  }).index("by_campaign", ["campaignId"]),
+
+  // Rumors - information that spreads through the world
+  rumors: defineTable({
+    campaignId: v.id("campaigns"),
+    content: v.string(), // The rumor text
+    type: v.string(), // "death", "crime", "quest_complete", "major_event"
+    originLocationId: v.id("locations"), // Where the rumor started
+    spreadRadius: v.number(), // How many location hops it has spread
+    maxSpreadRadius: v.optional(v.number()), // Maximum spread (default 3)
+    timestamp: v.number(), // When it was created
+    relatedNpcId: v.optional(v.id("npcs")), // Related NPC if applicable
+    relatedPlayerId: v.optional(v.string()), // Related player if applicable
+    isActive: v.optional(v.boolean()), // Whether rumor is still spreading
+  })
+  .index("by_campaign", ["campaignId"])
+  .index("by_origin", ["originLocationId"])
+  .index("by_type", ["type"]),
+
+  // Bounties - crime tracking per region
+  bounties: defineTable({
+    campaignId: v.id("campaigns"),
+    playerId: v.string(), // tokenIdentifier of the wanted player
+    regionId: v.id("regions"), // Which region the bounty is in
+    amount: v.number(), // Gold amount
+    crimes: v.array(v.object({
+      type: v.string(), // "murder", "theft", "assault", "trespassing"
+      description: v.string(),
+      timestamp: v.number(),
+      victimName: v.optional(v.string()),
+    })),
+    status: v.string(), // "active", "paid", "jailed", "pardoned", "escaped"
+    lastUpdated: v.number(),
+    bountyHuntersSent: v.optional(v.number()), // Track how many hunters dispatched
+  })
+  .index("by_campaign", ["campaignId"])
+  .index("by_player", ["playerId"])
+  .index("by_region", ["regionId"])
+  .index("by_status", ["status"]),
+
+  // Player Camps - base building for players
+  playerCamps: defineTable({
+    campaignId: v.id("campaigns"),
+    playerId: v.string(), // tokenIdentifier of the owner
+    name: v.string(),
+    locationId: v.id("locations"), // Where the camp is established
+    description: v.optional(v.string()),
+    followers: v.array(v.object({
+      npcId: v.id("npcs"),
+      role: v.string(), // "companion", "guard", "worker", "merchant"
+      joinedAt: v.number(),
+      positionX: v.optional(v.number()), // Position on camp map
+      positionY: v.optional(v.number()),
+    })),
+    resources: v.optional(v.string()), // JSON: { gold: 100, food: 50 }
+    createdAt: v.number(),
+  })
+  .index("by_campaign", ["campaignId"])
+  .index("by_player", ["playerId"])
+  .index("by_location", ["locationId"]),
+
+  // Player Game State - persistent player state across sessions
+  playerGameState: defineTable({
+    campaignId: v.id("campaigns"),
+    playerId: v.string(),
+    currentLocationId: v.optional(v.id("locations")),
+    hp: v.number(),
+    maxHp: v.number(),
+    energy: v.optional(v.number()), // Current mana/chakra/stamina
+    maxEnergy: v.optional(v.number()), // Max energy pool
+    xp: v.number(),
+    level: v.number(),
+    gold: v.optional(v.number()),
+    isJailed: v.optional(v.boolean()),
+    jailEndTime: v.optional(v.number()), // When jail sentence ends
+    jailRegionId: v.optional(v.id("regions")),
+    activeBuffs: v.optional(v.string()), // JSON array of active buffs
+    activeCooldowns: v.optional(v.string()), // JSON: { spellId: turnsRemaining }
+    lastPlayed: v.number(),
+  })
+  .index("by_campaign", ["campaignId"])
+  .index("by_player", ["playerId"])
+  .index("by_campaign_and_player", ["campaignId", "playerId"]),
+
+  // Player Inventory - items owned by player (separate from campaign items)
+  playerInventory: defineTable({
+    campaignId: v.id("campaigns"),
+    playerId: v.string(),
+    itemId: v.id("items"),
+    quantity: v.number(),
+    equippedSlot: v.optional(v.string()), // "weapon", "armor", "accessory", null
+    acquiredAt: v.number(),
+  })
+  .index("by_campaign_and_player", ["campaignId", "playerId"])
+  .index("by_item", ["itemId"]),
 });

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Sparkles, Star, Compass, Scroll } from 'lucide-react';
 import Link from 'next/link';
+import { useTheme } from '@/components/ThemeProvider';
 
 // --- TYPES ---
 type ChangeType = 'feature' | 'fix' | 'improvement' | 'system';
@@ -86,15 +87,17 @@ const FadeBlock = ({
 };
 
 // --- COMPONENT: PRIMOGEM STAR MARKER ---
-const PrimogemMarker = () => (
+const PrimogemMarker = ({ dark }: { dark: boolean }) => (
     <div className="relative w-4 h-4 flex items-center justify-center">
-        <div className="absolute inset-0 bg-[#D3BC8E] rotate-45 rounded-[1px] shadow-[0_0_10px_#D3BC8E]"></div>
+        <div className={`absolute inset-0 rotate-45 rounded-[1px] ${dark ? 'bg-[#D4AF37] shadow-[0_0_10px_#D4AF37]' : 'bg-[#D3BC8E] shadow-[0_0_10px_#D3BC8E]'}`}></div>
         <div className="absolute inset-0 bg-white w-[60%] h-[60%] m-auto rotate-45 rounded-[1px]"></div>
     </div>
 );
 
 export default function GenshinChangelog() {
     const [isSystemReady, setIsSystemReady] = useState(false);
+    const { theme, mounted } = useTheme();
+    const dark = mounted ? theme === 'dark' : false;
 
     // Initial "Ley Line" Sequence
     useEffect(() => {
@@ -102,17 +105,28 @@ export default function GenshinChangelog() {
         return () => clearTimeout(timer);
     }, []);
 
+    const goldColor = dark ? '#D4AF37' : '#D3BC8E';
+    const textColor = dark ? '#e8e6e3' : '#3B4255';
+    const mutedColor = dark ? '#6b7280' : '#838692';
+
     return (
-        // Base Background: Clean paper white/gray typical of Genshin Menus
-        <div className="min-h-screen bg-[#F0F1F5] text-[#3B4255] font-sans selection:bg-[#D3BC8E]/30 selection:text-[#3B4255] overflow-x-hidden relative">
+        <div className={`min-h-screen font-sans overflow-x-hidden relative ${
+            dark 
+                ? 'bg-[#0f1119] text-[#e8e6e3] selection:bg-[#D4AF37]/30 selection:text-[#e8e6e3]' 
+                : 'bg-[#F0F1F5] text-[#3B4255] selection:bg-[#D3BC8E]/30 selection:text-[#3B4255]'
+        }`}>
 
             {/* --- CELESTIAL BACKGROUND ELEMENTS --- */}
             <div className="fixed inset-0 pointer-events-none overflow-hidden">
                 {/* Soft Gradient Overlay */}
-                <div className="absolute inset-0 bg-gradient-to-b from-white via-transparent to-[#E3E5E8] opacity-80" />
+                <div className={`absolute inset-0 opacity-80 ${
+                    dark 
+                        ? 'bg-gradient-to-b from-[#0f1119] via-transparent to-[#1a1d2e]' 
+                        : 'bg-gradient-to-b from-white via-transparent to-[#E3E5E8]'
+                }`} />
 
                 {/* Constellation Lines (SVG Pattern) */}
-                <svg className="absolute top-0 right-0 w-[800px] h-[800px] opacity-[0.03] text-[#3B4255]" viewBox="0 0 100 100">
+                <svg className={`absolute top-0 right-0 w-[800px] h-[800px] opacity-[0.03] ${dark ? 'text-[#D4AF37]' : 'text-[#3B4255]'}`} viewBox="0 0 100 100">
                     <path d="M10,10 L30,30 L50,10 L70,40" fill="none" stroke="currentColor" strokeWidth="0.5" />
                     <circle cx="10" cy="10" r="1" fill="currentColor" />
                     <circle cx="30" cy="30" r="1" fill="currentColor" />
@@ -121,7 +135,7 @@ export default function GenshinChangelog() {
                 </svg>
 
                 {/* Bottom Left Pattern */}
-                <div className="absolute bottom-[-10%] left-[-5%] w-[500px] h-[500px] bg-[#D3BC8E]/5 rounded-full blur-[100px]" />
+                <div className={`absolute bottom-[-10%] left-[-5%] w-[500px] h-[500px] rounded-full blur-[100px] ${dark ? 'bg-[#D4AF37]/5' : 'bg-[#D3BC8E]/5'}`} />
             </div>
 
             {/* --- NAVIGATION --- */}
@@ -132,11 +146,19 @@ export default function GenshinChangelog() {
                         className="group flex items-center gap-3"
                     >
                         {/* Genshin-style Back Button Circle */}
-                        <div className="relative w-10 h-10 rounded-full bg-[#EBEBEB] border-2 border-[#D3BC8E] flex items-center justify-center shadow-sm group-hover:bg-white group-hover:shadow-[0_0_15px_#D3BC8E] transition-all duration-300">
-                            <ArrowLeft size={18} className="text-[#3B4255] group-hover:-translate-x-0.5 transition-transform" />
+                        <div className={`relative w-10 h-10 rounded-full border-2 flex items-center justify-center shadow-sm transition-all duration-300 ${
+                            dark 
+                                ? 'bg-[#1a1d2e] border-[#D4AF37] group-hover:bg-[#252838] group-hover:shadow-[0_0_15px_#D4AF37]' 
+                                : 'bg-[#EBEBEB] border-[#D3BC8E] group-hover:bg-white group-hover:shadow-[0_0_15px_#D3BC8E]'
+                        }`}>
+                            <ArrowLeft size={18} className={`${dark ? 'text-[#e8e6e3]' : 'text-[#3B4255]'} group-hover:-translate-x-0.5 transition-transform`} />
                         </div>
-                        <span className="text-sm font-bold uppercase tracking-widest text-[#838692] group-hover:text-[#D3BC8E] transition-colors">
-                            Paimon Menu
+                        <span className={`text-sm font-bold uppercase tracking-widest transition-colors ${
+                            dark 
+                                ? 'text-gray-500 group-hover:text-[#D4AF37]' 
+                                : 'text-[#838692] group-hover:text-[#D3BC8E]'
+                        }`}>
+                            Main Menu
                         </span>
                     </Link>
                 </div>
@@ -149,10 +171,10 @@ export default function GenshinChangelog() {
                     <div className="h-[60vh] flex flex-col items-center justify-center space-y-6">
                         {/* Loading Icon */}
                         <div className="relative">
-                            <div className="absolute inset-0 bg-[#D3BC8E] blur-xl opacity-50 animate-pulse"></div>
-                            <Compass size={48} className="text-[#3B4255] animate-[spin_4s_linear_infinite] relative z-10" />
+                            <div className={`absolute inset-0 blur-xl opacity-50 animate-pulse ${dark ? 'bg-[#D4AF37]' : 'bg-[#D3BC8E]'}`}></div>
+                            <Compass size={48} className={`animate-[spin_4s_linear_infinite] relative z-10 ${dark ? 'text-[#e8e6e3]' : 'text-[#3B4255]'}`} />
                         </div>
-                        <div className="flex items-center gap-3 text-[#D3BC8E] animate-pulse">
+                        <div className={`flex items-center gap-3 animate-pulse ${dark ? 'text-[#D4AF37]' : 'text-[#D3BC8E]'}`}>
                             <span className="font-serif text-sm tracking-[0.2em] font-bold">CONNECTING TO LEY LINES...</span>
                         </div>
                     </div>
@@ -162,15 +184,15 @@ export default function GenshinChangelog() {
                         <FadeBlock delay={100} className="mb-20 text-center relative">
                             {/* Decorative Top Line */}
                             <div className="flex justify-center items-center gap-4 mb-6 opacity-50">
-                                <div className="h-[1px] w-12 bg-[#D3BC8E]" />
-                                <Star size={12} className="text-[#D3BC8E] fill-[#D3BC8E]" />
-                                <div className="h-[1px] w-12 bg-[#D3BC8E]" />
+                                <div className="h-[1px] w-12" style={{ backgroundColor: goldColor }} />
+                                <Star size={12} style={{ color: goldColor, fill: goldColor }} />
+                                <div className="h-[1px] w-12" style={{ backgroundColor: goldColor }} />
                             </div>
 
-                            <h1 className="text-5xl md:text-6xl font-serif font-bold text-[#3B4255] mb-4 tracking-wide drop-shadow-sm">
+                            <h1 className={`text-5xl md:text-6xl font-serif font-bold mb-4 tracking-wide drop-shadow-sm ${dark ? 'text-[#e8e6e3]' : 'text-[#3B4255]'}`}>
                                 Archive Log
                             </h1>
-                            <p className="text-[#838692] font-medium tracking-wide uppercase text-xs">
+                            <p className={`font-medium tracking-wide uppercase text-xs ${dark ? 'text-gray-500' : 'text-[#838692]'}`}>
                                 Travel Log / System Updates
                             </p>
                         </FadeBlock>
@@ -179,42 +201,60 @@ export default function GenshinChangelog() {
                         <div className="relative pl-4 md:pl-0 space-y-16">
 
                             {/* Vertical Guide Line */}
-                            <div className="absolute left-4 md:left-[27px] top-4 bottom-0 w-[2px] bg-gradient-to-b from-[#D3BC8E] via-[#D3BC8E]/30 to-transparent md:block hidden" />
+                            <div className={`absolute left-4 md:left-[27px] top-4 bottom-0 w-[2px] bg-gradient-to-b to-transparent md:block hidden ${
+                                dark ? 'from-[#D4AF37] via-[#D4AF37]/30' : 'from-[#D3BC8E] via-[#D3BC8E]/30'
+                            }`} />
 
                             {CHANGELOG_DATA.map((entry, index) => (
                                 <div key={entry.version} className="relative md:pl-20 group">
 
                                     {/* Timeline Marker (Desktop) */}
                                     <div className="absolute left-[19px] top-3 hidden md:block z-20 group-hover:scale-125 transition-transform duration-500">
-                                        <PrimogemMarker />
+                                        <PrimogemMarker dark={dark} />
                                     </div>
 
                                     {/* Card Container - Genshin Style Card */}
                                     <FadeBlock delay={300 + (index * 200)}>
-                                        <div className="bg-white rounded-xl p-8 border border-white shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] relative overflow-hidden hover:shadow-[0_8px_30px_-4px_rgba(211,188,142,0.2)] transition-all duration-500">
+                                        <div className={`rounded-xl p-8 border shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] relative overflow-hidden transition-all duration-500 ${
+                                            dark 
+                                                ? 'bg-[#1a1d2e] border-[#2a2d3e] hover:shadow-[0_8px_30px_-4px_rgba(212,175,55,0.2)]' 
+                                                : 'bg-white border-white hover:shadow-[0_8px_30px_-4px_rgba(211,188,142,0.2)]'
+                                        }`}>
 
                                             {/* Subtle Gold Corner Decoration */}
                                             <div className="absolute top-0 right-0 p-4 opacity-20">
-                                                <Scroll size={40} className="text-[#D3BC8E] rotate-12" />
+                                                <Scroll size={40} style={{ color: goldColor }} className="rotate-12" />
                                             </div>
 
                                             {/* Version & Date */}
                                             <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4 mb-4">
-                                                <span className="inline-block bg-[#3B4255] text-[#D3BC8E] text-xs font-bold px-3 py-1 rounded-full tracking-widest">
+                                                <span className={`inline-block text-xs font-bold px-3 py-1 rounded-full tracking-widest ${
+                                                    dark 
+                                                        ? 'bg-[#e8e6e3] text-[#D4AF37]' 
+                                                        : 'bg-[#3B4255] text-[#D3BC8E]'
+                                                }`}>
                                                     {entry.version}
                                                 </span>
-                                                <span className="text-[#838692] text-xs font-bold uppercase tracking-widest">
+                                                <span className={`text-xs font-bold uppercase tracking-widest ${dark ? 'text-gray-500' : 'text-[#838692]'}`}>
                                                     {entry.date}
                                                 </span>
                                             </div>
 
                                             {/* Title */}
-                                            <h2 className="text-3xl font-serif font-bold text-[#3B4255] mb-3 group-hover:text-[#A08655] transition-colors duration-300">
+                                            <h2 className={`text-3xl font-serif font-bold mb-3 transition-colors duration-300 ${
+                                                dark 
+                                                    ? 'text-[#e8e6e3] group-hover:text-[#D4AF37]' 
+                                                    : 'text-[#3B4255] group-hover:text-[#A08655]'
+                                            }`}>
                                                 {entry.title}
                                             </h2>
 
                                             {/* Description */}
-                                            <p className="text-[#686D7F] leading-relaxed mb-8 border-l-2 border-[#D3BC8E]/30 pl-4 text-sm md:text-base">
+                                            <p className={`leading-relaxed mb-8 border-l-2 pl-4 text-sm md:text-base ${
+                                                dark 
+                                                    ? 'text-gray-400 border-[#D4AF37]/30' 
+                                                    : 'text-[#686D7F] border-[#D3BC8E]/30'
+                                            }`}>
                                                 {entry.description}
                                             </p>
 
@@ -223,13 +263,17 @@ export default function GenshinChangelog() {
                                                 {entry.changes.map((change, i) => (
                                                     <li key={i} className="flex items-start gap-3 text-sm group/item">
                                                         {/* Custom Bullet - 4 Point Star */}
-                                                        <div className="mt-1.5 shrink-0 text-[#D3BC8E]">
+                                                        <div className="mt-1.5 shrink-0" style={{ color: goldColor }}>
                                                             <svg width="10" height="10" viewBox="0 0 10 10" className="fill-current group-hover/item:rotate-90 transition-transform duration-500">
                                                                 <path d="M5 0L6.5 3.5L10 5L6.5 6.5L5 10L3.5 6.5L0 5L3.5 3.5L5 0Z" />
                                                             </svg>
                                                         </div>
 
-                                                        <span className="text-[#3B4255] group-hover/item:text-black transition-colors flex-1">
+                                                        <span className={`transition-colors flex-1 ${
+                                                            dark 
+                                                                ? 'text-[#e8e6e3] group-hover/item:text-white' 
+                                                                : 'text-[#3B4255] group-hover/item:text-black'
+                                                        }`}>
                                                             {change.text}
                                                         </span>
 
@@ -240,7 +284,7 @@ export default function GenshinChangelog() {
                                                             ${change.type === 'feature' ? 'text-[#4E7CFF] border-[#4E7CFF]/20 bg-[#4E7CFF]/5' : ''}
                                                             ${change.type === 'fix' ? 'text-[#2CB988] border-[#2CB988]/20 bg-[#2CB988]/5' : ''}
                                                             ${change.type === 'improvement' ? 'text-[#FF9C33] border-[#FF9C33]/20 bg-[#FF9C33]/5' : ''}
-                                                            ${change.type === 'system' ? 'text-[#838692] border-[#838692]/20 bg-[#838692]/5' : ''}
+                                                            ${change.type === 'system' ? `${dark ? 'text-gray-500 border-gray-500/20 bg-gray-500/5' : 'text-[#838692] border-[#838692]/20 bg-[#838692]/5'}` : ''}
                                                         `}>
                                                             {change.type}
                                                         </span>
@@ -255,7 +299,11 @@ export default function GenshinChangelog() {
 
                         {/* --- FOOTER --- */}
                         <FadeBlock delay={1500} className="mt-24 text-center pb-12">
-                            <div className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-white border border-[#D3BC8E]/30 text-[#D3BC8E] text-xs font-bold uppercase tracking-widest hover:bg-[#D3BC8E] hover:text-white transition-all cursor-pointer shadow-sm">
+                            <div className={`inline-flex items-center gap-2 px-6 py-3 rounded-full border text-xs font-bold uppercase tracking-widest transition-all cursor-pointer shadow-sm ${
+                                dark 
+                                    ? 'bg-[#1a1d2e] border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37] hover:text-[#0f1119]' 
+                                    : 'bg-white border-[#D3BC8E]/30 text-[#D3BC8E] hover:bg-[#D3BC8E] hover:text-white'
+                            }`}>
                                 <Sparkles size={14} />
                                 <span>Travel Complete</span>
                             </div>

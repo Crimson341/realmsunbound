@@ -1,19 +1,38 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars, react-hooks/exhaustive-deps */
 "use client";
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { useParams } from 'next/navigation';
-import { useQuery, useAction } from 'convex/react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { useQuery, useAction, useMutation } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { Id } from '../../../convex/_generated/dataModel';
 import {
     Send, Heart, MapPin,
     Menu, X, ArrowLeft,
-    Loader2, Swords, Backpack, UserCircle, Compass, Search
+    Loader2, Swords, Backpack, UserCircle, Search, Trophy,
+    Tent, AlertTriangle, Skull, Coins, ShieldAlert
 } from 'lucide-react';
 import Link from 'next/link';
+import { AnimatePresence, motion } from 'framer-motion';
 import CharacterSheetModal from '../../../components/CharacterSheetModal';
 import QuestDetailModal from '../../../components/QuestDetailModal';
+import {
+    QuickActionBar,
+    DiceRollOverlay,
+    RewardToast,
+    XPBar,
+    LevelUpOverlay,
+    CombatHUD,
+    ScreenEffect,
+    GameContext,
+    CombatState,
+    SkillCheckData,
+    RewardData,
+    Rarity,
+    ScreenEffectType,
+} from '../../../components/GameUI';
+import { LootableBodiesList, TradingNPCsList } from '../../../components/NPCInteraction';
+import { AbilitiesBar } from '../../../components/AbilitiesBar';
 
 // --- TYPES ---
 
@@ -24,9 +43,15 @@ type Message = {
     questOffer?: string[];
 };
 
+interface QueuedReward extends RewardData {
+    id: string;
+}
+
 // --- UTILS ---
 
 const cn = (...classes: (string | undefined | null | false)[]) => classes.filter(Boolean).join(' ');
+
+const generateId = () => Math.random().toString(36).substring(2, 9);
 
 // --- STREAMING HELPER ---
 
@@ -82,7 +107,6 @@ const streamNarrative = async (
                 try {
                     textContent = JSON.parse(`"${match[1]}"`);
                 } catch (e) {
-                    // fallback
                     console.error(e);
                 }
                 internalTextBuffer += textContent;
@@ -119,17 +143,9 @@ const streamNarrative = async (
                     if (dataEnd !== -1) {
                         dataString += internalTextBuffer.substring(0, dataEnd);
                         try {
-                            // Clean markdown code blocks if present
                             const cleanJson = dataString.replace(/```json/g, '').replace(/```/g, '').trim();
                             const json = JSON.parse(cleanJson);
                             onData(json);
-
-                            // Attach choices to the last message if available
-                            if (json.choices && Array.isArray(json.choices)) {
-                                onContent("", json.choices); // Pass choices via onContent or a new callback?
-                                // Actually, onData is better for state updates, but we need to attach to message history.
-                                // Let's update the onData callback in handleSendMessage/handleStartGame/handleAskQuest to handle this.
-                            }
                         } catch (e) {
                             console.error("JSON Parse Error in Stream", e);
                         }
@@ -263,9 +279,9 @@ const HighlightText = ({ text, entities }: { text: string, entities: { name: str
             {parts.map((part, i) => {
                 const entity = sortedEntities.find(e => e.name.toLowerCase() === part.toLowerCase());
                 if (entity) {
-                    return <EntitySpan key={i} entity={entity} text={part} />; 
+                    return <EntitySpan key={`entity-${i}-${part.slice(0, 10)}`} entity={entity} text={part} />; 
                 }
-                return part;
+                return <span key={`text-${i}`}>{part}</span>;
             })}
         </>
     );
@@ -273,11 +289,41 @@ const HighlightText = ({ text, entities }: { text: string, entities: { name: str
 
 export default function PlayPage() {
     const params = useParams();
+    const router = useRouter();
     const campaignId = params.campaignId as Id<"campaigns">;
 
     const data = useQuery(api.forge.getCampaignDetails, { campaignId });
     const generateQuest = useAction(api.ai.generateQuest);
+    
+    // --- ABILITIES QUERY ---
+    // Get the user's id for ability queries (use same variable as defined later)
+    const playerIdForAbilities = data?.character?.userId || "";
+    const abilities = useQuery(
+        api.abilities.getPlayerAbilities,
+        playerIdForAbilities ? { campaignId, playerId: playerIdForAbilities } : "skip"
+    );
+    const executeAbility = useMutation(api.abilities.useAbility);
+    
+    // Parse campaign terminology (for custom names like "Chakra" instead of "Energy")
+    const terminology = useMemo(() => {
+        if (!data?.campaign?.terminology) return null;
+        try {
+            return JSON.parse(data.campaign.terminology);
+        } catch {
+            return null;
+        }
+    }, [data?.campaign?.terminology]);
+    
+    // World system mutations
+    const killNPC = useMutation(api.forge.killNPC);
+    const addBounty = useMutation(api.bounty.addBounty);
+    const spreadRumor = useMutation(api.world.spreadRumor);
+    const createDeathRumor = useMutation(api.world.createDeathRumor);
+    
+    // Get player ID from character data
+    const playerId = data?.character?.userId || "";
 
+    // --- CORE STATE ---
     const [messages, setMessages] = useState<Message[]>([]);
     const [currentChoices, setCurrentChoices] = useState<string[]>([]);
     const [input, setInput] = useState("");
@@ -288,11 +334,36 @@ export default function PlayPage() {
     const [isGeneratingQuest, setIsGeneratingQuest] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
 
-    // Game State
+    // --- GAME STATE ---
     const [currentLocationId, setCurrentLocationId] = useState<string | null>(null);
-    const [hp, setHp] = useState(18);
+    const [hp, setHp] = useState(20);
     const [maxHp] = useState(20);
+    const [xp, setXp] = useState(0);
+    const [xpToLevel, setXpToLevel] = useState(100);
+    const [level, setLevel] = useState(1);
+    const [gameContext, setGameContext] = useState<GameContext>('explore');
+    
+    // --- WORLD SYSTEMS STATE ---
+    const [bountyAmount, setBountyAmount] = useState(0);
+    const [isJailed, setIsJailed] = useState(false);
+    const [killedNpcs, setKilledNpcs] = useState<string[]>([]);
+    const [gold, setGold] = useState(0);
+    
+    // --- ENERGY/ABILITY STATE ---
+    const [energy, setEnergy] = useState(100);
+    const [maxEnergy] = useState(100);
+    
+    // --- COMBAT STATE ---
+    const [combatState, setCombatState] = useState<CombatState | null>(null);
+    
+    // --- UI EFFECT STATE ---
+    const [skillCheckData, setSkillCheckData] = useState<SkillCheckData | null>(null);
+    const [rewardQueue, setRewardQueue] = useState<QueuedReward[]>([]);
+    const [screenEffect, setScreenEffect] = useState<ScreenEffectType | null>(null);
+    const [showLevelUp, setShowLevelUp] = useState(false);
+    const [prevHp, setPrevHp] = useState(hp);
 
+    // --- ENTITIES FOR HIGHLIGHTING ---
     const entities = useMemo(() => {
         if (!data) return [];
         return [
@@ -303,10 +374,201 @@ export default function PlayPage() {
         ];
     }, [data]);
 
+    // --- HP CHANGE DETECTION ---
+    useEffect(() => {
+        if (hp < prevHp) {
+            // Took damage
+            setScreenEffect('damage');
+        } else if (hp > prevHp) {
+            // Healed
+            setScreenEffect('heal');
+        }
+        setPrevHp(hp);
+    }, [hp]);
+
+    // --- XP & LEVEL UP LOGIC ---
+    const addXp = useCallback((amount: number) => {
+        setXp(prev => {
+            const newXp = prev + amount;
+            if (newXp >= xpToLevel) {
+                // Level up!
+                setLevel(l => l + 1);
+                setXpToLevel(t => Math.floor(t * 1.5));
+                setShowLevelUp(true);
+                setScreenEffect('levelup');
+                return newXp - xpToLevel;
+            }
+            return newXp;
+        });
+    }, [xpToLevel]);
+
+    // --- REWARD QUEUE MANAGEMENT ---
+    const addReward = useCallback((reward: RewardData) => {
+        const queuedReward: QueuedReward = { ...reward, id: generateId() };
+        setRewardQueue(prev => [...prev, queuedReward]);
+    }, []);
+
+    const removeReward = useCallback((id: string) => {
+        setRewardQueue(prev => prev.filter(r => r.id !== id));
+    }, []);
+
+    // --- GAME DATA HANDLER ---
+    const handleGameData = useCallback((gameData: any) => {
+        // Update HP
+        if (typeof gameData.hp === 'number') {
+            setHp(gameData.hp);
+        }
+
+        // Update context
+        if (gameData.context && ['explore', 'combat', 'social', 'rest'].includes(gameData.context)) {
+            setGameContext(gameData.context as GameContext);
+        }
+
+        // Handle choices
+        if (gameData.choices && Array.isArray(gameData.choices)) {
+            const normalizedChoices = gameData.choices
+                .map((c: any) => 
+                    typeof c === 'string' ? c : c.text || c.action || c.label || ''
+                )
+                .filter((c: string) => c && c.trim().length > 0); // Filter out empty choices
+            setCurrentChoices(normalizedChoices);
+            setMessages(prev => {
+                const last = prev[prev.length - 1];
+                if (last?.role === 'model') {
+                    return [...prev.slice(0, -1), { ...last, choices: normalizedChoices }];
+                }
+                return prev;
+            });
+        }
+
+        // Handle game events
+        if (gameData.gameEvent) {
+            const event = gameData.gameEvent;
+
+            // Combat event
+            if (event.type === 'combat' && event.combat) {
+                setCombatState(event.combat);
+                setGameContext('combat');
+            }
+
+            // Skill check event
+            if (event.type === 'skillCheck' && event.skillCheck) {
+                setSkillCheckData(event.skillCheck);
+                // Show critical effect for nat 20
+                if (event.skillCheck.roll === 20) {
+                    setScreenEffect('critical');
+                }
+            }
+
+            // Reward event
+            if (event.type === 'reward' && event.reward) {
+                addReward(event.reward);
+                if (event.reward.xp) {
+                    addXp(event.reward.xp);
+                }
+            }
+
+            // NPC Death event - persist to database
+            if (event.type === 'npcDeath' && event.npcDeath) {
+                const { npcName, npcId, cause, killedBy } = event.npcDeath;
+                setKilledNpcs(prev => [...prev, npcName]);
+                
+                // If we have an npcId, persist the death
+                if (npcId && data) {
+                    const npc = data.npcs?.find((n: any) => 
+                        n._id === npcId || n.name.toLowerCase() === npcName.toLowerCase()
+                    );
+                    if (npc && !npc.isEssential) {
+                        killNPC({
+                            npcId: npc._id,
+                            deathCause: cause || "Unknown",
+                            killedBy: killedBy || "player",
+                        }).catch(console.error);
+                        
+                        // Create death rumor if we have a location
+                        if (currentLocationId) {
+                            createDeathRumor({
+                                campaignId,
+                                npcId: npc._id,
+                                killedBy: killedBy || "player",
+                                locationId: currentLocationId as Id<"locations">,
+                            }).catch(console.error);
+                        }
+                    }
+                }
+                
+                // Screen effect for dramatic deaths
+                setScreenEffect('damage');
+            }
+
+            // Crime event - add bounty
+            if (event.type === 'crime' && event.crime && data?.bountyEnabled) {
+                const { type: crimeType, description, bountyAmount: crimeAmount } = event.crime;
+                
+                // Find current region (or use first region as default)
+                if (data.regions && data.regions.length > 0 && playerId) {
+                    const currentRegion = data.regions.find((r: any) => 
+                        currentLocationId && r.locationIds?.includes(currentLocationId)
+                    ) || data.regions[0];
+                    
+                    if (currentRegion) {
+                        addBounty({
+                            campaignId,
+                            playerId,
+                            regionId: currentRegion._id,
+                            crimeType,
+                            description,
+                        }).then(result => {
+                            if (result.success && result.totalBounty) {
+                                setBountyAmount(result.totalBounty);
+                            }
+                        }).catch(console.error);
+                    }
+                }
+            }
+
+            // Recruitment event - handled by showing UI prompt
+            if (event.type === 'recruitment' && event.recruitment) {
+                // For now, just show a toast. Full recruitment UI would open camp page
+                addReward({
+                    item: `${event.recruitment.npcName} can be recruited!`,
+                    rarity: 'uncommon' as Rarity,
+                    xp: 0,
+                });
+            }
+        }
+
+        // Direct XP gain
+        if (typeof gameData.xpGained === 'number' && gameData.xpGained > 0) {
+            addXp(gameData.xpGained);
+        }
+
+        // Location update
+        if (gameData.current_location || gameData.locationId) {
+            const locName = gameData.current_location;
+            if (locName && data?.locations) {
+                const loc = data.locations.find(l => 
+                    l.name.toLowerCase() === locName.toLowerCase()
+                );
+                if (loc) {
+                    setCurrentLocationId(loc._id);
+                }
+            }
+        }
+
+        // End combat if enemy HP is 0
+        if (combatState && gameData.gameEvent?.combat?.enemyHP === 0) {
+            setTimeout(() => {
+                setCombatState(null);
+                setGameContext('explore');
+            }, 1500);
+        }
+    }, [data, combatState, addReward, addXp]);
+
+    // --- QUEST GENERATION ---
     const handleGenerateQuest = async () => {
         if (!data || isGeneratingQuest) return;
         
-        // Determine location
         const location = data.locations?.find(l => l._id === currentLocationId) || data.locations?.[0];
         if (!location) return;
 
@@ -317,7 +579,6 @@ export default function PlayPage() {
                 locationId: location._id,
                 locationName: location.name,
             });
-            // The query 'getCampaignDetails' will auto-update the quest list via Convex reactivity
         } catch (error) {
             console.error("Failed to generate quest:", error);
         } finally {
@@ -325,213 +586,196 @@ export default function PlayPage() {
         }
     };
 
-        const handleAskQuest = async (questTitle: string) => {
-            if (!data || !selectedQuest) return;
+    // --- ASK ABOUT QUEST ---
+    const handleAskQuest = async (questTitle: string) => {
+        if (!data || !selectedQuest) return;
 
-            setCurrentChoices([]); // Clear previous choices
-    
-            const currentLocation = data.locations?.find(l => l._id === currentLocationId);
-            const questLocation = data.locations?.find(l => l._id === selectedQuest?.locationId);
-            
-            const currentLocationName = currentLocation?.name || "Unknown Wilds";
-            const questLocationName = questLocation?.name || "Unknown Place";
-            
-            // Logic: If IDs match or strict equality check (assuming single area per quest for now)
-            const isLocal = currentLocation?._id === questLocation?._id;
-    
-            const prompt = `I ask around about the quest "${questTitle}".
-            
-            [SYSTEM NOTE: The player is currently at "${currentLocationName}". The quest is located in "${questLocationName}". 
-            ${isLocal 
-                ? "Since they are in the same area, the locals should know specific details, rumors, or where to find the quest giver."
-                : "Since they are far away from the quest location, the locals should barely know anything—maybe just a vague rumor or pointing the player to travel to " + questLocationName + "."}
-            ]`;
-    
-            // Close modal is handled by the modal itself calling onAsk then onClose, 
-            // or we can close it here: setSelectedQuest(null); (redundant but safe)
-            setSelectedQuest(null);
-    
-            // Reuse message sending logic
-            const userMsg: Message = { role: 'user', content: `I ask around about "${questTitle}"...` };
-            setMessages(prev => [...prev, userMsg]);
-            setIsLoading(true);
-    
-            const payload = {
-                prompt: prompt,
-                history: messages.map(m => ({ role: m.role, content: m.content })),
-                campaignId: data.campaign._id,
-                playerState: {
-                    name: data.character?.name || "Traveler",
-                    class: data.character?.class || "Unknown",
-                    level: data.character?.level || 1,
-                    hp: hp,
-                    maxHp: maxHp,
-                    inventory: data.inventory?.map((i: any) => i.name) || [],
-                    abilities: data.spells?.map((s: any) => s.name) || []
-                }
-            };
-    
-            await streamNarrative(
-                payload,
-                (delta) => {
-                    setMessages(prev => {
-                        const last = prev[prev.length - 1];
-                        if (last?.role === 'model') {
-                            return [...prev.slice(0, -1), { ...last, content: last.content + delta }];
-                        }
-                        return [...prev, { role: 'model', content: delta }];
-                    });
-                },
-                (gameData) => {
-                     if (gameData.hp) setHp(gameData.hp);
-                     if (gameData.choices) {
-                        const normalizedChoices = gameData.choices.map((c: any) => typeof c === 'string' ? c : c.text);
-                        setCurrentChoices(normalizedChoices);
-                        setMessages(prev => {
-                            const last = prev[prev.length - 1];
-                            if (last?.role === 'model') {
-                                return [...prev.slice(0, -1), { ...last, choices: normalizedChoices }];
-                            }
-                            return prev;
-                        });
-                     }
-                },
-                (err) => {
-                    console.error(err);
-                    setIsLoading(false);
-                }
-            );
-            setIsLoading(false);
-        };
-    
-        useEffect(() => {
-            if (scrollRef.current) {
-                const { scrollHeight, clientHeight } = scrollRef.current;
-                scrollRef.current.scrollTo({ top: scrollHeight - clientHeight, behavior: 'smooth' });
+        setCurrentChoices([]);
+
+        const currentLocation = data.locations?.find(l => l._id === currentLocationId);
+        const questLocation = data.locations?.find(l => l._id === selectedQuest?.locationId);
+        
+        const currentLocationName = currentLocation?.name || "Unknown Wilds";
+        const questLocationName = questLocation?.name || "Unknown Place";
+        const isLocal = currentLocation?._id === questLocation?._id;
+
+        const prompt = `I ask around about the quest "${questTitle}".
+        
+        [SYSTEM NOTE: The player is currently at "${currentLocationName}". The quest is located in "${questLocationName}". 
+        ${isLocal 
+            ? "Since they are in the same area, the locals should know specific details, rumors, or where to find the quest giver."
+            : "Since they are far away from the quest location, the locals should barely know anything—maybe just a vague rumor or pointing the player to travel to " + questLocationName + "."}
+        ]`;
+
+        setSelectedQuest(null);
+
+        const userMsg: Message = { role: 'user', content: `I ask around about "${questTitle}"...` };
+        setMessages(prev => [...prev, userMsg]);
+        setIsLoading(true);
+
+        const payload = {
+            prompt: prompt,
+            history: messages.map(m => ({ role: m.role, content: m.content })),
+            campaignId: data.campaign._id,
+            currentLocationId: currentLocationId,
+            playerId: playerId,
+            playerState: {
+                name: data.character?.name || "Traveler",
+                class: data.character?.class || "Unknown",
+                level: level,
+                hp: hp,
+                maxHp: maxHp,
+                inventory: data.inventory?.map((i: any) => i.name) || [],
+                abilities: data.spells?.map((s: any) => s.name) || [],
+                bounty: bountyAmount,
+                isJailed: isJailed,
             }
-        }, [messages, isLoading]);
-    
-        useEffect(() => {
-            if (data && messages.length === 0 && !isLoading) {
-                const startLocation = data.locations[0];
-                setCurrentLocationId(startLocation?._id || null);
-                handleStartGame(startLocation);
+        };
+
+        await streamNarrative(
+            payload,
+            (delta) => {
+                setMessages(prev => {
+                    const last = prev[prev.length - 1];
+                    if (last?.role === 'model') {
+                        return [...prev.slice(0, -1), { ...last, content: last.content + delta }];
+                    }
+                    return [...prev, { role: 'model', content: delta }];
+                });
+            },
+            handleGameData,
+            (err) => {
+                console.error(err);
+                setIsLoading(false);
             }
-        }, [data]);
-    
-        const handleStartGame = async (startLocation: any) => {
-            if (!data) return;
-            setIsLoading(true);
-    
-            const startPrompt = `
-                Start the adventure at ${startLocation?.name || "Unknown"}.
-                Describe the scene vividly (2 paragraphs). Address the player as "you".
-            `;
-    
-            const payload = {
-                prompt: startPrompt,
-                history: [],
-                campaignId: data.campaign._id,
-                playerState: {
-                    name: data.character?.name || "Traveler",
-                    class: data.character?.class || "Unknown",
-                    level: data.character?.level || 1,
-                    hp: hp,
-                    maxHp: maxHp,
-                    inventory: data.inventory?.map((i: any) => i.name) || [],
-                    abilities: data.spells?.map((s: any) => s.name) || []
-                }
-            };
-    
-            await streamNarrative(
-                payload,
-                (delta) => {
-                    setMessages(prev => {
-                        const last = prev[prev.length - 1];
-                        if (last?.role === 'model') {
-                            return [...prev.slice(0, -1), { ...last, content: last.content + delta }];
-                        }
-                        return [...prev, { role: 'model', content: delta }];
-                    });
-                },
-                (gameData) => {
-                    if (gameData.hp) setHp(gameData.hp);
-                    if (gameData.locationId) setCurrentLocationId(gameData.locationId);
-                    if (gameData.choices) {
-                        const normalizedChoices = gameData.choices.map((c: any) => typeof c === 'string' ? c : c.text);
-                        setCurrentChoices(normalizedChoices);
-                        setMessages(prev => {
-                            const last = prev[prev.length - 1];
-                            if (last?.role === 'model') {
-                                return [...prev.slice(0, -1), { ...last, choices: normalizedChoices }];
-                            }
-                            return prev;
-                        });
-                     }
-                },
-                (err) => console.error(err)
-            );
-            setIsLoading(false);
+        );
+        setIsLoading(false);
+    };
+
+    // --- AUTO SCROLL ---
+    useEffect(() => {
+        if (scrollRef.current) {
+            const { scrollHeight, clientHeight } = scrollRef.current;
+            scrollRef.current.scrollTo({ top: scrollHeight - clientHeight, behavior: 'smooth' });
+        }
+    }, [messages, isLoading]);
+
+    // --- INITIAL GAME START ---
+    useEffect(() => {
+        if (data && messages.length === 0 && !isLoading) {
+            const startLocation = data.locations[0];
+            setCurrentLocationId(startLocation?._id || null);
+            handleStartGame(startLocation);
+        }
+    }, [data]);
+
+    // --- START GAME ---
+    const handleStartGame = async (startLocation: any) => {
+        if (!data) return;
+        setIsLoading(true);
+
+        const startPrompt = `
+            Start the adventure at ${startLocation?.name || "Unknown"}.
+            Describe the scene vividly (2 paragraphs). Address the player as "you".
+            Set the context to "explore" and provide 3-4 initial action choices.
+        `;
+
+        const payload = {
+            prompt: startPrompt,
+            history: [],
+            campaignId: data.campaign._id,
+            currentLocationId: startLocation?._id,
+            playerId: playerId,
+            playerState: {
+                name: data.character?.name || "Traveler",
+                class: data.character?.class || "Unknown",
+                level: level,
+                hp: hp,
+                maxHp: maxHp,
+                inventory: data.inventory?.map((i: any) => i.name) || [],
+                abilities: data.spells?.map((s: any) => s.name) || [],
+                bounty: 0,
+                isJailed: false,
+            }
         };
-    
-        const handleSendMessage = async (manualContent?: string) => {
-            const contentToSend = typeof manualContent === 'string' ? manualContent : input;
-            if (!contentToSend.trim() || isLoading || !data) return;
-            
-            setCurrentChoices([]); // Clear choices on action
-    
-            const userMsg: Message = { role: 'user', content: contentToSend };
-            setMessages(prev => [...prev, userMsg]);
-            setInput("");
-            setIsLoading(true);
-    
-            const payload = {
-                prompt: contentToSend,
-                history: messages.map(m => ({ role: m.role, content: m.content })),
-                campaignId: data.campaign._id,
-                playerState: {
-                    name: data.character?.name || "Traveler",
-                    class: data.character?.class || "Unknown",
-                    level: data.character?.level || 1,
-                    hp: hp,
-                    maxHp: maxHp,
-                    inventory: data.inventory?.map((i: any) => i.name) || [],
-                    abilities: data.spells?.map((s: any) => s.name) || []
-                }
-            };
-    
-            await streamNarrative(
-                payload,
-                (delta) => {
-                    setMessages(prev => {
-                        const last = prev[prev.length - 1];
-                        if (last?.role === 'model') {
-                            return [...prev.slice(0, -1), { ...last, content: last.content + delta }];
-                        }
-                        return [...prev, { role: 'model', content: delta }];
-                    });
-                },
-                (gameData) => {
-                     if (gameData.hp) setHp(gameData.hp);
-                     if (gameData.choices) {
-                        const normalizedChoices = gameData.choices.map((c: any) => typeof c === 'string' ? c : c.text);
-                        setCurrentChoices(normalizedChoices);
-                        setMessages(prev => {
-                            const last = prev[prev.length - 1];
-                            if (last?.role === 'model') {
-                                return [...prev.slice(0, -1), { ...last, choices: normalizedChoices }];
-                            }
-                            return prev;
-                        });
-                     }
-                },
-                (err) => {
-                    console.error(err);
-                    setIsLoading(false);
-                }
-            );
-            setIsLoading(false);
+
+        await streamNarrative(
+            payload,
+            (delta) => {
+                setMessages(prev => {
+                    const last = prev[prev.length - 1];
+                    if (last?.role === 'model') {
+                        return [...prev.slice(0, -1), { ...last, content: last.content + delta }];
+                    }
+                    return [...prev, { role: 'model', content: delta }];
+                });
+            },
+            handleGameData,
+            (err) => console.error(err)
+        );
+        setIsLoading(false);
+    };
+
+    // --- SEND MESSAGE ---
+    const handleSendMessage = async (manualContent?: string) => {
+        const contentToSend = typeof manualContent === 'string' ? manualContent : input;
+        if (!contentToSend.trim() || isLoading || !data) return;
+        
+        setCurrentChoices([]);
+
+        const userMsg: Message = { role: 'user', content: contentToSend };
+        setMessages(prev => [...prev, userMsg]);
+        setInput("");
+        setIsLoading(true);
+
+        const payload = {
+            prompt: contentToSend,
+            history: messages.map(m => ({ role: m.role, content: m.content })),
+            campaignId: data.campaign._id,
+            currentLocationId: currentLocationId,
+            playerId: playerId,
+            playerState: {
+                name: data.character?.name || "Traveler",
+                class: data.character?.class || "Unknown",
+                level: level,
+                hp: hp,
+                maxHp: maxHp,
+                inventory: data.inventory?.map((i: any) => i.name) || [],
+                abilities: data.spells?.map((s: any) => s.name) || [],
+                bounty: bountyAmount,
+                isJailed: isJailed,
+            }
         };
+
+        await streamNarrative(
+            payload,
+            (delta) => {
+                setMessages(prev => {
+                    const last = prev[prev.length - 1];
+                    if (last?.role === 'model') {
+                        return [...prev.slice(0, -1), { ...last, content: last.content + delta }];
+                    }
+                    return [...prev, { role: 'model', content: delta }];
+                });
+            },
+            handleGameData,
+            (err) => {
+                console.error(err);
+                setIsLoading(false);
+            }
+        );
+        setIsLoading(false);
+    };
+
+    // --- HANDLE ENTER KEY ---
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            handleSendMessage();
+        }
+    };
+
+    // --- LOADING STATE ---
     if (!data) {
         return (
             <div className="h-screen flex items-center justify-center bg-genshin-dark text-genshin-gold">
@@ -542,6 +786,64 @@ export default function PlayPage() {
 
     return (
         <div className="flex h-screen bg-genshin-dark text-stone-200 font-sans overflow-hidden selection:bg-genshin-gold selection:text-genshin-dark">
+            
+            {/* === GAME UI OVERLAYS === */}
+            <AnimatePresence>
+                {/* Screen Effects */}
+                {screenEffect && (
+                    <ScreenEffect 
+                        type={screenEffect} 
+                        onComplete={() => setScreenEffect(null)} 
+                    />
+                )}
+
+                {/* Combat HUD */}
+                {combatState && (
+                    <CombatHUD
+                        playerName={data.character?.name || "Traveler"}
+                        playerHP={hp}
+                        playerMaxHP={maxHp}
+                        enemyName={combatState.enemyName}
+                        enemyHP={combatState.enemyHP}
+                        enemyMaxHP={combatState.enemyMaxHP}
+                        isPlayerTurn={combatState.isPlayerTurn}
+                    />
+                )}
+
+                {/* Dice Roll Overlay */}
+                {skillCheckData && (
+                    <DiceRollOverlay
+                        data={skillCheckData}
+                        onComplete={() => setSkillCheckData(null)}
+                    />
+                )}
+
+                {/* Level Up Overlay */}
+                {showLevelUp && (
+                    <LevelUpOverlay
+                        newLevel={level}
+                        onComplete={() => setShowLevelUp(false)}
+                    />
+                )}
+
+                {/* Reward Toasts */}
+                {rewardQueue.map((reward, index) => (
+                    <motion.div
+                        key={reward.id}
+                        initial={{ y: 0 }}
+                        animate={{ y: index * 100 }}
+                        style={{ position: 'fixed', top: 96, right: 24, zIndex: 50 - index }}
+                    >
+                        <RewardToast
+                            item={reward.item}
+                            rarity={reward.rarity}
+                            xp={reward.xp}
+                            onComplete={() => removeReward(reward.id)}
+                        />
+                    </motion.div>
+                ))}
+            </AnimatePresence>
+
             {/* LEFT SIDEBAR (Quests) */}
             <div className="hidden lg:flex w-72 bg-[#131520] border-r border-genshin-gold/10 flex-col z-20 shadow-[10px_0_30px_-10px_rgba(0,0,0,0.5)]">
                 <div className="p-6 border-b border-genshin-gold/10 bg-genshin-dark/50 flex items-center justify-between">
@@ -615,13 +917,17 @@ export default function PlayPage() {
                             </SmartTooltip>
                         </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                         <button onClick={() => setCharacterSheetOpen(true)} className="p-2 hover:bg-white/5 rounded-full text-stone-400 hover:text-genshin-gold transition-colors">
+                    <div className="flex items-center gap-3">
+                        {/* XP Bar in header */}
+                        <div className="hidden md:block w-32">
+                            <XPBar currentXP={xp} maxXP={xpToLevel} level={level} compact />
+                        </div>
+                        <button onClick={() => setCharacterSheetOpen(true)} className="p-2 hover:bg-white/5 rounded-full text-stone-400 hover:text-genshin-gold transition-colors">
                             <UserCircle size={20} />
-                         </button>
-                         <button onClick={() => setSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-white/5 rounded-full text-stone-400 hover:text-genshin-gold transition-colors lg:hidden">
+                        </button>
+                        <button onClick={() => setSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-white/5 rounded-full text-stone-400 hover:text-genshin-gold transition-colors lg:hidden">
                             <Menu size={20} />
-                         </button>
+                        </button>
                     </div>
                 </header>
 
@@ -655,44 +961,54 @@ export default function PlayPage() {
                     )}
                 </div>
 
-                {/* Input */}
+                {/* Input Area */}
                 <div className="p-6 bg-gradient-to-t from-genshin-dark via-genshin-dark to-transparent">
                     <div className="max-w-3xl mx-auto relative">
-                        {/* Floating Action Buttons */}
+                        {/* Quick Action Bar */}
+                        <QuickActionBar
+                            onAction={handleSendMessage}
+                            isLoading={isLoading}
+                            context={gameContext}
+                        />
+
+                        {/* AI Suggested Choices */}
                         {currentChoices.length > 0 && (
                             <div className="flex flex-wrap gap-2 mb-4 justify-center">
                                 {currentChoices.map((choice, i) => (
-                                    <button
-                                        key={i}
+                                    <motion.button
+                                        key={`choice-${i}-${choice.slice(0, 20)}`}
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        transition={{ delay: i * 0.05 }}
                                         onClick={() => handleSendMessage(choice)}
                                         disabled={isLoading}
-                                        className="px-4 py-2 bg-genshin-dark/80 backdrop-blur-sm border border-genshin-gold/30 rounded-full text-xs font-bold text-genshin-gold hover:bg-genshin-gold hover:text-genshin-dark transition-all shadow-lg hover:shadow-genshin-gold/30 active:scale-95 animate-in fade-in slide-in-from-bottom-2 duration-300"
-                                        style={{ animationDelay: `${i * 50}ms` }}
+                                        className="px-4 py-2 bg-genshin-dark/80 backdrop-blur-sm border border-genshin-gold/30 rounded-full text-xs font-bold text-genshin-gold hover:bg-genshin-gold hover:text-genshin-dark transition-all shadow-lg hover:shadow-genshin-gold/30 active:scale-95"
                                     >
                                         {choice}
-                                    </button>
+                                    </motion.button>
                                 ))}
                             </div>
                         )}
 
-                        <input
-                            type="text"
-                            value={input}
-                            onChange={(e) => setInput(e.target.value)}
-                onKeyDown={() => {
-                    // Optional: Handle Arrows/Enter for suggestions
-                }}
-                            placeholder="What do you do?"
-                            className="w-full bg-[#1f2235] border border-genshin-gold/30 rounded-sm pl-6 pr-14 py-4 focus:outline-none focus:border-genshin-gold focus:ring-1 focus:ring-genshin-gold/20 transition-all shadow-xl placeholder:text-stone-600 text-stone-200"
-                            disabled={isLoading}
-                        />
-                        <button 
-                            onClick={handleSendMessage}
-                            disabled={isLoading || !input.trim()}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-genshin-gold hover:bg-[#eac88f] text-genshin-dark rounded-sm transition-all disabled:opacity-0 disabled:scale-75"
-                        >
-                            <Send size={18} />
-                        </button>
+                        {/* Text Input */}
+                        <div className="relative">
+                            <input
+                                type="text"
+                                value={input}
+                                onChange={(e) => setInput(e.target.value)}
+                                onKeyDown={handleKeyDown}
+                                placeholder="What do you do?"
+                                className="w-full bg-[#1f2235] border border-genshin-gold/30 rounded-lg pl-6 pr-14 py-4 focus:outline-none focus:border-genshin-gold focus:ring-1 focus:ring-genshin-gold/20 transition-all shadow-xl placeholder:text-stone-600 text-stone-200"
+                                disabled={isLoading}
+                            />
+                            <button 
+                                onClick={() => handleSendMessage()}
+                                disabled={isLoading || !input.trim()}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-genshin-gold hover:bg-[#eac88f] text-genshin-dark rounded-lg transition-all disabled:opacity-0 disabled:scale-75"
+                            >
+                                <Send size={18} />
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -711,43 +1027,208 @@ export default function PlayPage() {
                         </button>
                     </div>
                     
-                    <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
+                    <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+                        {/* XP Progress */}
+                        <XPBar currentXP={xp} maxXP={xpToLevel} level={level} />
+
                         {/* Vitals */}
                         <div className="space-y-3">
                             <h3 className="text-xs font-bold uppercase tracking-widest text-stone-500 flex items-center gap-2 font-serif">
                                 <Heart size={12} /> Vitals
                             </h3>
-                            <div className="bg-genshin-dark rounded-sm p-4 border border-genshin-gold/10 shadow-inner">
-                                <div className="flex justify-between text-sm mb-2">
-                                    <span className="text-stone-400 font-serif text-xs uppercase tracking-wide">Health Points</span>
-                                    <span className="font-bold text-genshin-gold">{hp} / {maxHp}</span>
-                                </div>
-                                <div className="h-2 bg-stone-800 rounded-full overflow-hidden border border-white/5">
-                                    <div 
-                                        className="h-full bg-gradient-to-r from-red-600 to-rose-500 transition-all duration-500 relative" 
-                                        style={{ width: `${(hp / maxHp) * 100}%` }}
-                                    >
-                                        <div className="absolute inset-0 bg-[linear-gradient(45deg,rgba(255,255,255,0.2)_25%,transparent_25%,transparent_50%,rgba(255,255,255,0.2)_50%,rgba(255,255,255,0.2)_75%,transparent_75%,transparent)] bg-[length:10px_10px] animate-[shine_1s_linear_infinite]" />
+                            <div className="bg-genshin-dark rounded-lg p-4 border border-genshin-gold/10 shadow-inner space-y-3">
+                                <div>
+                                    <div className="flex justify-between text-sm mb-2">
+                                        <span className="text-stone-400 font-serif text-xs uppercase tracking-wide">Health Points</span>
+                                        <span className={`font-bold ${hp / maxHp < 0.25 ? 'text-red-400' : 'text-genshin-gold'}`}>{hp} / {maxHp}</span>
                                     </div>
+                                    <div className="h-3 bg-stone-800 rounded-full overflow-hidden border border-white/5">
+                                        <motion.div 
+                                            className={`h-full relative ${hp / maxHp < 0.25 ? 'bg-gradient-to-r from-red-600 to-red-400 animate-hp-danger' : 'bg-gradient-to-r from-green-600 to-emerald-400'}`}
+                                            animate={{ width: `${(hp / maxHp) * 100}%` }}
+                                            transition={{ duration: 0.5 }}
+                                        >
+                                            <div className="absolute inset-0 bg-[linear-gradient(45deg,rgba(255,255,255,0.2)_25%,transparent_25%,transparent_50%,rgba(255,255,255,0.2)_50%,rgba(255,255,255,0.2)_75%,transparent_75%,transparent)] bg-[length:10px_10px] animate-[shine_1s_linear_infinite]" />
+                                        </motion.div>
+                                    </div>
+                                </div>
+                                {/* Gold */}
+                                <div className="flex justify-between items-center pt-2 border-t border-white/5">
+                                    <span className="text-stone-400 font-serif text-xs uppercase tracking-wide flex items-center gap-1.5">
+                                        <Coins size={12} className="text-amber-400" /> Gold
+                                    </span>
+                                    <span className="font-bold text-amber-400">{gold}</span>
                                 </div>
                             </div>
                         </div>
-
-                        {/* Quests - Moved to Left Sidebar */}
                         
                         {/* Inventory */}
-                         <div className="space-y-3">
+                        <div className="space-y-3">
                             <h3 className="text-xs font-bold uppercase tracking-widest text-stone-500 flex items-center gap-2 font-serif">
                                 <Backpack size={12} /> Inventory
                             </h3>
                             <div className="grid grid-cols-4 gap-2">
-                                {[...Array(8)].map((_, i) => (
-                                    <div key={i} className="aspect-square rounded-sm bg-genshin-dark/50 border border-genshin-gold/10 flex items-center justify-center hover:border-genshin-gold transition-colors cursor-pointer group relative">
-                                        <div className="w-1 h-1 bg-stone-700 rounded-full group-hover:bg-genshin-gold transition-colors" />
-                                        {/* Placeholder for item icon */}
+                                {data.inventory?.slice(0, 8).map((item: any, i: number) => (
+                                    <SmartTooltip
+                                        key={i}
+                                        content={
+                                            <>
+                                                <p className="font-bold text-genshin-gold text-sm">{item.name}</p>
+                                                <p className="text-[10px] text-stone-400 uppercase">{item.type} • {item.rarity}</p>
+                                                <p className="text-xs text-stone-500 mt-1">{item.description || item.effects}</p>
+                                            </>
+                                        }
+                                    >
+                                        <div 
+                                            className="aspect-square rounded-lg bg-genshin-dark/50 border border-genshin-gold/20 flex items-center justify-center hover:border-genshin-gold transition-colors cursor-pointer group relative overflow-hidden"
+                                            style={{ borderColor: item.textColor ? `${item.textColor}40` : undefined }}
+                                        >
+                                            <span className="text-lg">{item.type === 'Weapon' ? '⚔️' : item.type === 'Armor' ? '🛡️' : item.type === 'Potion' ? '🧪' : '📦'}</span>
+                                        </div>
+                                    </SmartTooltip>
+                                )) || [...Array(8)].map((_, i) => (
+                                    <div key={i} className="aspect-square rounded-lg bg-genshin-dark/50 border border-genshin-gold/10 flex items-center justify-center">
+                                        <div className="w-1 h-1 bg-stone-700 rounded-full" />
                                     </div>
                                 ))}
                             </div>
+                        </div>
+
+                        {/* Abilities / Jutsu */}
+                        {abilities && abilities.length > 0 && (
+                            <AbilitiesBar
+                                abilities={abilities}
+                                currentEnergy={energy}
+                                maxEnergy={maxEnergy}
+                                energyName={terminology?.mana || "Energy"}
+                                onUseAbility={async (abilityId, abilityName) => {
+                                    if (!playerIdForAbilities) return;
+                                    
+                                    const result = await executeAbility({
+                                        campaignId,
+                                        playerId: playerIdForAbilities,
+                                        spellId: abilityId as Id<"spells">,
+                                    });
+                                    
+                                    if (result.success) {
+                                        // Update energy
+                                        setEnergy(result.newEnergy ?? energy);
+                                        
+                                        // Update HP if healed
+                                        if (result.newHp && result.newHp !== hp) {
+                                            setHp(result.newHp);
+                                        }
+                                        
+                                        // Show damage effect
+                                        if (result.spell?.damage && result.spell.damage > 0) {
+                                            setScreenEffect('critical');
+                                            setTimeout(() => setScreenEffect(null), 300);
+                                        }
+                                        
+                                        // Show healing effect
+                                        if (result.spell?.healing && result.spell.healing > 0) {
+                                            setScreenEffect('heal');
+                                            setTimeout(() => setScreenEffect(null), 300);
+                                        }
+                                        
+                                        // Send to AI for narrative
+                                        const abilityMessage = combatState 
+                                            ? `I use ${abilityName} on ${combatState.enemyName || 'the enemy'}!`
+                                            : `I use ${abilityName}!`;
+                                        handleSendMessage(abilityMessage);
+                                    }
+                                }}
+                                disabled={isLoading}
+                                inCombat={gameContext === 'combat'}
+                            />
+                        )}
+
+                        {/* Game Context Indicator */}
+                        <div className="space-y-3">
+                            <h3 className="text-xs font-bold uppercase tracking-widest text-stone-500 flex items-center gap-2 font-serif">
+                                <Trophy size={12} /> Status
+                            </h3>
+                            <div className="bg-genshin-dark rounded-lg p-4 border border-genshin-gold/10 space-y-3">
+                                <div className="flex items-center gap-2">
+                                    <div className={`w-2 h-2 rounded-full ${
+                                        gameContext === 'combat' ? 'bg-red-400 animate-pulse' :
+                                        gameContext === 'social' ? 'bg-blue-400' :
+                                        gameContext === 'rest' ? 'bg-green-400' :
+                                        'bg-genshin-gold'
+                                    }`} />
+                                    <span className="text-sm text-stone-400 capitalize">{gameContext} Mode</span>
+                                </div>
+                                
+                                {/* Bounty Warning */}
+                                {bountyAmount > 0 && (
+                                    <div className="flex items-center gap-2 text-red-400 bg-red-900/20 rounded px-2 py-1">
+                                        <ShieldAlert size={14} />
+                                        <span className="text-xs">Bounty: {bountyAmount}g</span>
+                                    </div>
+                                )}
+                                
+                                {/* Jail Status */}
+                                {isJailed && (
+                                    <div className="flex items-center gap-2 text-amber-400 bg-amber-900/20 rounded px-2 py-1">
+                                        <AlertTriangle size={14} />
+                                        <span className="text-xs">JAILED</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Lootable Bodies */}
+                        {currentLocationId && (
+                            <LootableBodiesList
+                                campaignId={campaignId}
+                                locationId={currentLocationId as Id<"locations">}
+                                playerId={playerId}
+                                onLootComplete={(items, lootedGold) => {
+                                    // Add rewards to queue
+                                    items.forEach(item => {
+                                        addReward({
+                                            item: item.name,
+                                            rarity: item.rarity.toLowerCase() as Rarity,
+                                            xp: 0,
+                                        });
+                                    });
+                                    if (lootedGold > 0) {
+                                        setGold(prev => prev + lootedGold);
+                                    }
+                                }}
+                            />
+                        )}
+
+                        {/* Trading NPCs */}
+                        {currentLocationId && (
+                            <TradingNPCsList
+                                campaignId={campaignId}
+                                locationId={currentLocationId as Id<"locations">}
+                                playerId={playerId}
+                                playerGold={gold}
+                                onTradeComplete={() => {
+                                    // Refresh gold state would happen automatically via query
+                                }}
+                            />
+                        )}
+
+                        {/* Camp Link */}
+                        <div className="space-y-3">
+                            <h3 className="text-xs font-bold uppercase tracking-widest text-stone-500 flex items-center gap-2 font-serif">
+                                <Tent size={12} /> Base
+                            </h3>
+                            <button
+                                onClick={() => router.push(`/play/${campaignId}/camp`)}
+                                className="w-full bg-genshin-dark rounded-lg p-4 border border-genshin-gold/10 hover:border-genshin-gold/30 transition-all group flex items-center gap-3"
+                            >
+                                <div className="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center">
+                                    <Tent size={18} className="text-amber-500" />
+                                </div>
+                                <div className="text-left">
+                                    <div className="text-sm text-stone-300 group-hover:text-genshin-gold transition-colors">Your Camp</div>
+                                    <div className="text-xs text-stone-500">Manage followers</div>
+                                </div>
+                            </button>
                         </div>
                     </div>
                 </div>

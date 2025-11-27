@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import { useQuery, useMutation } from 'convex/react';
+import React, { useEffect } from 'react';
+import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
-import { Plus, Map, Loader2, Database, Sparkles, Settings, ChevronRight, Crown, Shield } from 'lucide-react';
+import { Plus, Map, Settings, ChevronRight, Crown, Shield } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@workos-inc/authkit-nextjs/components';
 import { useTheme } from '@/components/ThemeProvider';
@@ -51,45 +51,11 @@ export default function ForgeDashboard() {
     const campaigns = useQuery(api.forge.getMyCampaigns);
     const isLoading = !campaigns;
 
-    const seedSkyrim = useMutation(api.forge.seedSkyrim);
-    const seedEffectsLibrary = useMutation(api.forge.seedEffectsLibrary);
-    const seedNaruto = useMutation(api.forge.seedNaruto);
-    const [isSeeding, setIsSeeding] = useState(false);
-    const [isSeedingEffects, setIsSeedingEffects] = useState(false);
-    const [isSeedingNaruto, setIsSeedingNaruto] = useState(false);
-
     useEffect(() => {
         if (!authLoading && !user) {
             window.location.href = '/sign-in';
         }
     }, [user, authLoading]);
-
-    const handleSeedSkyrim = async () => {
-        setIsSeeding(true);
-        try {
-            await seedSkyrim({});
-        } finally {
-            setIsSeeding(false);
-        }
-    };
-
-    const handleSeedEffects = async () => {
-        setIsSeedingEffects(true);
-        try {
-            await seedEffectsLibrary({});
-        } finally {
-            setIsSeedingEffects(false);
-        }
-    };
-
-    const handleSeedNaruto = async () => {
-        setIsSeedingNaruto(true);
-        try {
-            await seedNaruto({});
-        } finally {
-            setIsSeedingNaruto(false);
-        }
-    };
 
     if (authLoading || !user || isLoading) {
         return <DivineLoader dark={dark} />;
@@ -137,65 +103,6 @@ export default function ForgeDashboard() {
                                 Create
                             </button>
                         </Link>
-                    </div>
-                </motion.div>
-
-                {/* Quick Actions / Seeding */}
-                <motion.div 
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1 }}
-                    className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-16"
-                >
-                    {/* Seed Skyrim Card */}
-                    <div 
-                        onClick={!isSeeding ? handleSeedSkyrim : undefined}
-                        className={`relative group rounded-2xl p-6 border cursor-pointer transition-all hover:shadow-lg overflow-hidden ${
-                            isSeeding ? 'opacity-70 cursor-not-allowed' : ''
-                        } ${dark ? 'bg-[#1a1d2e]/60 backdrop-blur-sm border-[#D4AF37]/20' : 'bg-white/60 backdrop-blur-sm border-[#D4AF37]/20'}`}
-                    >
-                        <div className="absolute top-0 right-0 w-24 h-24 bg-[#D4AF37]/5 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110" />
-                        <div className="relative z-10">
-                            <div className="w-10 h-10 bg-[#D4AF37]/10 rounded-xl flex items-center justify-center text-[#D4AF37] mb-4 group-hover:bg-[#D4AF37] group-hover:text-white transition-colors">
-                                {isSeeding ? <Loader2 className="animate-spin" size={20} /> : <Database size={20} />}
-                            </div>
-                            <h3 className={`font-bold text-lg mb-1 ${dark ? 'text-[#e8e6e3]' : 'text-[#43485C]'}`}>Seed Skyrim</h3>
-                            <p className={`text-xs font-sans leading-relaxed ${dark ? 'text-[#e8e6e3]/60' : 'text-[#43485C]/60'}`}>Import the Elder Scrolls V template world data.</p>
-                        </div>
-                    </div>
-
-                    {/* Seed Effects Card */}
-                    <div 
-                        onClick={!isSeedingEffects ? handleSeedEffects : undefined}
-                        className={`relative group rounded-2xl p-6 border cursor-pointer transition-all hover:shadow-lg overflow-hidden ${
-                            isSeedingEffects ? 'opacity-70 cursor-not-allowed' : ''
-                        } ${dark ? 'bg-[#1a1d2e]/60 backdrop-blur-sm border-[#D4AF37]/20' : 'bg-white/60 backdrop-blur-sm border-[#D4AF37]/20'}`}
-                    >
-                        <div className="absolute top-0 right-0 w-24 h-24 bg-purple-500/5 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110" />
-                        <div className="relative z-10">
-                            <div className="w-10 h-10 bg-purple-500/10 rounded-xl flex items-center justify-center text-purple-500 mb-4 group-hover:bg-purple-500 group-hover:text-white transition-colors">
-                                {isSeedingEffects ? <Loader2 className="animate-spin" size={20} /> : <Sparkles size={20} />}
-                            </div>
-                            <h3 className={`font-bold text-lg mb-1 ${dark ? 'text-[#e8e6e3]' : 'text-[#43485C]'}`}>Seed Magic</h3>
-                            <p className={`text-xs font-sans leading-relaxed ${dark ? 'text-[#e8e6e3]/60' : 'text-[#43485C]/60'}`}>Populate the standard 5e spell and effect library.</p>
-                        </div>
-                    </div>
-
-                    {/* Seed Naruto Card */}
-                    <div 
-                        onClick={!isSeedingNaruto ? handleSeedNaruto : undefined}
-                        className={`relative group rounded-2xl p-6 border cursor-pointer transition-all hover:shadow-lg overflow-hidden ${
-                            isSeedingNaruto ? 'opacity-70 cursor-not-allowed' : ''
-                        } ${dark ? 'bg-[#1a1d2e]/60 backdrop-blur-sm border-orange-500/20' : 'bg-white/60 backdrop-blur-sm border-orange-500/20'}`}
-                    >
-                        <div className="absolute top-0 right-0 w-24 h-24 bg-orange-500/5 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110" />
-                        <div className="relative z-10">
-                            <div className="w-10 h-10 bg-orange-500/10 rounded-xl flex items-center justify-center text-orange-500 mb-4 group-hover:bg-orange-500 group-hover:text-white transition-colors">
-                                {isSeedingNaruto ? <Loader2 className="animate-spin" size={20} /> : <span className="text-lg">🍥</span>}
-                            </div>
-                            <h3 className={`font-bold text-lg mb-1 ${dark ? 'text-[#e8e6e3]' : 'text-[#43485C]'}`}>Seed Naruto</h3>
-                            <p className={`text-xs font-sans leading-relaxed ${dark ? 'text-[#e8e6e3]/60' : 'text-[#43485C]/60'}`}>Create a full Hidden Leaf Village world with NPCs, items, factions & quests.</p>
-                        </div>
                     </div>
                 </motion.div>
 

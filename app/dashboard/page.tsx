@@ -1,18 +1,21 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { useAuth } from '@workos-inc/authkit-nextjs/components';
 import { useTheme } from '@/components/ThemeProvider';
 import Link from 'next/link';
-import { 
-    Shield, Map, User, Plus, Scroll, 
-    Sparkles, Crown, Gem, ChevronRight, Bell, 
-    Settings, LayoutDashboard, Star, Compass, Zap,
-    Backpack, MessageSquare, Sword
+import {
+    Shield, Map, User, Plus, Scroll,
+    Crown, ChevronRight, Bell,
+    Settings, Compass, Zap,
+    Backpack, Sword, Gamepad2, Hammer,
+    Sparkles, BookOpen, Moon, Sun
 } from 'lucide-react';
+
+const FALLBACK_IMAGE = '/assets/image.png';
 
 // --- TYPES ---
 interface Character {
@@ -28,6 +31,8 @@ interface Campaign {
     xpRate?: number;
     character?: Character;
     creatorName?: string;
+    imageUrl?: string;
+    playerCount?: number;
 }
 
 interface HeroCharacter {
@@ -51,558 +56,841 @@ interface HeroCharacter {
     }>;
 }
 
-// --- ASSETS & ICONS ---
-const ElementIcon = ({ element }: { element?: string }) => {
-    const colors: Record<string, string> = {
-        Electro: "text-purple-500",
-        Dendro: "text-green-500",
-        Pyro: "text-orange-500",
-        Hydro: "text-blue-500",
-        Cryo: "text-cyan-400",
-        Geo: "text-yellow-500",
-        Anemo: "text-teal-400"
-    };
-    return <Zap className={`${(element && colors[element]) || 'text-gray-400'} drop-shadow-sm`} size={14} fill="currentColor" />;
+// --- CONSTELLATION BACKGROUND ---
+const ConstellationBg = ({ dark }: { dark: boolean }) => {
+    const stars = useMemo(() =>
+        Array.from({ length: 60 }, (_, i) => ({
+            id: i,
+            x: Math.random() * 100,
+            y: Math.random() * 100,
+            size: Math.random() * 2 + 1,
+            delay: Math.random() * 3,
+            opacity: Math.random() * 0.5 + 0.2
+        })), []
+    );
+
+    return (
+        <div className="fixed inset-0 overflow-hidden pointer-events-none">
+            {/* Base gradient */}
+            <div className={`absolute inset-0 ${
+                dark
+                    ? 'bg-gradient-to-br from-[#0a0c14] via-[#0f1119] to-[#141825]'
+                    : 'bg-gradient-to-br from-[#faf9f7] via-[#f5f3ef] to-[#ebe7df]'
+            }`} />
+
+            {/* Ink texture overlay */}
+            <div className={`absolute inset-0 opacity-[0.03] mix-blend-multiply`}
+                 style={{
+                     backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%' height='100%' filter='url(%23noise)'/%3E%3C/svg%3E")`,
+                 }}
+            />
+
+            {/* Celestial glow */}
+            <div className={`absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[800px] rounded-full blur-[120px] ${
+                dark ? 'bg-indigo-900/10' : 'bg-amber-200/20'
+            }`} />
+
+            {/* Corner vignette */}
+            <div className={`absolute inset-0 ${
+                dark
+                    ? 'bg-[radial-gradient(ellipse_at_center,transparent_0%,rgba(0,0,0,0.4)_100%)]'
+                    : 'bg-[radial-gradient(ellipse_at_center,transparent_0%,rgba(0,0,0,0.03)_100%)]'
+            }`} />
+
+            {/* Stars */}
+            {stars.map((star) => (
+                <motion.div
+                    key={star.id}
+                    className={`absolute rounded-full ${dark ? 'bg-amber-200' : 'bg-amber-600'}`}
+                    style={{
+                        left: `${star.x}%`,
+                        top: `${star.y}%`,
+                        width: star.size,
+                        height: star.size,
+                        opacity: star.opacity * (dark ? 1 : 0.4),
+                    }}
+                    animate={{
+                        opacity: [star.opacity * (dark ? 1 : 0.4), star.opacity * (dark ? 0.3 : 0.1), star.opacity * (dark ? 1 : 0.4)],
+                        scale: [1, 1.2, 1],
+                    }}
+                    transition={{
+                        duration: 3 + star.delay,
+                        repeat: Infinity,
+                        ease: "easeInOut",
+                        delay: star.delay,
+                    }}
+                />
+            ))}
+        </div>
+    );
 };
 
-// --- DECORATIVE COMPONENTS ---
-const GoldDivider = () => (
-    <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-[#D4AF37]/40 to-transparent my-2" />
-);
+// --- DIVINE LOADER ---
+const DivineLoader = ({ dark }: { dark: boolean }) => (
+    <div className={`fixed inset-0 z-50 flex items-center justify-center ${dark ? 'bg-[#0a0c14]' : 'bg-[#faf9f7]'}`}>
+        <ConstellationBg dark={dark} />
 
-const StarPattern = ({ dark }: { dark?: boolean }) => (
-    <div className="absolute inset-0 opacity-[0.03] pointer-events-none" 
-         style={{ 
-             backgroundImage: `radial-gradient(${dark ? '#D4AF37' : '#D4AF37'} 1px, transparent 1px)`, 
-             backgroundSize: '32px 32px' 
-         }} 
-    />
-);
-
-// --- LOADING SCREEN ---
-const DivineLoader = ({ dark }: { dark?: boolean }) => (
-    <div className={`flex flex-col items-center justify-center h-screen overflow-hidden relative selection:bg-[#D4AF37] selection:text-white ${dark ? 'bg-[#0f1119]' : 'bg-[#fcfcfc]'}`}>
-        <div className={`absolute inset-0 ${dark ? 'bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-[#1a1d2e]/50 via-[#0f1119] to-[#0f1119]' : 'bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-yellow-50/50 via-white to-white'}`} />
-        <StarPattern dark={dark} />
-        
-        <div className="relative z-10 flex flex-col items-center gap-8">
-            <div className="relative w-40 h-40 flex items-center justify-center">
-                <motion.div 
-                    className={`absolute inset-0 border-4 rounded-full ${dark ? 'border-[#2a2d3e]' : 'border-[#e8e0c5]'}`}
-                    animate={{ scale: [1, 1.05, 1] }}
-                    transition={{ duration: 2, repeat: Infinity }}
-                />
-                <motion.div 
-                    className="absolute inset-2 border-[1px] border-[#D4AF37] rounded-full border-dashed"
+        <div className="relative z-10 flex flex-col items-center">
+            {/* Orbital rings */}
+            <div className="relative w-40 h-40">
+                <motion.div
+                    className={`absolute inset-0 rounded-full border ${dark ? 'border-amber-500/20' : 'border-amber-600/20'}`}
                     animate={{ rotate: 360 }}
-                    transition={{ duration: 10, ease: "linear", repeat: Infinity }}
+                    transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
                 />
-                <motion.div 
-                    className="absolute inset-0 m-auto w-24 h-24 bg-[#D4AF37] rounded-full opacity-10 blur-xl animate-pulse"
+                <motion.div
+                    className={`absolute inset-4 rounded-full border border-dashed ${dark ? 'border-indigo-400/30' : 'border-indigo-500/20'}`}
+                    animate={{ rotate: -360 }}
+                    transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
                 />
-                
-                <div className={`relative z-10 p-4 rounded-full shadow-lg border ${dark ? 'bg-[#1a1d2e] border-[#D4AF37]/30' : 'bg-white border-[#D4AF37]/30'}`}>
-                    <Compass size={32} className="text-[#D4AF37]" />
-                </div>
-            </div>
-            
-            <div className="flex flex-col items-center gap-2">
-                <p className={`font-serif tracking-[0.2em] text-sm font-bold uppercase ${dark ? 'text-[#e8e6e3]' : 'text-[#43485C]'}`}>
-                    Opening Archives
-                </p>
-                <motion.div className={`h-1 w-32 rounded-full overflow-hidden ${dark ? 'bg-[#2a2d3e]' : 'bg-[#e8e0c5]'}`}>
-                    <motion.div 
-                        className="h-full bg-[#D4AF37]"
-                        initial={{ x: '-100%' }}
-                        animate={{ x: '100%' }}
-                        transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
-                    />
+                <motion.div
+                    className={`absolute inset-8 rounded-full border ${dark ? 'border-amber-400/40' : 'border-amber-500/30'}`}
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
+                />
+
+                {/* Center compass */}
+                <motion.div
+                    className="absolute inset-0 flex items-center justify-center"
+                    animate={{ scale: [1, 1.1, 1] }}
+                    transition={{ duration: 2, repeat: Infinity }}
+                >
+                    <div className={`p-4 rounded-2xl backdrop-blur-sm ${
+                        dark ? 'bg-amber-500/10 border border-amber-500/20' : 'bg-amber-600/10 border border-amber-600/20'
+                    }`}>
+                        <Compass className={dark ? 'text-amber-400' : 'text-amber-600'} size={28} />
+                    </div>
                 </motion.div>
             </div>
+
+            {/* Loading text */}
+            <motion.div
+                className="mt-10 text-center"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+            >
+                <p className={`font-serif text-lg tracking-[0.3em] uppercase ${dark ? 'text-amber-200/70' : 'text-amber-700/70'}`}>
+                    Opening Codex
+                </p>
+                <div className={`mt-4 flex gap-1.5 justify-center`}>
+                    {[0, 1, 2].map((i) => (
+                        <motion.div
+                            key={i}
+                            className={`w-2 h-2 rounded-full ${dark ? 'bg-amber-400' : 'bg-amber-600'}`}
+                            animate={{ scale: [1, 1.5, 1], opacity: [0.3, 1, 0.3] }}
+                            transition={{ duration: 1, repeat: Infinity, delay: i * 0.2 }}
+                        />
+                    ))}
+                </div>
+            </motion.div>
         </div>
     </div>
 );
 
+// --- MAIN DASHBOARD ---
 export default function UserDashboard() {
     const { user, loading: authLoading } = useAuth();
-    const { theme, mounted } = useTheme();
+    const { theme, mounted, toggleTheme } = useTheme();
     const dark = mounted ? theme === 'dark' : false;
-    
-    // Real Data Fetching
+
+    const [activeTab, setActiveTab] = useState<'playing' | 'creating'>('playing');
+    const [showLoader, setShowLoader] = useState(true);
+
+    // Data
     const myCampaigns = useQuery(api.forge.getMyCampaigns);
     const playedCampaigns = useQuery(api.forge.getPlayedCampaigns);
-    const myCharacters = useQuery(api.forge.getMyCharacters);
-    const myItems = useQuery(api.forge.getMyItems);
-    const mySpells = useQuery(api.forge.getMySpells);
     const heroesStats = useQuery(api.forge.getMyHeroesStats);
 
-    const dataLoading = !myCampaigns || !playedCampaigns || !myCharacters || !myItems || !mySpells || !heroesStats;
-    const [showLoadingScreen, setShowLoadingScreen] = useState(true);
+    const isDataLoading = !myCampaigns || !playedCampaigns || !heroesStats;
 
     useEffect(() => {
-        const timer = setTimeout(() => setShowLoadingScreen(false), 2000);
+        const timer = setTimeout(() => setShowLoader(false), 1800);
         return () => clearTimeout(timer);
     }, []);
 
-    const isLoading = authLoading || dataLoading || showLoadingScreen;
+    if (authLoading || isDataLoading || showLoader) {
+        return <DivineLoader dark={dark} />;
+    }
 
-    if (isLoading) return <DivineLoader dark={dark} />;
+    const stats = activeTab === 'playing'
+        ? [
+            { label: 'Total Level', value: heroesStats?.totalLevel || 0, icon: Shield, color: 'text-amber-500' },
+            { label: 'Heroes', value: heroesStats?.characters?.length || 0, icon: Sword, color: 'text-indigo-400' },
+            { label: 'Relics', value: heroesStats?.totalItems || 0, icon: Crown, color: 'text-rose-400' },
+            { label: 'Spells', value: heroesStats?.totalSpells || 0, icon: Scroll, color: 'text-cyan-400' },
+        ]
+        : [
+            { label: 'Realms', value: myCampaigns?.length || 0, icon: Map, color: 'text-amber-500' },
+            { label: 'Players', value: myCampaigns?.reduce((acc, c) => acc + (c.playerCount || 0), 0) || 0, icon: User, color: 'text-indigo-400' },
+        ];
 
     return (
-        <div className={`min-h-screen font-serif selection:bg-[#D4AF37] selection:text-white relative overflow-hidden flex items-center justify-center p-4 md:p-8 ${dark ? 'bg-[#0f1119] text-[#e8e6e3]' : 'bg-[#f8f9fa] text-[#43485C]'}`}>
-            
-            {/* --- BACKGROUND ATMOSPHERE --- */}
-            <div className={`fixed inset-0 z-0 pointer-events-none ${dark ? 'bg-[#0a0c12]' : 'bg-[#fcfcfc]'}`}>
-                <div className={`absolute inset-0 opacity-[0.03] bg-[url('https://www.transparenttextures.com/patterns/paper.png')]`} />
-                <StarPattern dark={dark} />
-                <div className={`absolute inset-0 ${dark ? 'bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0)_50%,rgba(212,175,55,0.02)_100%)]' : 'bg-[radial-gradient(circle_at_center,transparent_0%,rgba(255,255,255,0)_50%,rgba(212,175,55,0.03)_100%)]'}`} />
-            </div>
+        <div className={`min-h-screen relative ${dark ? 'text-gray-100' : 'text-gray-900'}`}>
+            <ConstellationBg dark={dark} />
 
-            {/* --- MAIN "MENU" CONTAINER --- */}
-            <motion.div 
-                initial={{ scale: 0.98, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ duration: 0.6, ease: "easeOut" }}
-                className={`relative w-full max-w-[1600px] h-[90vh] backdrop-blur-md rounded-[32px] shadow-[0_20px_60px_-10px_rgba(0,0,0,0.05)] overflow-hidden flex z-10 ring-1 ${
-                    dark 
-                        ? 'bg-[#1a1d2e]/60 border border-[#D4AF37]/10 ring-[#D4AF37]/10' 
-                        : 'bg-white/60 border border-white/60 ring-[#D4AF37]/10'
-                }`}
-            >
+            {/* === MAIN CONTENT === */}
+            <div className="relative z-10 min-h-screen">
 
-                {/* --- SIDEBAR --- */}
-                <aside className={`w-24 md:w-72 flex flex-col relative z-20 border-r ${dark ? 'border-[#D4AF37]/10 bg-[#151821]/40' : 'border-[#D4AF37]/10 bg-white/40'}`}>
-                    
-                    {/* Profile Section */}
-                    <div className="p-8 flex flex-col items-center">
-                        <div className="relative w-20 h-20 mb-4 group cursor-pointer">
-                            <div className="absolute inset-0 bg-[#D4AF37] rounded-full blur-[20px] opacity-20 group-hover:opacity-40 transition-opacity" />
-                            <div className={`relative w-full h-full rounded-full border-[2px] shadow-lg overflow-hidden ${dark ? 'border-[#2a2d3e]' : 'border-white'}`}>
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={user?.profilePictureUrl || `https://ui-avatars.com/api/?name=${user?.firstName}&background=D4AF37&color=fff`} alt="User" className="w-full h-full object-cover" />
-                            </div>
-                            <div className={`absolute -bottom-1 -right-1 rounded-full p-1 shadow-sm border ${dark ? 'bg-[#1a1d2e] border-[#2a2d3e]' : 'bg-white border-[#f0f0f0]'}`}>
-                                <Star size={12} className="fill-[#D4AF37] text-[#D4AF37]" />
-                            </div>
-                        </div>
-                        <div className="hidden md:block text-center">
-                            <h2 className={`text-xl font-bold drop-shadow-sm ${dark ? 'text-[#e8e6e3]' : 'text-[#43485C]'}`}>{user?.firstName || "Traveler"}</h2>
-                            <p className="text-xs text-[#D4AF37] font-bold uppercase tracking-widest mt-1">Grand Archivist</p>
-                        </div>
-                    </div>
-
-                    {/* Navigation */}
-                    <nav className="flex-1 py-6 px-6 space-y-1 overflow-y-auto">
-                        <NavButton href="/dashboard" icon={<LayoutDashboard size={18} />} label="Overview" active dark={dark} />
-                        <NavButton href="/forge" icon={<Map size={18} />} label="Forge" dark={dark} />
-                        <NavButton href="/roster" icon={<User size={18} />} label="Characters" dark={dark} />
-                        <NavButton href="/artifacts" icon={<Gem size={18} />} label="Artifacts" dark={dark} />
-                        <NavButton href="/spellbook" icon={<Scroll size={18} />} label="Spellbook" dark={dark} />
-                        <NavButton href="/hub" icon={<MessageSquare size={18} />} label="My Hub" dark={dark} />
-                        
-                        <div className="py-6 px-2">
-                            <div className="h-[1px] w-12 bg-[#D4AF37]/30" />
-                        </div>
-                        
-                        <NavButton href="/settings" icon={<Settings size={18} />} label="Settings" dark={dark} />
-                    </nav>
-
-                    {/* Bottom Logo */}
-                    <div className="p-8 text-center opacity-40 hidden md:block">
-                         <div className="flex justify-center mb-2">
-                            <Compass size={24} className={dark ? 'text-[#e8e6e3]' : 'text-[#43485C]'} />
-                         </div>
-                        <p className="text-[10px] uppercase tracking-[0.3em] font-bold">The Forge</p>
-                    </div>
-                </aside>
-
-
-                {/* --- MAIN CONTENT AREA --- */}
-                <main className="flex-1 relative flex flex-col min-w-0">
-                    
-                    {/* Header */}
-                    <header className="h-24 flex items-center justify-between px-10 sticky top-0 z-30">
+                {/* --- TOP BAR --- */}
+                <motion.header
+                    className={`sticky top-0 z-40 backdrop-blur-xl border-b ${
+                        dark ? 'bg-[#0a0c14]/80 border-white/5' : 'bg-white/60 border-black/5'
+                    }`}
+                    initial={{ y: -100, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+                >
+                    <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+                        {/* Logo / Title */}
                         <div className="flex items-center gap-4">
-                            <h1 className={`text-3xl font-bold font-serif tracking-tight drop-shadow-sm ${dark ? 'text-[#e8e6e3]' : 'text-[#43485C]'}`}>
-                                Handbook
-                            </h1>
-                            <span className="hidden md:block text-xs font-bold text-[#D4AF37]/80 uppercase tracking-widest border-l-2 border-[#D4AF37]/20 pl-4">
-                                Chapter IV: The Journey
-                            </span>
+                            <div className={`p-2.5 rounded-xl ${dark ? 'bg-amber-500/10' : 'bg-amber-100'}`}>
+                                <BookOpen className={dark ? 'text-amber-400' : 'text-amber-600'} size={22} />
+                            </div>
+                            <div>
+                                <h1 className="font-serif text-2xl font-bold tracking-tight">
+                                    Chronicle
+                                </h1>
+                                <p className={`text-[10px] uppercase tracking-[0.25em] ${dark ? 'text-amber-400/60' : 'text-amber-600/60'}`}>
+                                    Personal Archives
+                                </p>
+                            </div>
                         </div>
 
-                        {/* Resources */}
-                        <div className="flex items-center gap-6">
-                            <ResourceDisplay icon={<Gem size={14} className="text-purple-500" />} amount={myItems?.length?.toString() || "0"} dark={dark} />
-                            <ResourceDisplay icon={<div className="w-3 h-3 bg-[#D4AF37] rounded-full shadow-[0_0_5px_#D4AF37]" />} amount="2.5M" dark={dark} />
-                            <button className="relative group">
-                                <Bell size={20} className={`group-hover:text-[#D4AF37] transition-colors ${dark ? 'text-[#e8e6e3]' : 'text-[#43485C]'}`} />
-                                <span className={`absolute top-0 right-0 w-2 h-2 bg-red-400 rounded-full border-2 ${dark ? 'border-[#1a1d2e]' : 'border-white'}`} />
+                        {/* Right actions */}
+                        <div className="flex items-center gap-3">
+                            {/* Theme toggle */}
+                            <button
+                                onClick={toggleTheme}
+                                className={`p-2.5 rounded-xl transition-all ${
+                                    dark
+                                        ? 'bg-white/5 hover:bg-white/10 text-amber-300'
+                                        : 'bg-black/5 hover:bg-black/10 text-amber-600'
+                                }`}
+                            >
+                                {dark ? <Sun size={18} /> : <Moon size={18} />}
                             </button>
-                        </div>
-                    </header>
 
-                    {/* Content */}
-                    <div className="flex-1 overflow-y-auto p-10 scrollbar-thin scrollbar-thumb-[#D4AF37]/20 scrollbar-track-transparent">
-                        <div className="max-w-6xl mx-auto space-y-12">
-                            
-                            {/* Stats Row */}
-                            <div className="flex items-center justify-between px-4">
-                                <StatContent title="Total Level" value={heroesStats?.totalLevel?.toString() || "0"} icon={<Shield className="text-[#D4AF37]" size={24} />} dark={dark} />
-                                <div className="h-12 w-[1px] bg-[#D4AF37]/10" />
-                                <StatContent title="Heroes" value={heroesStats?.characters?.length?.toString() || "0"} icon={<User className="text-blue-500" size={24} />} dark={dark} />
-                                <div className="h-12 w-[1px] bg-[#D4AF37]/10" />
-                                <StatContent title="Relics" value={heroesStats?.totalItems?.toString() || "0"} icon={<Crown className="text-purple-500" size={24} />} dark={dark} />
-                                <div className="h-12 w-[1px] bg-[#D4AF37]/10" />
-                                <StatContent title="Spells" value={heroesStats?.totalSpells?.toString() || "0"} icon={<Scroll className="text-cyan-500" size={24} />} dark={dark} />
-                            </div>
+                            {/* Notifications */}
+                            <button className={`relative p-2.5 rounded-xl transition-all ${
+                                dark ? 'bg-white/5 hover:bg-white/10' : 'bg-black/5 hover:bg-black/10'
+                            }`}>
+                                <Bell size={18} className={dark ? 'text-gray-400' : 'text-gray-600'} />
+                                <span className="absolute top-2 right-2 w-2 h-2 bg-rose-500 rounded-full" />
+                            </button>
 
-                            {/* Main Hero */}
-                            <section className="relative group rounded-[24px] overflow-hidden shadow-[0_15px_40px_-10px_rgba(0,0,0,0.2)]">
-                                <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1518562180175-34a163b1a9a6?q=80&w=2000')] bg-cover bg-center transition-transform duration-[2s] group-hover:scale-105" />
-                                <div className="absolute inset-0 bg-gradient-to-r from-[#2d3142] via-[#2d3142]/40 to-transparent" />
-                                
-                                <div className="relative z-10 p-12 md:p-16 w-full md:w-2/3 text-white flex flex-col items-start">
-                                    <div className="flex items-center gap-3 mb-4 opacity-80">
-                                        <div className="h-[1px] w-8 bg-white/50" />
-                                        <span className="text-[10px] font-bold uppercase tracking-[0.2em]">Current Objective</span>
-                                    </div>
-                                    
-                                    <h2 className="text-5xl font-serif font-bold mb-4 drop-shadow-lg">Celestia&apos;s Fall</h2>
-                                    <p className="text-white/80 font-sans mb-8 leading-relaxed max-w-lg drop-shadow-md">
-                                        The ley lines are disrupting the upper atmosphere. Journey to the peak of Dragonspine and stabilize the anomaly before the stars descend.
-                                    </p>
-                                    
-                                    <Link href="/forge/create/campaign">
-                                        <button className="flex items-center gap-3 bg-white text-[#2d3142] px-8 py-3 rounded-full font-bold uppercase text-xs tracking-widest hover:shadow-[0_0_20px_rgba(255,255,255,0.4)] transition-all">
-                                            Navigate <ChevronRight size={14} />
-                                        </button>
-                                    </Link>
+                            {/* Profile */}
+                            <Link href="/settings" className="flex items-center gap-3 ml-2">
+                                <div className={`relative w-10 h-10 rounded-xl overflow-hidden ring-2 ${
+                                    dark ? 'ring-amber-500/30' : 'ring-amber-400/40'
+                                }`}>
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                        src={user?.profilePictureUrl || `https://ui-avatars.com/api/?name=${user?.firstName}&background=d4af37&color=fff`}
+                                        alt="Profile"
+                                        className="w-full h-full object-cover"
+                                    />
                                 </div>
-                            </section>
-
-                            {/* Heroes Section */}
-                            <section>
-                                <SectionHeader title="My Heroes" icon={<Sword size={18} />} dark={dark} />
-                                
-                                {heroesStats?.characters && heroesStats.characters.length > 0 ? (
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                        {heroesStats.characters.map((hero: HeroCharacter) => (
-                                            <HeroCard key={hero._id} hero={hero} dark={dark} />
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <div className={`text-center py-12 rounded-2xl border border-dashed ${dark ? 'border-[#D4AF37]/20 bg-[#1a1d2e]/30' : 'border-[#D4AF37]/20 bg-white/30'}`}>
-                                        <User size={48} className={`mx-auto mb-4 ${dark ? 'text-gray-600' : 'text-gray-300'}`} />
-                                        <p className={`text-sm font-bold mb-2 ${dark ? 'text-gray-500' : 'text-gray-400'}`}>No heroes yet</p>
-                                        <p className={`text-xs mb-4 ${dark ? 'text-gray-600' : 'text-gray-400'}`}>Create a character to begin your adventure</p>
-                                        <Link href="/roster" className="inline-flex items-center gap-2 px-4 py-2 bg-[#D4AF37] text-white text-xs font-bold uppercase tracking-wide rounded-lg hover:bg-[#c5a028] transition-colors">
-                                            <Plus size={14} /> Create Hero
-                                        </Link>
-                                    </div>
-                                )}
-                            </section>
-
-                            {/* Bottom Grid */}
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-                                
-                                {/* Party Setup */}
-                                <div className="lg:col-span-2">
-                                    <SectionHeader title="Active Campaigns" icon={<Map size={18} />} dark={dark} />
-                                    
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        {playedCampaigns && playedCampaigns.length > 0 ? (
-                                            playedCampaigns.map((c: Campaign) => (
-                                                <Link href={`/play/${c._id}`} key={c._id}>
-                                                    <CharacterRow 
-                                                        char={c.character || { name: "Unknown Hero", level: 1, element: "Anemo" }} 
-                                                        campaignTitle={c.title}
-                                                        creatorName={c.creatorName}
-                                                        dark={dark}
-                                                    />
-                                                </Link>
-                                            ))
-                                        ) : (
-                                            <p className={`text-sm italic p-4 ${dark ? 'text-gray-500' : 'text-gray-400'}`}>No active campaigns found.</p>
-                                        )}
-                                        
-                                        {/* Add Slot */}
-                                        <Link href="/realms" className={`flex items-center gap-4 p-4 rounded-xl border border-dashed transition-all group ${dark ? 'border-[#D4AF37]/30 text-[#8d99ae] hover:text-[#D4AF37] hover:bg-[#D4AF37]/5' : 'border-[#D4AF37]/30 text-[#8d99ae] hover:text-[#D4AF37] hover:bg-[#D4AF37]/5'}`}>
-                                            <div className="w-12 h-12 rounded-full border border-dashed border-[#D4AF37]/30 flex items-center justify-center group-hover:border-[#D4AF37]">
-                                                <Plus size={18} />
-                                            </div>
-                                            <span className="text-xs font-bold uppercase tracking-widest">Browse Realms</span>
-                                        </Link>
-                                    </div>
-                                </div>
-
-                                {/* Commissions */}
-                                <div>
-                                    <SectionHeader title="Daily Commissions" icon={<Sparkles size={18} />} dark={dark} />
-
-                                    <div className="space-y-6 mt-2">
-                                        <CommissionItem title="Defeat 5 Hilichurls" completed dark={dark} />
-                                        <GoldDivider />
-                                        <CommissionItem title="Complete 1 Domain" completed dark={dark} />
-                                        <GoldDivider />
-                                        <CommissionItem title="Cook 3 Dishes" dark={dark} />
-                                        <GoldDivider />
-                                        <CommissionItem title="Forge a Weapon" dark={dark} />
-                                    </div>
-                                </div>
-                            </div>
-
+                            </Link>
                         </div>
                     </div>
+                </motion.header>
 
-                </main>
-            </motion.div>
+                {/* --- HERO SECTION --- */}
+                <div className="max-w-7xl mx-auto px-6 pt-10 pb-6">
+                    <motion.div
+                        className="flex flex-col md:flex-row md:items-end justify-between gap-6"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.5, delay: 0.1 }}
+                    >
+                        {/* Greeting */}
+                        <div>
+                            <motion.p
+                                className={`text-sm uppercase tracking-[0.2em] mb-2 ${dark ? 'text-amber-400/60' : 'text-amber-600/70'}`}
+                                initial={{ opacity: 0, x: -20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ delay: 0.2 }}
+                            >
+                                Welcome back, Traveler
+                            </motion.p>
+                            <motion.h2
+                                className="font-serif text-4xl md:text-5xl font-bold"
+                                initial={{ opacity: 0, x: -20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ delay: 0.3 }}
+                            >
+                                <span className={dark ? 'text-white' : 'text-gray-900'}>
+                                    {user?.firstName || 'Adventurer'}
+                                </span>
+                                <span className={dark ? 'text-amber-400' : 'text-amber-500'}>.</span>
+                            </motion.h2>
+                        </div>
+
+                        {/* Tab Switcher */}
+                        <motion.div
+                            className={`inline-flex p-1.5 rounded-2xl ${dark ? 'bg-white/5' : 'bg-black/5'}`}
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ delay: 0.4 }}
+                        >
+                            {(['playing', 'creating'] as const).map((tab) => (
+                                <button
+                                    key={tab}
+                                    onClick={() => setActiveTab(tab)}
+                                    className={`relative flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-bold uppercase tracking-wider transition-all ${
+                                        activeTab === tab
+                                            ? dark
+                                                ? 'text-amber-900'
+                                                : 'text-white'
+                                            : dark
+                                                ? 'text-gray-400 hover:text-gray-200'
+                                                : 'text-gray-500 hover:text-gray-700'
+                                    }`}
+                                >
+                                    {activeTab === tab && (
+                                        <motion.div
+                                            layoutId="activeTab"
+                                            className={`absolute inset-0 rounded-xl ${dark ? 'bg-amber-400' : 'bg-amber-500'}`}
+                                            transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                        />
+                                    )}
+                                    <span className="relative z-10">
+                                        {tab === 'playing' ? <Gamepad2 size={16} /> : <Hammer size={16} />}
+                                    </span>
+                                    <span className="relative z-10 hidden sm:inline">{tab}</span>
+                                </button>
+                            ))}
+                        </motion.div>
+                    </motion.div>
+                </div>
+
+                {/* --- STATS ROW --- */}
+                <div className="max-w-7xl mx-auto px-6 pb-8">
+                    <motion.div
+                        className={`flex flex-wrap gap-4 md:gap-8 p-6 rounded-3xl ${
+                            dark ? 'bg-white/[0.02] border border-white/5' : 'bg-white/50 border border-black/5 shadow-sm'
+                        }`}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.5, delay: 0.2 }}
+                    >
+                        {stats.map((stat, i) => (
+                            <motion.div
+                                key={stat.label}
+                                className="flex items-center gap-4 flex-1 min-w-[140px]"
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: 0.3 + i * 0.1 }}
+                            >
+                                <div className={`p-3 rounded-2xl ${dark ? 'bg-white/5' : 'bg-black/5'}`}>
+                                    <stat.icon className={stat.color} size={22} />
+                                </div>
+                                <div>
+                                    <p className="font-serif text-3xl font-bold tracking-tight">{stat.value}</p>
+                                    <p className={`text-[11px] uppercase tracking-[0.15em] ${dark ? 'text-gray-500' : 'text-gray-400'}`}>
+                                        {stat.label}
+                                    </p>
+                                </div>
+                            </motion.div>
+                        ))}
+                    </motion.div>
+                </div>
+
+                {/* --- MAIN CONTENT --- */}
+                <div className="max-w-7xl mx-auto px-6 pb-20">
+                    <AnimatePresence mode="wait">
+                        {activeTab === 'playing' ? (
+                            <motion.div
+                                key="playing"
+                                initial={{ opacity: 0, x: -20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                exit={{ opacity: 0, x: 20 }}
+                                transition={{ duration: 0.3 }}
+                                className="space-y-12"
+                            >
+                                {/* Heroes Section */}
+                                <section>
+                                    <SectionHeader
+                                        title="Heroes"
+                                        subtitle="Your legendary characters"
+                                        icon={<Sword size={20} />}
+                                        dark={dark}
+                                    />
+
+                                    {heroesStats?.characters && heroesStats.characters.length > 0 ? (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                                            {heroesStats.characters.map((hero: HeroCharacter, i: number) => (
+                                                <motion.div
+                                                    key={hero._id}
+                                                    initial={{ opacity: 0, y: 30 }}
+                                                    animate={{ opacity: 1, y: 0 }}
+                                                    transition={{ delay: i * 0.1 }}
+                                                >
+                                                    <HeroCard hero={hero} dark={dark} />
+                                                </motion.div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <EmptyState
+                                            icon={<Sword size={40} />}
+                                            title="No heroes yet"
+                                            description="Begin your journey by joining a realm"
+                                            action={{ label: "Browse Realms", href: "/realms" }}
+                                            dark={dark}
+                                        />
+                                    )}
+                                </section>
+
+                                {/* Active Campaigns */}
+                                <section>
+                                    <SectionHeader
+                                        title="Active Adventures"
+                                        subtitle="Continue your quests"
+                                        icon={<Compass size={20} />}
+                                        dark={dark}
+                                    />
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                        {playedCampaigns && playedCampaigns.length > 0 ? (
+                                            <>
+                                                {playedCampaigns.map((campaign: Campaign, i: number) => (
+                                                    <motion.div
+                                                        key={campaign._id}
+                                                        initial={{ opacity: 0, y: 20 }}
+                                                        animate={{ opacity: 1, y: 0 }}
+                                                        transition={{ delay: i * 0.1 }}
+                                                    >
+                                                        <AdventureCard campaign={campaign} dark={dark} />
+                                                    </motion.div>
+                                                ))}
+                                            </>
+                                        ) : null}
+
+                                        {/* Browse more */}
+                                        <motion.div
+                                            initial={{ opacity: 0, y: 20 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            transition={{ delay: (playedCampaigns?.length || 0) * 0.1 }}
+                                        >
+                                            <Link href="/realms" className="block h-full">
+                                                <div className={`h-full min-h-[100px] flex items-center justify-center gap-4 p-6 rounded-2xl border-2 border-dashed transition-all ${
+                                                    dark
+                                                        ? 'border-amber-500/20 hover:border-amber-500/40 hover:bg-amber-500/5 text-amber-400/60 hover:text-amber-400'
+                                                        : 'border-amber-400/30 hover:border-amber-500/50 hover:bg-amber-50 text-amber-600/60 hover:text-amber-600'
+                                                }`}>
+                                                    <Compass size={20} />
+                                                    <span className="font-bold text-sm uppercase tracking-wider">Explore Realms</span>
+                                                </div>
+                                            </Link>
+                                        </motion.div>
+                                    </div>
+                                </section>
+                            </motion.div>
+                        ) : (
+                            <motion.div
+                                key="creating"
+                                initial={{ opacity: 0, x: 20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                exit={{ opacity: 0, x: -20 }}
+                                transition={{ duration: 0.3 }}
+                            >
+                                <section>
+                                    <div className="flex items-center justify-between mb-8">
+                                        <SectionHeader
+                                            title="My Realms"
+                                            subtitle="Worlds you've forged"
+                                            icon={<Map size={20} />}
+                                            dark={dark}
+                                        />
+                                        <Link href="/forge/create/campaign">
+                                            <motion.button
+                                                className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm uppercase tracking-wider transition-all ${
+                                                    dark
+                                                        ? 'bg-amber-500 text-amber-950 hover:bg-amber-400'
+                                                        : 'bg-amber-500 text-white hover:bg-amber-600'
+                                                }`}
+                                                whileHover={{ scale: 1.02 }}
+                                                whileTap={{ scale: 0.98 }}
+                                            >
+                                                <Sparkles size={16} />
+                                                Create Realm
+                                            </motion.button>
+                                        </Link>
+                                    </div>
+
+                                    {myCampaigns && myCampaigns.length > 0 ? (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                                            {myCampaigns.map((campaign, i: number) => (
+                                                <motion.div
+                                                    key={campaign._id}
+                                                    initial={{ opacity: 0, y: 30 }}
+                                                    animate={{ opacity: 1, y: 0 }}
+                                                    transition={{ delay: i * 0.1 }}
+                                                >
+                                                    <RealmCard campaign={campaign} dark={dark} />
+                                                </motion.div>
+                                            ))}
+
+                                            {/* Create new realm card */}
+                                            <motion.div
+                                                initial={{ opacity: 0, y: 30 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                transition={{ delay: myCampaigns.length * 0.1 }}
+                                            >
+                                                <Link href="/forge/create/campaign" className="block h-full">
+                                                    <div className={`h-full min-h-[320px] flex flex-col items-center justify-center gap-4 rounded-3xl border-2 border-dashed transition-all group ${
+                                                        dark
+                                                            ? 'border-amber-500/20 hover:border-amber-500/40 bg-white/[0.01] hover:bg-amber-500/5'
+                                                            : 'border-amber-400/30 hover:border-amber-500/50 bg-amber-50/30 hover:bg-amber-50'
+                                                    }`}>
+                                                        <div className={`p-5 rounded-2xl transition-transform group-hover:scale-110 ${
+                                                            dark ? 'bg-amber-500/10' : 'bg-amber-100'
+                                                        }`}>
+                                                            <Plus className={dark ? 'text-amber-400' : 'text-amber-600'} size={28} />
+                                                        </div>
+                                                        <p className={`font-bold uppercase tracking-[0.15em] text-sm ${
+                                                            dark ? 'text-amber-400/60' : 'text-amber-600/60'
+                                                        }`}>
+                                                            Forge New Realm
+                                                        </p>
+                                                    </div>
+                                                </Link>
+                                            </motion.div>
+                                        </div>
+                                    ) : (
+                                        <EmptyState
+                                            icon={<Map size={40} />}
+                                            title="No realms yet"
+                                            description="Create your first world and invite players"
+                                            action={{ label: "Create Realm", href: "/forge/create/campaign" }}
+                                            dark={dark}
+                                        />
+                                    )}
+                                </section>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </div>
+
+                {/* --- FLOATING NAV --- */}
+                <motion.nav
+                    className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 p-2 rounded-2xl backdrop-blur-xl shadow-2xl ${
+                        dark
+                            ? 'bg-[#1a1d2e]/90 border border-white/10'
+                            : 'bg-white/90 border border-black/10'
+                    }`}
+                    initial={{ y: 100, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: 0.5, type: "spring", bounce: 0.3 }}
+                >
+                    <NavItem href="/dashboard" icon={<BookOpen size={20} />} label="Chronicle" active dark={dark} />
+                    <NavItem href="/forge" icon={<Hammer size={20} />} label="Forge" dark={dark} />
+                    <NavItem href="/realms" icon={<Compass size={20} />} label="Realms" dark={dark} />
+                    <NavItem href="/settings" icon={<Settings size={20} />} label="Settings" dark={dark} />
+                </motion.nav>
+            </div>
         </div>
     );
 }
 
 // --- SUB-COMPONENTS ---
 
-const SectionHeader = ({ title, icon, dark }: { title: string, icon: React.ReactNode, dark?: boolean }) => (
-    <div className="flex items-center gap-3 mb-6">
-        <div className="text-[#D4AF37]">{icon}</div>
-        <h3 className={`font-bold text-xl ${dark ? 'text-[#e8e6e3]' : 'text-[#43485C]'}`}>{title}</h3>
-    </div>
-);
-
-const NavButton = ({ icon, label, active, href, dark }: { icon: React.ReactNode, label: string, active?: boolean, href: string, dark?: boolean }) => (
-    <Link href={href || "#"} className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-200 group ${
-        active 
-            ? dark ? 'text-[#e8e6e3]' : 'text-[#43485C]'
-            : dark ? 'text-gray-500 hover:text-[#D4AF37]' : 'text-gray-400 hover:text-[#D4AF37]'
-    }`}>
-        <div className={`relative z-10 ${active ? 'text-[#D4AF37]' : 'group-hover:text-[#D4AF37]'}`}>
-            {icon}
-        </div>
-        <span className={`hidden md:block text-sm font-bold tracking-wide ${active ? 'font-serif' : 'font-sans'}`}>
-            {label}
-        </span>
-        {active && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-[#D4AF37]" />}
-    </Link>
-);
-
-const StatContent = ({ title, value, icon, dark }: { title: string, value: string, icon: React.ReactNode, dark?: boolean }) => (
-    <div className="flex items-center gap-5 px-4">
-        <div className={`p-3 rounded-2xl shadow-sm text-[#D4AF37] ${dark ? 'bg-[#1a1d2e]' : 'bg-[#fff]'}`}>
+const SectionHeader = ({ title, subtitle, icon, dark }: { title: string; subtitle: string; icon: React.ReactNode; dark: boolean }) => (
+    <div className="flex items-center gap-4 mb-8">
+        <div className={`p-3 rounded-xl ${dark ? 'bg-amber-500/10 text-amber-400' : 'bg-amber-100 text-amber-600'}`}>
             {icon}
         </div>
         <div>
-            <p className={`text-4xl font-serif font-bold tracking-tight ${dark ? 'text-[#e8e6e3]' : 'text-[#43485C]'}`}>{value}</p>
-            <p className={`text-xs font-bold uppercase tracking-widest mt-1 ${dark ? 'text-gray-500' : 'text-gray-400'}`}>{title}</p>
+            <h3 className="font-serif text-2xl font-bold">{title}</h3>
+            <p className={`text-sm ${dark ? 'text-gray-500' : 'text-gray-400'}`}>{subtitle}</p>
         </div>
     </div>
 );
 
-const ResourceDisplay = ({ icon, amount, dark }: { icon: React.ReactNode, amount: string, dark?: boolean }) => (
-    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full shadow-sm border ${dark ? 'bg-[#1a1d2e]/50 border-[#2a2d3e]' : 'bg-white/50 border-white/50'}`}>
+const NavItem = ({ href, icon, label, active, dark }: { href: string; icon: React.ReactNode; label: string; active?: boolean; dark: boolean }) => (
+    <Link
+        href={href}
+        className={`flex items-center gap-2 px-4 py-3 rounded-xl transition-all ${
+            active
+                ? dark
+                    ? 'bg-amber-500/20 text-amber-400'
+                    : 'bg-amber-100 text-amber-600'
+                : dark
+                    ? 'text-gray-400 hover:text-amber-400 hover:bg-white/5'
+                    : 'text-gray-500 hover:text-amber-600 hover:bg-black/5'
+        }`}
+    >
         {icon}
-        <span className={`text-sm font-bold font-sans ${dark ? 'text-[#e8e6e3]' : 'text-[#43485C]'}`}>{amount}</span>
+        <span className="text-sm font-bold hidden sm:inline">{label}</span>
+    </Link>
+);
+
+const EmptyState = ({ icon, title, description, action, dark }: {
+    icon: React.ReactNode;
+    title: string;
+    description: string;
+    action: { label: string; href: string };
+    dark: boolean;
+}) => (
+    <div className={`text-center py-16 px-8 rounded-3xl border-2 border-dashed ${
+        dark ? 'border-white/10 bg-white/[0.01]' : 'border-black/10 bg-black/[0.01]'
+    }`}>
+        <div className={`inline-flex p-5 rounded-2xl mb-6 ${dark ? 'bg-white/5 text-gray-500' : 'bg-black/5 text-gray-400'}`}>
+            {icon}
+        </div>
+        <p className={`font-serif text-xl font-bold mb-2 ${dark ? 'text-gray-300' : 'text-gray-700'}`}>{title}</p>
+        <p className={`text-sm mb-6 ${dark ? 'text-gray-500' : 'text-gray-400'}`}>{description}</p>
+        <Link href={action.href}>
+            <motion.button
+                className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm uppercase tracking-wider ${
+                    dark
+                        ? 'bg-amber-500 text-amber-950 hover:bg-amber-400'
+                        : 'bg-amber-500 text-white hover:bg-amber-600'
+                }`}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+            >
+                <Compass size={16} />
+                {action.label}
+            </motion.button>
+        </Link>
     </div>
 );
 
-const CharacterRow = ({ char, campaignTitle, creatorName, dark }: { char: Character, campaignTitle?: string, creatorName?: string, dark?: boolean }) => (
-    <div className="flex items-center gap-4 p-2 group cursor-pointer">
-        <div className="relative w-14 h-14">
-            <div className="absolute inset-0 bg-gradient-to-br from-[#D4AF37]/20 to-transparent rounded-full blur-md opacity-0 group-hover:opacity-100 transition-opacity" />
-            <div className={`relative w-full h-full rounded-full border-2 shadow-md flex items-center justify-center text-xl font-bold overflow-hidden ${dark ? 'bg-[#1a1d2e] border-[#2a2d3e] text-gray-500' : 'bg-[#f8f9fa] border-white text-gray-300'}`}>
-                {char.name ? char.name[0] : "?"}
-            </div>
-            <div className={`absolute -bottom-1 -right-1 p-0.5 rounded-full shadow-sm ${dark ? 'bg-[#1a1d2e]' : 'bg-white'}`}>
-                <ElementIcon element={char.element} />
-            </div>
-        </div>
-        
-        <div className="flex-1">
-            <h4 className={`font-bold text-lg group-hover:text-[#D4AF37] transition-colors ${dark ? 'text-[#e8e6e3]' : 'text-[#43485C]'}`}>{char.name}</h4>
-            <p className={`text-xs font-bold uppercase ${dark ? 'text-gray-500' : 'text-gray-400'}`}>Lv. {char.level} / 90</p>
-            {campaignTitle && <p className={`text-xs mt-1 font-medium ${dark ? 'text-gray-500' : 'text-gray-500'}`}>{campaignTitle}</p>}
-            {creatorName && <p className="text-[10px] text-[#D4AF37] uppercase tracking-wider mt-0.5">Created by {creatorName}</p>}
-        </div>
-        
-        <ChevronRight className={`transition-transform group-hover:translate-x-1 group-hover:text-[#D4AF37] ${dark ? 'text-gray-600' : 'text-gray-300'}`} size={16} />
-    </div>
-);
-
-const CommissionItem = ({ title, completed, dark }: { title: string, completed?: boolean, dark?: boolean }) => (
-    <div className="flex items-center justify-between group cursor-pointer py-1">
-        <div className="flex items-center gap-4">
-            <div className={`w-4 h-4 rounded-full border-[1.5px] flex items-center justify-center transition-colors ${completed ? 'bg-[#D4AF37] border-[#D4AF37]' : dark ? 'border-gray-600 group-hover:border-[#D4AF37]' : 'border-gray-300 group-hover:border-[#D4AF37]'}`}>
-                {completed && <div className="w-2 h-2 bg-white rounded-full" />}
-            </div>
-            <span className={`text-sm font-bold transition-colors ${completed ? 'text-gray-400 line-through' : dark ? 'text-[#e8e6e3] group-hover:text-[#D4AF37]' : 'text-[#43485C] group-hover:text-[#D4AF37]'}`}>
-                {title}
-            </span>
-        </div>
-        {!completed && (
-            <div className="text-[10px] font-bold text-[#D4AF37] uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">
-                Go
-            </div>
-        )}
-    </div>
-);
-
-// Hero Card Component for displaying character stats from realms
-const HeroCard = ({ hero, dark }: { hero: HeroCharacter, dark?: boolean }) => {
+const HeroCard = ({ hero, dark }: { hero: HeroCharacter; dark: boolean }) => {
     const maxLevel = 90;
     const levelProgress = (hero.level / maxLevel) * 100;
-    
-    // Parse stats JSON
+
     let parsedStats: Record<string, number> = {};
     try {
         parsedStats = JSON.parse(hero.stats || '{}');
     } catch {
         parsedStats = {};
     }
-    
+
     const statEntries = Object.entries(parsedStats).slice(0, 4);
 
     return (
-        <div className={`rounded-2xl overflow-hidden border transition-all hover:shadow-lg group ${
-            dark 
-                ? 'bg-[#1a1d2e]/60 border-[#D4AF37]/10 hover:border-[#D4AF37]/30' 
-                : 'bg-white/60 border-[#D4AF37]/10 hover:border-[#D4AF37]/30'
-        }`}>
-            {/* Header with Campaign Image */}
-            <div className="relative h-24 overflow-hidden">
-                {hero.campaignImageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img 
-                        src={hero.campaignImageUrl} 
-                        alt={hero.campaignTitle} 
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+        <Link href={hero.campaignId ? `/play/${hero.campaignId}` : '#'}>
+            <motion.div
+                className={`group relative overflow-hidden rounded-3xl transition-all duration-300 ${
+                    dark
+                        ? 'bg-[#151821] hover:bg-[#1a1e2a] ring-1 ring-white/5 hover:ring-amber-500/20'
+                        : 'bg-white hover:shadow-xl shadow-md ring-1 ring-black/5 hover:ring-amber-400/30'
+                }`}
+                whileHover={{ y: -4 }}
+            >
+                {/* Header image */}
+                <div className="relative h-28 overflow-hidden">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                        src={hero.campaignImageUrl || FALLBACK_IMAGE}
+                        alt={hero.campaignTitle}
+                        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                     />
-                ) : (
-                    <div className={`w-full h-full ${dark ? 'bg-gradient-to-br from-[#2a2d3e] to-[#1a1d2e]' : 'bg-gradient-to-br from-gray-200 to-gray-100'}`} />
-                )}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-                
-                {/* Campaign Title */}
-                <div className="absolute bottom-2 left-3 right-3">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-[#D4AF37]">
-                        {hero.campaignTitle}
-                    </p>
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+
+                    {/* Campaign name */}
+                    <div className="absolute bottom-3 left-4 right-16">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-400 truncate">
+                            {hero.campaignTitle}
+                        </p>
+                    </div>
+
+                    {/* Character avatar */}
+                    <div className={`absolute -bottom-7 right-4 w-16 h-16 rounded-2xl overflow-hidden ring-4 shadow-lg ${
+                        dark ? 'ring-[#151821]' : 'ring-white'
+                    }`}>
+                        {hero.characterImageUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={hero.characterImageUrl} alt={hero.name} className="w-full h-full object-cover" />
+                        ) : (
+                            <div className={`w-full h-full flex items-center justify-center text-xl font-serif font-bold ${
+                                dark ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-100 text-amber-600'
+                            }`}>
+                                {hero.name[0]}
+                            </div>
+                        )}
+                    </div>
                 </div>
 
-                {/* Character Avatar */}
-                <div className={`absolute -bottom-6 right-4 w-14 h-14 rounded-full border-4 shadow-lg overflow-hidden ${
-                    dark ? 'border-[#1a1d2e] bg-[#2a2d3e]' : 'border-white bg-gray-100'
-                }`}>
-                    {hero.characterImageUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={hero.characterImageUrl} alt={hero.name} className="w-full h-full object-cover" />
-                    ) : (
-                        <div className="w-full h-full flex items-center justify-center text-lg font-bold text-[#D4AF37]">
-                            {hero.name[0]}
+                {/* Content */}
+                <div className="p-5 pt-3">
+                    <div className="mb-4">
+                        <h4 className={`font-serif text-xl font-bold group-hover:text-amber-500 transition-colors ${
+                            dark ? 'text-white' : 'text-gray-900'
+                        }`}>
+                            {hero.name}
+                        </h4>
+                        <p className={`text-xs uppercase tracking-[0.15em] ${dark ? 'text-gray-500' : 'text-gray-400'}`}>
+                            {hero.class}
+                        </p>
+                    </div>
+
+                    {/* Level bar */}
+                    <div className="mb-4">
+                        <div className="flex justify-between items-center mb-1.5">
+                            <span className={`text-[10px] uppercase tracking-wider font-bold ${dark ? 'text-gray-500' : 'text-gray-400'}`}>
+                                Level
+                            </span>
+                            <span className={`text-sm font-bold ${dark ? 'text-amber-400' : 'text-amber-500'}`}>
+                                {hero.level}/{maxLevel}
+                            </span>
+                        </div>
+                        <div className={`h-2 rounded-full overflow-hidden ${dark ? 'bg-white/5' : 'bg-black/5'}`}>
+                            <motion.div
+                                className="h-full bg-gradient-to-r from-amber-500 to-amber-400"
+                                initial={{ width: 0 }}
+                                animate={{ width: `${levelProgress}%` }}
+                                transition={{ duration: 1, ease: [0.22, 1, 0.36, 1] }}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Stats */}
+                    {statEntries.length > 0 && (
+                        <div className="grid grid-cols-2 gap-2 mb-4">
+                            {statEntries.map(([key, value]) => (
+                                <div key={key} className={`px-3 py-2 rounded-xl ${dark ? 'bg-white/5' : 'bg-black/[0.02]'}`}>
+                                    <p className={`text-[9px] uppercase tracking-wider ${dark ? 'text-gray-600' : 'text-gray-400'}`}>
+                                        {key}
+                                    </p>
+                                    <p className={`text-sm font-bold ${dark ? 'text-white' : 'text-gray-900'}`}>
+                                        {value}
+                                    </p>
+                                </div>
+                            ))}
                         </div>
                     )}
+
+                    {/* Items & Spells */}
+                    <div className={`flex items-center gap-4 pt-4 border-t ${dark ? 'border-white/5' : 'border-black/5'}`}>
+                        <div className="flex items-center gap-2">
+                            <Backpack size={14} className="text-rose-400" />
+                            <span className={`text-xs font-bold ${dark ? 'text-gray-400' : 'text-gray-500'}`}>
+                                {hero.itemCount}
+                            </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Scroll size={14} className="text-cyan-400" />
+                            <span className={`text-xs font-bold ${dark ? 'text-gray-400' : 'text-gray-500'}`}>
+                                {hero.spellCount}
+                            </span>
+                        </div>
+                        <ChevronRight size={16} className={`ml-auto transition-transform group-hover:translate-x-1 ${
+                            dark ? 'text-gray-600 group-hover:text-amber-400' : 'text-gray-300 group-hover:text-amber-500'
+                        }`} />
+                    </div>
+                </div>
+            </motion.div>
+        </Link>
+    );
+};
+
+const AdventureCard = ({ campaign, dark }: { campaign: Campaign; dark: boolean }) => (
+    <Link href={`/play/${campaign._id}`}>
+        <motion.div
+            className={`flex items-center gap-4 p-4 rounded-2xl transition-all group ${
+                dark
+                    ? 'bg-white/[0.02] hover:bg-white/[0.05] ring-1 ring-white/5 hover:ring-amber-500/20'
+                    : 'bg-white hover:shadow-md shadow-sm ring-1 ring-black/5 hover:ring-amber-400/20'
+            }`}
+            whileHover={{ x: 4 }}
+        >
+            {/* Character avatar */}
+            <div className={`w-14 h-14 rounded-xl overflow-hidden ring-2 flex-shrink-0 ${
+                dark ? 'ring-amber-500/20' : 'ring-amber-400/20'
+            }`}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                    src={campaign.imageUrl || FALLBACK_IMAGE}
+                    alt={campaign.title}
+                    className="w-full h-full object-cover"
+                />
+            </div>
+
+            <div className="flex-1 min-w-0">
+                <h4 className={`font-serif font-bold text-lg truncate group-hover:text-amber-500 transition-colors ${
+                    dark ? 'text-white' : 'text-gray-900'
+                }`}>
+                    {campaign.character?.name || 'Unknown Hero'}
+                </h4>
+                <p className={`text-xs truncate ${dark ? 'text-gray-500' : 'text-gray-400'}`}>
+                    {campaign.title}
+                </p>
+                {campaign.creatorName && (
+                    <p className={`text-[10px] uppercase tracking-wider mt-1 ${dark ? 'text-amber-500/60' : 'text-amber-600/60'}`}>
+                        by {campaign.creatorName}
+                    </p>
+                )}
+            </div>
+
+            <ChevronRight size={18} className={`flex-shrink-0 transition-transform group-hover:translate-x-1 ${
+                dark ? 'text-gray-600 group-hover:text-amber-400' : 'text-gray-300 group-hover:text-amber-500'
+            }`} />
+        </motion.div>
+    </Link>
+);
+
+const RealmCard = ({ campaign, dark }: { campaign: Campaign; dark: boolean }) => (
+    <Link href={`/forge/campaign/${campaign._id}`}>
+        <motion.div
+            className={`group relative overflow-hidden rounded-3xl transition-all duration-300 ${
+                dark
+                    ? 'bg-[#151821] hover:bg-[#1a1e2a] ring-1 ring-white/5 hover:ring-amber-500/20'
+                    : 'bg-white hover:shadow-xl shadow-md ring-1 ring-black/5 hover:ring-amber-400/30'
+            }`}
+            whileHover={{ y: -4 }}
+        >
+            {/* Image */}
+            <div className="relative aspect-[16/10] overflow-hidden">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                    src={campaign.imageUrl || FALLBACK_IMAGE}
+                    alt={campaign.title}
+                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+
+                {/* XP badge */}
+                <div className="absolute top-4 left-4">
+                    <div className={`px-3 py-1.5 rounded-full backdrop-blur-md text-[10px] font-bold uppercase tracking-wider ${
+                        dark
+                            ? 'bg-amber-500/20 text-amber-300 ring-1 ring-amber-500/30'
+                            : 'bg-white/20 text-white ring-1 ring-white/30'
+                    }`}>
+                        <Zap size={10} className="inline mr-1" />
+                        {campaign.xpRate}x XP
+                    </div>
+                </div>
+
+                {/* Title overlay */}
+                <div className="absolute bottom-4 left-4 right-4">
+                    <h3 className="font-serif text-xl font-bold text-white group-hover:text-amber-300 transition-colors truncate">
+                        {campaign.title}
+                    </h3>
                 </div>
             </div>
 
             {/* Content */}
-            <div className="p-4 pt-2">
-                {/* Name & Class */}
-                <div className="mb-3">
-                    <h4 className={`font-bold text-lg font-serif ${dark ? 'text-[#e8e6e3]' : 'text-[#43485C]'}`}>
-                        {hero.name}
-                    </h4>
-                    <p className={`text-xs font-bold uppercase tracking-wider ${dark ? 'text-gray-500' : 'text-gray-400'}`}>
-                        {hero.class}
-                    </p>
-                </div>
+            <div className="p-5">
+                <p className={`text-sm line-clamp-2 mb-4 ${dark ? 'text-gray-400' : 'text-gray-500'}`}>
+                    {campaign.description || 'No description provided.'}
+                </p>
 
-                {/* Level Progress */}
-                <div className="mb-4">
-                    <div className="flex justify-between items-center mb-1">
-                        <span className={`text-xs font-bold ${dark ? 'text-gray-500' : 'text-gray-400'}`}>Level</span>
-                        <span className="text-sm font-bold text-[#D4AF37]">{hero.level} / {maxLevel}</span>
-                    </div>
-                    <div className={`h-2 rounded-full overflow-hidden ${dark ? 'bg-[#2a2d3e]' : 'bg-gray-200'}`}>
-                        <motion.div 
-                            className="h-full bg-gradient-to-r from-[#D4AF37] to-[#f0d78c]"
-                            initial={{ width: 0 }}
-                            animate={{ width: `${levelProgress}%` }}
-                            transition={{ duration: 0.8, ease: "easeOut" }}
-                        />
-                    </div>
-                </div>
-
-                {/* Stats Grid */}
-                {statEntries.length > 0 && (
-                    <div className="grid grid-cols-2 gap-2 mb-4">
-                        {statEntries.map(([key, value]) => (
-                            <div key={key} className={`px-2 py-1 rounded-lg ${dark ? 'bg-[#151821]' : 'bg-gray-50'}`}>
-                                <p className={`text-[10px] uppercase tracking-wider ${dark ? 'text-gray-600' : 'text-gray-400'}`}>
-                                    {key}
-                                </p>
-                                <p className={`text-sm font-bold ${dark ? 'text-[#e8e6e3]' : 'text-[#43485C]'}`}>
-                                    {value}
-                                </p>
-                            </div>
-                        ))}
-                    </div>
-                )}
-
-                {/* Items & Spells Count */}
-                <div className="flex gap-4 mb-4">
+                <div className={`flex items-center gap-4 pt-4 border-t ${dark ? 'border-white/5' : 'border-black/5'}`}>
                     <div className="flex items-center gap-2">
-                        <Backpack size={14} className="text-purple-500" />
+                        <User size={14} className="text-indigo-400" />
                         <span className={`text-xs font-bold ${dark ? 'text-gray-400' : 'text-gray-500'}`}>
-                            {hero.itemCount} Items
+                            {campaign.playerCount || 0} Players
                         </span>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <Scroll size={14} className="text-cyan-500" />
-                        <span className={`text-xs font-bold ${dark ? 'text-gray-400' : 'text-gray-500'}`}>
-                            {hero.spellCount} Spells
-                        </span>
-                    </div>
+                    <ChevronRight size={16} className={`ml-auto transition-transform group-hover:translate-x-1 ${
+                        dark ? 'text-gray-600 group-hover:text-amber-400' : 'text-gray-300 group-hover:text-amber-500'
+                    }`} />
                 </div>
-
-                {/* Inventory Preview */}
-                {hero.inventoryPreview.length > 0 && (
-                    <div>
-                        <p className={`text-[10px] font-bold uppercase tracking-widest mb-2 ${dark ? 'text-gray-600' : 'text-gray-400'}`}>
-                            Inventory
-                        </p>
-                        <div className="grid grid-cols-4 gap-1.5">
-                            {hero.inventoryPreview.map((item) => (
-                                <div 
-                                    key={item._id}
-                                    className={`aspect-square rounded-lg border flex items-center justify-center text-[10px] font-bold cursor-help group/item relative ${
-                                        dark ? 'bg-[#151821] border-[#2a2d3e]' : 'bg-gray-50 border-gray-200'
-                                    }`}
-                                    style={{ color: item.textColor || (dark ? '#e8e6e3' : '#43485C') }}
-                                    title={`${item.name} (${item.rarity})`}
-                                >
-                                    {item.name[0]}
-                                    {/* Tooltip */}
-                                    <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 rounded text-[10px] whitespace-nowrap opacity-0 group-hover/item:opacity-100 transition-opacity pointer-events-none z-10 ${
-                                        dark ? 'bg-[#1a1d2e] text-[#e8e6e3]' : 'bg-gray-800 text-white'
-                                    }`}>
-                                        {item.name}
-                                    </div>
-                                </div>
-                            ))}
-                            {/* Empty slots */}
-                            {Array.from({ length: Math.max(0, 8 - hero.inventoryPreview.length) }).map((_, i) => (
-                                <div 
-                                    key={`empty-${i}`}
-                                    className={`aspect-square rounded-lg border border-dashed flex items-center justify-center ${
-                                        dark ? 'border-[#2a2d3e]' : 'border-gray-200'
-                                    }`}
-                                >
-                                    <div className={`w-1 h-1 rounded-full ${dark ? 'bg-[#2a2d3e]' : 'bg-gray-300'}`} />
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
             </div>
-        </div>
-    );
-};
+        </motion.div>
+    </Link>
+);

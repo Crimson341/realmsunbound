@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Search, Eye, Footprints, MessageCircle,
@@ -33,6 +33,9 @@ export interface SkillCheckData {
     modifier: number;
     target: number;
     success: boolean;
+    attribute?: string;
+    isCritical?: boolean;
+    degree?: 'critical_success' | 'success' | 'failure' | 'critical_failure';
 }
 
 export interface RewardData {
@@ -112,6 +115,26 @@ export const QuickActionBar: React.FC<QuickActionBarProps> = ({ onAction, isLoad
 // DICE ROLL OVERLAY
 // ============================================
 
+// Attribute abbreviations
+const ATTRIBUTE_ABBR: Record<string, string> = {
+    strength: 'STR',
+    dexterity: 'DEX',
+    constitution: 'CON',
+    intelligence: 'INT',
+    wisdom: 'WIS',
+    charisma: 'CHA',
+};
+
+// Attribute colors
+const ATTRIBUTE_COLORS: Record<string, string> = {
+    strength: 'from-red-500 to-red-700',
+    dexterity: 'from-green-500 to-green-700',
+    constitution: 'from-orange-500 to-orange-700',
+    intelligence: 'from-blue-500 to-blue-700',
+    wisdom: 'from-purple-500 to-purple-700',
+    charisma: 'from-pink-500 to-pink-700',
+};
+
 interface DiceRollOverlayProps {
     data: SkillCheckData;
     onComplete: () => void;
@@ -119,39 +142,152 @@ interface DiceRollOverlayProps {
 
 export const DiceRollOverlay: React.FC<DiceRollOverlayProps> = ({ data, onComplete }) => {
     const [phase, setPhase] = useState<'rolling' | 'result'>('rolling');
-    const { roll, modifier, target, success, skill } = data;
+    const [displayRoll, setDisplayRoll] = useState(1);
+    const { roll, modifier, target, success, skill, attribute, degree } = data;
+
+    // Animate the rolling numbers
+    useEffect(() => {
+        if (phase === 'rolling') {
+            const interval = setInterval(() => {
+                setDisplayRoll(Math.floor(Math.random() * 20) + 1);
+            }, 50);
+            return () => clearInterval(interval);
+        }
+    }, [phase]);
 
     useEffect(() => {
         const resultTimer = setTimeout(() => setPhase('result'), 1500);
-        const completeTimer = setTimeout(onComplete, 3500);
-        
+        const completeTimer = setTimeout(onComplete, 4000);
+
         return () => {
             clearTimeout(resultTimer);
             clearTimeout(completeTimer);
         };
     }, [onComplete]);
 
+    // Determine if it's a nat 20 or nat 1
+    const isNat20 = roll === 20;
+    const isNat1 = roll === 1;
+    const isCriticalSuccess = degree === 'critical_success' || isNat20;
+    const isCriticalFailure = degree === 'critical_failure' || isNat1;
+
+    // Get dice gradient based on roll or attribute
+    const getDiceGradient = () => {
+        if (phase === 'result') {
+            if (isNat20) return 'from-yellow-400 via-amber-500 to-yellow-600';
+            if (isNat1) return 'from-red-600 via-red-700 to-red-900';
+            if (attribute && ATTRIBUTE_COLORS[attribute.toLowerCase()]) {
+                return ATTRIBUTE_COLORS[attribute.toLowerCase()];
+            }
+        }
+        return 'from-genshin-gold via-amber-500 to-orange-600';
+    };
+
+    // Get result text and styling
+    const getResultDisplay = () => {
+        if (isCriticalSuccess || isNat20) {
+            return {
+                text: isNat20 ? 'NATURAL 20!' : 'CRITICAL SUCCESS!',
+                color: 'text-yellow-400',
+                icon: '20',
+            };
+        }
+        if (isCriticalFailure || isNat1) {
+            return {
+                text: isNat1 ? 'NATURAL 1!' : 'CRITICAL FAILURE!',
+                color: 'text-red-500',
+                icon: '1',
+            };
+        }
+        if (success) {
+            return {
+                text: 'SUCCESS',
+                color: 'text-green-400',
+                icon: null,
+            };
+        }
+        return {
+            text: 'FAILED',
+            color: 'text-red-400',
+            icon: null,
+        };
+    };
+
+    const resultDisplay = getResultDisplay();
+
     return (
         <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center"
+            className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center"
         >
+            {/* Particle effects for crits */}
+            {phase === 'result' && (isNat20 || isCriticalSuccess) && (
+                <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                    {[...Array(30)].map((_, i) => (
+                        <motion.div
+                            key={i}
+                            className="absolute w-2 h-2 bg-yellow-400 rounded-full"
+                            initial={{
+                                x: '50vw',
+                                y: '50vh',
+                                scale: 0,
+                                opacity: 0,
+                            }}
+                            animate={{
+                                x: `${Math.random() * 100}vw`,
+                                y: `${Math.random() * 100}vh`,
+                                scale: [0, 1.5, 0],
+                                opacity: [0, 1, 0],
+                            }}
+                            transition={{
+                                duration: 1.5,
+                                delay: i * 0.05,
+                                ease: "easeOut",
+                            }}
+                            style={{
+                                boxShadow: '0 0 15px rgba(250, 204, 21, 0.8)',
+                            }}
+                        />
+                    ))}
+                </div>
+            )}
+
             <div className="text-center">
-                {/* Skill Name */}
-                <motion.p
+                {/* Skill Name with Attribute */}
+                <motion.div
                     initial={{ opacity: 0, y: -20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="text-stone-400 uppercase tracking-widest text-sm mb-4 font-bold"
+                    className="mb-6"
                 >
-                    {skill} Check
-                </motion.p>
+                    <p className="text-stone-400 uppercase tracking-widest text-sm font-bold">
+                        {skill} Check
+                    </p>
+                    {attribute && (
+                        <p className="text-xs text-stone-600 mt-1">
+                            ({ATTRIBUTE_ABBR[attribute.toLowerCase()] || attribute.toUpperCase()})
+                        </p>
+                    )}
+                </motion.div>
 
-                {/* Dice */}
-                <div className="perspective-1000 mb-8">
+                {/* D20 Die */}
+                <div className="perspective-1000 mb-8 relative">
+                    {/* Glow effect for crits */}
+                    {phase === 'result' && (isNat20 || isNat1) && (
+                        <motion.div
+                            className={`absolute inset-0 blur-2xl ${isNat20 ? 'bg-yellow-500' : 'bg-red-600'}`}
+                            animate={{
+                                scale: [1, 1.3, 1],
+                                opacity: [0.5, 0.8, 0.5],
+                            }}
+                            transition={{ duration: 1, repeat: Infinity }}
+                            style={{ borderRadius: '50%' }}
+                        />
+                    )}
+
                     <motion.div
-                        className="w-28 h-28 bg-gradient-to-br from-genshin-gold via-amber-500 to-orange-600 rounded-2xl flex items-center justify-center text-5xl font-bold text-genshin-dark mx-auto shadow-2xl relative overflow-hidden"
+                        className={`w-32 h-32 bg-gradient-to-br ${getDiceGradient()} rounded-2xl flex items-center justify-center text-5xl font-bold text-genshin-dark mx-auto shadow-2xl relative overflow-hidden`}
                         animate={phase === 'rolling' ? {
                             rotateX: [0, 360, 720, 1080, 1440],
                             rotateY: [0, 180, 360, 540, 720],
@@ -159,24 +295,43 @@ export const DiceRollOverlay: React.FC<DiceRollOverlayProps> = ({ data, onComple
                         } : {
                             rotateX: 0,
                             rotateY: 0,
-                            scale: [1, 1.15, 1],
+                            scale: isNat20 || isNat1 ? [1, 1.2, 1.1] : [1, 1.15, 1],
                         }}
                         transition={phase === 'rolling' ? {
                             duration: 1.5,
                             ease: "easeOut"
                         } : {
-                            duration: 0.3,
+                            duration: 0.5,
+                            type: "spring",
                         }}
                         style={{ transformStyle: 'preserve-3d' }}
                     >
+                        {/* D20 shape hint */}
+                        <div className="absolute inset-2 border-2 border-white/20 rounded-xl" />
+
                         {/* Shine effect */}
-                        <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/30 to-transparent opacity-50" />
-                        
+                        <motion.div
+                            className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/40 to-transparent"
+                            animate={phase === 'result' && isNat20 ? {
+                                x: ['-100%', '100%'],
+                            } : {}}
+                            transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 1 }}
+                        />
+
                         {/* Number */}
-                        <span className="relative z-10 drop-shadow-lg">
-                            {phase === 'result' ? roll : '?'}
+                        <span className={`relative z-10 drop-shadow-lg ${isNat20 ? 'text-white' : isNat1 ? 'text-white' : ''}`}>
+                            {phase === 'result' ? roll : displayRoll}
                         </span>
                     </motion.div>
+
+                    {/* D20 label */}
+                    <motion.p
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="text-stone-600 text-xs mt-2 uppercase tracking-widest"
+                    >
+                        d20
+                    </motion.p>
                 </div>
 
                 {/* Result */}
@@ -187,34 +342,89 @@ export const DiceRollOverlay: React.FC<DiceRollOverlayProps> = ({ data, onComple
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: 0.1 }}
                         >
-                            <p className="text-2xl text-white mb-2 font-serif">
-                                <span className="text-stone-400">{roll}</span>
-                                <span className="text-stone-500 mx-2">+</span>
-                                <span className="text-stone-400">{modifier}</span>
-                                <span className="text-stone-500 mx-2">=</span>
-                                <span className="text-genshin-gold font-bold text-3xl">{roll + modifier}</span>
-                            </p>
+                            {/* Roll breakdown */}
+                            <div className="flex items-center justify-center gap-2 text-2xl text-white mb-3 font-mono">
+                                <motion.span
+                                    className={`${isNat20 ? 'text-yellow-400' : isNat1 ? 'text-red-500' : 'text-stone-300'}`}
+                                    animate={isNat20 || isNat1 ? { scale: [1, 1.2, 1] } : {}}
+                                    transition={{ duration: 0.5, repeat: Infinity }}
+                                >
+                                    {roll}
+                                </motion.span>
+                                <span className="text-stone-500">+</span>
+                                <span className="text-blue-400">{modifier}</span>
+                                <span className="text-stone-500">=</span>
+                                <span className={`font-bold text-3xl ${success ? 'text-green-400' : 'text-red-400'}`}>
+                                    {roll + modifier}
+                                </span>
+                            </div>
+
+                            {/* DC Target */}
                             <p className="text-stone-500 mb-6 text-sm">
-                                Target: <span className="text-stone-300">{target}</span>
+                                vs DC <span className="text-stone-300 font-bold">{target}</span>
+                                <span className="text-stone-600 ml-2">
+                                    ({roll + modifier >= target ? '+' : ''}{roll + modifier - target})
+                                </span>
                             </p>
+
+                            {/* Result Banner */}
                             <motion.div
-                                initial={{ scale: 0 }}
-                                animate={{ scale: 1 }}
-                                transition={{ type: "spring", delay: 0.2 }}
-                                className={`text-4xl font-bold uppercase tracking-widest ${
-                                    success ? 'text-green-400' : 'text-red-400'
-                                }`}
+                                initial={{ scale: 0, rotate: -10 }}
+                                animate={{ scale: 1, rotate: 0 }}
+                                transition={{ type: "spring", delay: 0.2, bounce: 0.5 }}
+                                className={`text-4xl font-bold uppercase tracking-widest ${resultDisplay.color}`}
                             >
-                                {success ? (
+                                {isCriticalSuccess || isNat20 ? (
+                                    <span className="flex items-center justify-center gap-3">
+                                        <motion.span
+                                            animate={{ rotate: [0, 10, -10, 0] }}
+                                            transition={{ duration: 0.5, repeat: Infinity }}
+                                        >
+                                            <Star className="fill-current text-yellow-400" size={32} />
+                                        </motion.span>
+                                        {resultDisplay.text}
+                                        <motion.span
+                                            animate={{ rotate: [0, -10, 10, 0] }}
+                                            transition={{ duration: 0.5, repeat: Infinity }}
+                                        >
+                                            <Star className="fill-current text-yellow-400" size={32} />
+                                        </motion.span>
+                                    </span>
+                                ) : isCriticalFailure || isNat1 ? (
+                                    <motion.span
+                                        animate={{
+                                            x: [0, -5, 5, -5, 5, 0],
+                                        }}
+                                        transition={{ duration: 0.5 }}
+                                    >
+                                        {resultDisplay.text}
+                                    </motion.span>
+                                ) : success ? (
                                     <span className="flex items-center justify-center gap-3">
                                         <Star className="fill-current" size={28} />
-                                        SUCCESS
+                                        {resultDisplay.text}
                                         <Star className="fill-current" size={28} />
                                     </span>
                                 ) : (
-                                    <span>FAILED</span>
+                                    <span>{resultDisplay.text}</span>
                                 )}
                             </motion.div>
+
+                            {/* Modifier breakdown */}
+                            {modifier !== 0 && (
+                                <motion.p
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    transition={{ delay: 0.5 }}
+                                    className="text-stone-600 text-xs mt-4"
+                                >
+                                    {attribute && (
+                                        <span className="text-stone-500">
+                                            {ATTRIBUTE_ABBR[attribute.toLowerCase()] || attribute.toUpperCase()} modifier: {modifier >= 0 ? '+' : ''}{modifier}
+                                        </span>
+                                    )}
+                                </motion.p>
+                            )}
                         </motion.div>
                     )}
                 </AnimatePresence>
@@ -630,5 +840,7 @@ export const RewardsQueue: React.FC<RewardsQueueProps> = ({ rewards, onRewardCom
         </AnimatePresence>
     );
 };
+
+
 
 

@@ -69,35 +69,36 @@ const Navbar = () => {
     const dark = mounted ? theme === 'dark' : false;
 
     return (
-        <nav className={`fixed top-0 w-full z-50 transition-all duration-300 px-8 py-2 flex justify-between items-center ${
-            scrolled 
-                ? dark 
-                    ? 'backdrop-blur-md shadow-sm bg-genshin-dark/80' 
+        <nav className={`fixed top-0 w-full z-50 transition-all duration-300 px-8 py-2 ${
+            scrolled
+                ? dark
+                    ? 'backdrop-blur-md shadow-sm bg-genshin-dark/80'
                     : 'backdrop-blur-md shadow-sm bg-white/80'
                 : 'bg-transparent'
         }`}>
-            <div className="flex items-center">
-                <Link href="/" className="flex items-center group">
-                    <Image src="/logo.png" alt="Realms Logo" width={64} height={64} className="w-16 h-16 object-contain" />
-                </Link>
-            </div>
-            
-            <div className="hidden md:flex gap-8">
-                {navLinks.map((item) => (
-                    <Link 
-                        key={item.name} 
-                        href={item.href} 
-                        className={`font-sans font-bold text-sm uppercase tracking-wider hover:text-genshin-gold transition-colors ${
-                            dark ? 'text-genshin-white' : 'text-genshin-dark'
-                        }`}
-                    >
-                        {item.name}
+            <div className="max-w-7xl mx-auto flex justify-between items-center">
+                <div className="flex items-center">
+                    <Link href="/" className="flex items-center group">
+                        <Image src="/logo.png" alt="Realms Logo" width={64} height={64} className="w-16 h-16 object-contain" />
                     </Link>
-                ))}
-            </div>
-            
-            <div className="flex items-center gap-4">
-                <ThemeToggle />
+                </div>
+
+                <div className="hidden md:flex gap-8">
+                    {navLinks.map((item) => (
+                        <Link
+                            key={item.name}
+                            href={item.href}
+                            className={`font-sans font-bold text-sm uppercase tracking-wider hover:text-genshin-gold transition-colors ${
+                                dark ? 'text-genshin-white' : 'text-genshin-dark'
+                            }`}
+                        >
+                            {item.name}
+                        </Link>
+                    ))}
+                </div>
+
+                <div className="flex items-center gap-4">
+                    <ThemeToggle />
                 
                 {isLoading ? (
                     <div className="w-24 h-10 bg-gray-200/50 animate-pulse rounded-full"></div>
@@ -128,6 +129,7 @@ const Navbar = () => {
                         </Link>
                     </div>
                 )}
+                </div>
             </div>
         </nav>
     );

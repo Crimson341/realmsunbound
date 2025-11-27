@@ -542,24 +542,144 @@ export const createCharacter = mutation({
     args: {
         name: v.string(),
         class: v.string(),
+        race: v.optional(v.string()),
         level: v.number(),
         stats: v.string(),
         campaignId: v.optional(v.id("campaigns")),
         imageId: v.optional(v.id("_storage")),
+        background: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) throw new Error("Unauthorized");
 
+        // If creating for a campaign, increment play count
+        if (args.campaignId) {
+            const campaign = await ctx.db.get(args.campaignId);
+            if (campaign) {
+                await ctx.db.patch(args.campaignId, {
+                    playCount: (campaign.playCount || 0) + 1,
+                });
+            }
+        }
+
         return await ctx.db.insert("characters", {
             userId: identity.tokenIdentifier,
             name: args.name,
             class: args.class,
+            race: args.race,
             level: args.level,
             stats: args.stats,
             campaignId: args.campaignId,
             imageId: args.imageId,
+            background: args.background,
         });
+    },
+});
+
+// Check if character exists and return campaign character creation config
+export const getCharacterCreationStatus = query({
+    args: {
+        campaignId: v.id("campaigns"),
+    },
+    handler: async (ctx, args) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) return { needsCreation: true, character: null, config: null };
+
+        // Check for existing character
+        const existingCharacter = await ctx.db
+            .query("characters")
+            .withIndex("by_user", (q) => q.eq("userId", identity.tokenIdentifier))
+            .filter((q) => q.eq(q.field("campaignId"), args.campaignId))
+            .first();
+
+        // Get campaign config
+        const campaign = await ctx.db.get(args.campaignId);
+        if (!campaign) throw new Error("Campaign not found");
+
+        // Parse character creation config
+        const config = {
+            availableClasses: campaign.availableClasses
+                ? JSON.parse(campaign.availableClasses)
+                : [
+                    { name: "Warrior", description: "A skilled fighter with strength and combat prowess" },
+                    { name: "Mage", description: "A wielder of arcane magic and mystical arts" },
+                    { name: "Rogue", description: "A cunning trickster skilled in stealth and agility" },
+                    { name: "Cleric", description: "A divine healer blessed with holy magic" },
+                    { name: "Ranger", description: "A wilderness expert with bow and blade" },
+                ],
+            availableRaces: campaign.availableRaces
+                ? JSON.parse(campaign.availableRaces)
+                : [
+                    { name: "Human", description: "Versatile and adaptable, humans excel in all fields" },
+                    { name: "Elf", description: "Graceful beings with keen senses and magical affinity" },
+                    { name: "Dwarf", description: "Stout and sturdy folk with great resilience" },
+                    { name: "Orc", description: "Powerful warriors with incredible strength" },
+                    { name: "Halfling", description: "Small but nimble, with remarkable luck" },
+                ],
+            statAllocationMethod: campaign.statAllocationMethod || "standard_array",
+            startingStatPoints: campaign.startingStatPoints || 27,
+            allowCustomNames: campaign.allowCustomNames !== false, // default true
+            terminology: campaign.terminology ? JSON.parse(campaign.terminology) : {},
+            statConfig: campaign.statConfig ? JSON.parse(campaign.statConfig) : null,
+            theme: campaign.theme,
+        };
+
+        return {
+            needsCreation: !existingCharacter,
+            character: existingCharacter,
+            config,
+        };
+    },
+});
+
+// Ensure a character exists for a campaign (auto-create if not)
+export const ensureCharacterForCampaign = mutation({
+    args: {
+        campaignId: v.id("campaigns"),
+    },
+    handler: async (ctx, args) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) throw new Error("Unauthorized");
+
+        // Check if user already has a character for this campaign
+        const existingCharacter = await ctx.db
+            .query("characters")
+            .withIndex("by_user", (q) => q.eq("userId", identity.tokenIdentifier))
+            .filter((q) => q.eq(q.field("campaignId"), args.campaignId))
+            .first();
+
+        if (existingCharacter) {
+            return { characterId: existingCharacter._id, created: false };
+        }
+
+        // Get campaign to potentially use its theme for character generation
+        const campaign = await ctx.db.get(args.campaignId);
+        if (!campaign) throw new Error("Campaign not found");
+
+        // Create a new character for this campaign
+        const characterId = await ctx.db.insert("characters", {
+            userId: identity.tokenIdentifier,
+            name: identity.name || "Traveler",
+            class: "Adventurer",
+            level: 1,
+            stats: JSON.stringify({
+                strength: 10,
+                dexterity: 10,
+                constitution: 10,
+                intelligence: 10,
+                wisdom: 10,
+                charisma: 10,
+            }),
+            campaignId: args.campaignId,
+        });
+
+        // Increment play count for the campaign
+        await ctx.db.patch(args.campaignId, {
+            playCount: (campaign.playCount || 0) + 1,
+        });
+
+        return { characterId, created: true };
     },
 });
 
@@ -2139,14 +2259,116 @@ export const toggleBountySystem = mutation({
     handler: async (ctx, args) => {
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) throw new Error("Unauthorized");
-        
+
         const campaign = await ctx.db.get(args.campaignId);
         if (!campaign || campaign.userId !== identity.tokenIdentifier) {
             throw new Error("Unauthorized");
         }
-        
+
         await ctx.db.patch(args.campaignId, {
             bountyEnabled: args.enabled,
         });
+    },
+});
+
+// --- LOCATION-BASED QUERIES FOR MAP EDITOR ---
+
+// Get NPCs at a specific location
+export const getNPCsByLocation = query({
+    args: {
+        campaignId: v.id("campaigns"),
+        locationId: v.id("locations"),
+    },
+    handler: async (ctx, args) => {
+        const npcs = await ctx.db
+            .query("npcs")
+            .withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId))
+            .collect();
+
+        return npcs.filter((npc) => npc.locationId === args.locationId && !npc.isDead);
+    },
+});
+
+// Get monsters at a specific location
+export const getMonstersByLocation = query({
+    args: {
+        campaignId: v.id("campaigns"),
+        locationId: v.id("locations"),
+    },
+    handler: async (ctx, args) => {
+        const monsters = await ctx.db
+            .query("monsters")
+            .withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId))
+            .collect();
+
+        return monsters.filter((monster) => monster.locationId === args.locationId);
+    },
+});
+
+// Delete an NPC
+export const deleteNPC = mutation({
+    args: { npcId: v.id("npcs") },
+    handler: async (ctx, args) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) throw new Error("Unauthorized");
+
+        const npc = await ctx.db.get(args.npcId);
+        if (!npc) throw new Error("NPC not found");
+
+        // Verify campaign ownership
+        const campaign = await ctx.db.get(npc.campaignId);
+        if (!campaign || campaign.userId !== identity.tokenIdentifier) {
+            throw new Error("Unauthorized: You don't own this campaign");
+        }
+
+        await ctx.db.delete(args.npcId);
+        return { success: true };
+    },
+});
+
+// Delete a monster
+export const deleteMonster = mutation({
+    args: { monsterId: v.id("monsters") },
+    handler: async (ctx, args) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) throw new Error("Unauthorized");
+
+        const monster = await ctx.db.get(args.monsterId);
+        if (!monster) throw new Error("Monster not found");
+
+        // Verify campaign ownership
+        const campaign = await ctx.db.get(monster.campaignId);
+        if (!campaign || campaign.userId !== identity.tokenIdentifier) {
+            throw new Error("Unauthorized: You don't own this campaign");
+        }
+
+        await ctx.db.delete(args.monsterId);
+        return { success: true };
+    },
+});
+
+// Update character stats (for character sheet editing)
+export const updateCharacterStats = mutation({
+    args: {
+        characterId: v.id("characters"),
+        stats: v.string(), // JSON string of stats
+    },
+    handler: async (ctx, args) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) throw new Error("Unauthorized");
+
+        const character = await ctx.db.get(args.characterId);
+        if (!character) throw new Error("Character not found");
+
+        // Verify ownership
+        if (character.userId !== identity.tokenIdentifier) {
+            throw new Error("Unauthorized: You don't own this character");
+        }
+
+        await ctx.db.patch(args.characterId, {
+            stats: args.stats,
+        });
+
+        return { success: true };
     },
 });

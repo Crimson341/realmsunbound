@@ -185,7 +185,7 @@ const WhyPlay = () => {
         {
             title: "AI Dungeon Master",
             description: "Experience a story that never repeats. Powered by Gemini, your AI Dungeon Master dynamically generates every scene, dialogue, and outcome based on your choices and the world's lore.",
-            img: "https://images.unsplash.com/photo-1614726365723-49cfae96c213?q=80&w=1920&auto=format&fit=crop",
+            img: "/hero/image copy.png",
             icon: BrainCircuit
         },
         {

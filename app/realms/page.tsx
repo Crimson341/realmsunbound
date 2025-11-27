@@ -5,13 +5,15 @@ import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { useTheme } from '@/components/ThemeProvider';
 import Link from 'next/link';
-import { 
-    Search, Map, Users, ArrowRight, 
+import {
+    Search, Map, Users, ArrowRight,
     Sparkles, Crown, Ghost, ChevronLeft, ChevronRight,
     TrendingUp, Clock, Flame, Filter
 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import RealmDetailsModal from '../../components/RealmDetailsModal';
+
+// Fallback image for campaigns without an uploaded image
+const FALLBACK_IMAGE = '/assets/image.png';
 
 // --- GENRE DEFINITIONS ---
 const GENRES = [
@@ -133,39 +135,35 @@ const HorizontalScrollSection = ({
     );
 };
 
-const RealmCard = ({ campaign, index, onClick, dark, compact = false }: { 
+const RealmCard = ({ campaign, index, dark, compact = false }: {
     campaign: Campaign;
     index: number;
-    onClick: () => void;
     dark: boolean;
     compact?: boolean;
 }) => {
     const genre = GENRES.find(g => g.key === campaign.genre);
-    
+    const imageUrl = campaign.imageUrl || FALLBACK_IMAGE;
+
     return (
-        <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: index * 0.05 }}
-            onClick={onClick}
-            className={`group relative border rounded-2xl overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer flex-shrink-0 ${
-                compact ? 'w-72' : 'w-80'
-            } ${
-                dark 
-                    ? 'bg-[#1a1d2e] border-[#2a2d3e]' 
-                    : 'bg-white border-stone-200'
-            }`}
-        >
-            {/* Image / Banner */}
-            <div className={`${compact ? 'h-40' : 'h-48'} relative overflow-hidden ${dark ? 'bg-[#151821]' : 'bg-stone-100'}`}>
-                {campaign.imageUrl ? (
-                    <div 
+        <Link href={`/realms/${campaign._id}`}>
+            <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: index * 0.05 }}
+                className={`group relative border rounded-2xl overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer flex-shrink-0 ${
+                    compact ? 'w-72' : 'w-80'
+                } ${
+                    dark
+                        ? 'bg-[#1a1d2e] border-[#2a2d3e]'
+                        : 'bg-white border-stone-200'
+                }`}
+            >
+                {/* Image / Banner */}
+                <div className={`${compact ? 'h-40' : 'h-48'} relative overflow-hidden ${dark ? 'bg-[#151821]' : 'bg-stone-100'}`}>
+                    <div
                         className="absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-110"
-                        style={{ backgroundImage: `url(${campaign.imageUrl})` }}
+                        style={{ backgroundImage: `url(${imageUrl})` }}
                     />
-                ) : (
-                    <div className="absolute inset-0 bg-gradient-to-br from-indigo-900/50 to-purple-900/50" />
-                )}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent z-10" />
                 
                 {/* Genre Badge */}
@@ -225,38 +223,36 @@ const RealmCard = ({ campaign, index, onClick, dark, compact = false }: {
                         ))}
                     </div>
 
-                    <button className={`flex items-center gap-1 font-bold text-xs group/btn transition-colors ${
-                        dark 
-                            ? 'text-[#D4AF37] hover:text-[#eac88f]' 
+                    <span className={`flex items-center gap-1 font-bold text-xs group/btn transition-colors ${
+                        dark
+                            ? 'text-[#D4AF37] hover:text-[#eac88f]'
                             : 'text-indigo-600 hover:text-indigo-700'
                     }`}>
                         Explore <ArrowRight size={14} className="group-hover/btn:translate-x-1 transition-transform" />
-                    </button>
+                    </span>
                 </div>
             </div>
-        </motion.div>
+            </motion.div>
+        </Link>
     );
 };
 
-const FeaturedRealm = ({ campaign, onDetails, dark }: { campaign: Campaign; onDetails: () => void; dark: boolean }) => {
+const FeaturedRealm = ({ campaign, dark }: { campaign: Campaign; dark: boolean }) => {
     if (!campaign) return null;
     const genre = GENRES.find(g => g.key === campaign.genre);
+    const imageUrl = campaign.imageUrl || FALLBACK_IMAGE;
 
     return (
-        <motion.div 
+        <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
             className={`relative rounded-3xl overflow-hidden text-white mb-16 group shadow-2xl ${dark ? 'bg-[#0f1119]' : 'bg-stone-900'}`}
         >
-            {campaign.imageUrl ? (
-                <div 
-                    className="absolute inset-0 bg-cover bg-center opacity-50 group-hover:scale-105 transition-transform duration-1000"
-                    style={{ backgroundImage: `url(${campaign.imageUrl})` }}
-                />
-            ) : (
-                <div className="absolute inset-0 bg-gradient-to-br from-indigo-900 to-purple-900 opacity-50" />
-            )}
+            <div
+                className="absolute inset-0 bg-cover bg-center opacity-50 group-hover:scale-105 transition-transform duration-1000"
+                style={{ backgroundImage: `url(${imageUrl})` }}
+            />
             <div className="absolute inset-0 bg-gradient-to-r from-black via-black/70 to-transparent" />
             
             <div className="relative z-10 p-12 md:p-20 max-w-3xl">
@@ -282,19 +278,18 @@ const FeaturedRealm = ({ campaign, onDetails, dark }: { campaign: Campaign; onDe
                 <div className="flex items-center gap-4 flex-wrap">
                     <Link href={`/play/${campaign._id}`}>
                         <button className={`px-8 py-4 rounded-full font-bold text-sm uppercase tracking-widest transition-colors flex items-center gap-2 ${
-                            dark 
-                                ? 'bg-[#D4AF37] text-[#0f1119] hover:bg-[#eac88f]' 
+                            dark
+                                ? 'bg-[#D4AF37] text-[#0f1119] hover:bg-[#eac88f]'
                                 : 'bg-white text-stone-900 hover:bg-stone-200'
                         }`}>
                             Begin Journey <ArrowRight size={16} />
                         </button>
                     </Link>
-                    <button 
-                        onClick={onDetails}
-                        className="px-6 py-4 rounded-full border border-white/20 text-white/60 text-sm font-bold uppercase tracking-widest hover:bg-white/5 transition-colors"
-                    >
-                        View Lore
-                    </button>
+                    <Link href={`/realms/${campaign._id}`}>
+                        <button className="px-6 py-4 rounded-full border border-white/20 text-white/60 text-sm font-bold uppercase tracking-widest hover:bg-white/5 transition-colors">
+                            View Lore
+                        </button>
+                    </Link>
                 </div>
             </div>
         </motion.div>
@@ -347,19 +342,17 @@ const GenreFilter = ({
     );
 };
 
-const GenreSection = ({ 
-    genre, 
-    campaigns, 
-    onSelectRealm, 
-    dark 
-}: { 
+const GenreSection = ({
+    genre,
+    campaigns,
+    dark
+}: {
     genre: typeof GENRES[number];
     campaigns: Campaign[];
-    onSelectRealm: (c: Campaign) => void;
     dark: boolean;
 }) => {
     if (campaigns.length === 0) return null;
-    
+
     return (
         <HorizontalScrollSection
             title={genre.label}
@@ -368,11 +361,10 @@ const GenreSection = ({
             accentColor={genre.color}
         >
             {campaigns.map((campaign, idx) => (
-                <RealmCard 
-                    key={campaign._id} 
-                    campaign={campaign} 
-                    index={idx} 
-                    onClick={() => onSelectRealm(campaign)}
+                <RealmCard
+                    key={campaign._id}
+                    campaign={campaign}
+                    index={idx}
                     dark={dark}
                     compact
                 />
@@ -387,11 +379,10 @@ export default function RealmsPage() {
     const popularRealms = useQuery(api.forge.getPopularRealms, { limit: 10 });
     const newestRealms = useQuery(api.forge.getNewestRealms, { limit: 10 });
     const realmsByGenre = useQuery(api.forge.getRealmsGroupedByGenre);
-    
+
     const { theme, mounted } = useTheme();
     const dark = mounted ? theme === 'dark' : false;
     const [search, setSearch] = useState("");
-    const [selectedRealm, setSelectedRealm] = useState<Campaign | null>(null);
     const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
 
     // Get featured realm (first featured, or first popular, or first campaign)
@@ -410,12 +401,6 @@ export default function RealmsPage() {
 
     return (
         <div className={`min-h-screen font-sans ${dark ? 'bg-[#0f1119] text-[#e8e6e3]' : 'bg-[#f8f7f5] text-stone-800'}`}>
-            <RealmDetailsModal 
-                campaign={selectedRealm} 
-                isOpen={!!selectedRealm} 
-                onClose={() => setSelectedRealm(null)} 
-            />
-
             {/* --- HEADER --- */}
             <header className={`sticky top-0 z-50 backdrop-blur-md border-b ${
                 dark 
@@ -479,9 +464,8 @@ export default function RealmsPage() {
                         {/* Featured Realm */}
                         <section id="featured">
                             {featuredRealm && (
-                                <FeaturedRealm 
-                                    campaign={featuredRealm as Campaign} 
-                                    onDetails={() => setSelectedRealm(featuredRealm as Campaign)} 
+                                <FeaturedRealm
+                                    campaign={featuredRealm as Campaign}
                                     dark={dark}
                                 />
                             )}
@@ -497,11 +481,10 @@ export default function RealmsPage() {
                                     accentColor="#EC4899"
                                 >
                                     {popularRealms.map((campaign, idx) => (
-                                        <RealmCard 
-                                            key={campaign._id} 
-                                            campaign={campaign as Campaign} 
-                                            index={idx} 
-                                            onClick={() => setSelectedRealm(campaign as Campaign)}
+                                        <RealmCard
+                                            key={campaign._id}
+                                            campaign={campaign as Campaign}
+                                            index={idx}
                                             dark={dark}
                                             compact
                                         />
@@ -519,11 +502,10 @@ export default function RealmsPage() {
                                 accentColor="#10B981"
                             >
                                 {newestRealms.map((campaign, idx) => (
-                                    <RealmCard 
-                                        key={campaign._id} 
-                                        campaign={campaign as Campaign} 
-                                        index={idx} 
-                                        onClick={() => setSelectedRealm(campaign as Campaign)}
+                                    <RealmCard
+                                        key={campaign._id}
+                                        campaign={campaign as Campaign}
+                                        index={idx}
                                         dark={dark}
                                         compact
                                     />
@@ -557,10 +539,9 @@ export default function RealmsPage() {
                                                 animate={{ opacity: 1, y: 0 }}
                                                 transition={{ duration: 0.3, delay: idx * 0.05 }}
                                             >
-                                                <RealmCard 
-                                                    campaign={campaign} 
-                                                    index={idx} 
-                                                    onClick={() => setSelectedRealm(campaign)}
+                                                <RealmCard
+                                                    campaign={campaign}
+                                                    index={idx}
                                                     dark={dark}
                                                 />
                                             </motion.div>
@@ -584,7 +565,6 @@ export default function RealmsPage() {
                                             key={genre.key}
                                             genre={genre}
                                             campaigns={genreCampaigns as Campaign[]}
-                                            onSelectRealm={setSelectedRealm}
                                             dark={dark}
                                         />
                                     );
@@ -603,11 +583,10 @@ export default function RealmsPage() {
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                                     {filteredCampaigns.length > 0 ? (
                                         filteredCampaigns.map((campaign: Campaign, idx: number) => (
-                                            <RealmCard 
-                                                key={campaign._id} 
-                                                campaign={campaign} 
-                                                index={idx} 
-                                                onClick={() => setSelectedRealm(campaign)}
+                                            <RealmCard
+                                                key={campaign._id}
+                                                campaign={campaign}
+                                                index={idx}
                                                 dark={dark}
                                             />
                                         ))

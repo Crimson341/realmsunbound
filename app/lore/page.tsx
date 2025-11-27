@@ -1,264 +1,586 @@
 'use client';
 
-import React, { useRef } from 'react';
-import { motion, useScroll, useTransform } from 'framer-motion';
+import React, { useRef, useCallback } from 'react';
+import HTMLFlipBook from 'react-pageflip';
 import { useTheme } from '@/components/ThemeProvider';
+import { motion } from 'framer-motion';
 import {
-    Brain,
-    Users,
-    Compass, Star,
-    Hammer, Sprout, BookOpen, Feather
+    Brain, Users, Hammer, Sprout, BookOpen, Feather,
+    ChevronLeft, ChevronRight, BookMarked
 } from 'lucide-react';
 
-// --- ASSETS ---
-const StarField = ({ dark }: { dark: boolean }) => (
-    <div className="absolute inset-0 opacity-[0.05] pointer-events-none"
-        style={{
-            backgroundImage: `radial-gradient(${dark ? '#D4AF37' : '#C8A051'} 1.5px, transparent 1.5px)`,
-            backgroundSize: '48px 48px'
-        }}
-    />
-);
+// Page component wrapper for react-pageflip
+const Page = React.forwardRef<HTMLDivElement, { children: React.ReactNode; className?: string; dark?: boolean; pageNum?: number }>(
+    ({ children, className, dark, pageNum }, ref) => {
+        return (
+            <div
+                ref={ref}
+                className={`relative w-full h-full overflow-hidden ${className}`}
+                style={{
+                    backgroundColor: dark ? '#1a1714' : '#f5edd8',
+                    backgroundImage: dark
+                        ? 'linear-gradient(135deg, #1e1a16 0%, #2a2520 30%, #1e1a16 70%, #151210 100%)'
+                        : 'linear-gradient(135deg, #faf4e8 0%, #f0e6d2 30%, #e8dcc4 70%, #f5edd8 100%)',
+                    boxShadow: 'inset 0 0 80px rgba(0,0,0,0.15)',
+                }}
+            >
+                {/* Paper texture overlay - removed mix-blend to prevent transparency */}
+                <div
+                    className="absolute inset-0 opacity-20 pointer-events-none"
+                    style={{
+                        backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
+                    }}
+                />
 
-const GlowGradient = ({ dark }: { dark: boolean }) => (
-    <div className={`absolute top-0 left-0 w-full h-[800px] z-0 pointer-events-none ${
-        dark 
-            ? 'bg-gradient-to-b from-[#0f1119] via-transparent to-transparent' 
-            : 'bg-gradient-to-b from-white via-transparent to-transparent'
-    }`} />
-);
+                {/* Aged paper stains */}
+                <div
+                    className="absolute inset-0 opacity-5 pointer-events-none"
+                    style={{
+                        background: 'radial-gradient(ellipse at 20% 80%, rgba(139,90,43,0.3) 0%, transparent 50%), radial-gradient(ellipse at 80% 20%, rgba(139,90,43,0.2) 0%, transparent 40%)',
+                    }}
+                />
 
-// --- COMPONENTS ---
+                {/* Ornate border frame */}
+                <div className="absolute inset-3 border border-[#D4AF37]/20 rounded pointer-events-none" />
+                <div className="absolute inset-5 border border-[#D4AF37]/10 rounded pointer-events-none" />
 
-const ThreadNode = ({ icon: Icon, title, subtitle, children, align = 'left', index, dark }: { icon: React.ElementType, title: string, subtitle: string, children: React.ReactNode, align?: 'left' | 'right', index: number, dark: boolean }) => {
-    const isLeft = align === 'left';
-    const goldColor = dark ? '#D4AF37' : '#C8A051';
-    const textColor = dark ? '#e8e6e3' : '#3E4255';
-    const mutedColor = dark ? '#7a7a7a' : '#7A8099';
-
-    return (
-        <motion.div
-            initial={{ opacity: 0, y: 50 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-100px" }}
-            transition={{ duration: 0.8, delay: index * 0.1 }}
-            className={`relative flex items-center justify-between w-full py-24 ${isLeft ? 'flex-row' : 'flex-row-reverse'}`}
-        >
-            {/* Content Side */}
-            <div className={`w-[45%] ${isLeft ? 'text-right pr-16' : 'text-left pl-16'}`}>
-                <div className={`flex flex-col gap-4 ${isLeft ? 'items-end' : 'items-start'}`}>
-                    <div className="flex items-center gap-3" style={{ color: goldColor }}>
-                        <Icon size={20} />
-                        <span className="text-xs font-bold uppercase tracking-[0.3em]">{subtitle}</span>
-                    </div>
-                    <h2 className="text-4xl md:text-5xl font-serif font-bold leading-tight" style={{ color: textColor }}>
-                        {title}
-                    </h2>
-                    <div className="h-1 w-20" style={{ backgroundColor: `${goldColor}30` }} />
-                    <p className="text-lg leading-relaxed font-serif italic" style={{ color: mutedColor }}>
-                        {children}
-                    </p>
+                {/* Ornate corner decorations - larger and more detailed */}
+                <div className="absolute top-3 left-3 w-16 h-16 border-t-2 border-l-2 border-[#D4AF37]/50 rounded-tl-xl pointer-events-none">
+                    <div className="absolute top-1 left-1 w-3 h-3 border-t border-l border-[#D4AF37]/30" />
                 </div>
+                <div className="absolute top-3 right-3 w-16 h-16 border-t-2 border-r-2 border-[#D4AF37]/50 rounded-tr-xl pointer-events-none">
+                    <div className="absolute top-1 right-1 w-3 h-3 border-t border-r border-[#D4AF37]/30" />
+                </div>
+                <div className="absolute bottom-3 left-3 w-16 h-16 border-b-2 border-l-2 border-[#D4AF37]/50 rounded-bl-xl pointer-events-none">
+                    <div className="absolute bottom-1 left-1 w-3 h-3 border-b border-l border-[#D4AF37]/30" />
+                </div>
+                <div className="absolute bottom-3 right-3 w-16 h-16 border-b-2 border-r-2 border-[#D4AF37]/50 rounded-br-xl pointer-events-none">
+                    <div className="absolute bottom-1 right-1 w-3 h-3 border-b border-r border-[#D4AF37]/30" />
+                </div>
+
+                {/* Center top ornament */}
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 pointer-events-none">
+                    <div className="w-8 h-px bg-gradient-to-r from-transparent to-[#D4AF37]/40" />
+                    <div className="w-2 h-2 rotate-45 border border-[#D4AF37]/40" />
+                    <div className="w-8 h-px bg-gradient-to-l from-transparent to-[#D4AF37]/40" />
+                </div>
+
+                {/* Page content */}
+                <div className="relative z-10 h-full p-10 md:p-14 overflow-hidden">
+                    {children}
+                </div>
+
+                {/* Page edge shadow (binding side) */}
+                <div
+                    className="absolute top-0 left-0 w-12 h-full pointer-events-none"
+                    style={{
+                        background: 'linear-gradient(to right, rgba(0,0,0,0.15), transparent)',
+                    }}
+                />
+
+                {/* Page number */}
+                {pageNum && (
+                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 pointer-events-none">
+                        <span className="text-xs font-serif italic" style={{ color: '#D4AF37' }}>
+                            — {pageNum} —
+                        </span>
+                    </div>
+                )}
             </div>
+        );
+    }
+);
+Page.displayName = 'Page';
 
-            {/* The Center Node on the Thread */}
-            <div className="absolute left-1/2 -translate-x-1/2 flex items-center justify-center w-12 h-12 z-20">
-                <div className="absolute w-3 h-3 rounded-full" style={{ backgroundColor: goldColor, boxShadow: `0 0 15px ${goldColor}` }} />
-                <div className="absolute w-8 h-8 border rounded-full animate-ping opacity-20" style={{ borderColor: `${goldColor}50` }} />
-                <div className="absolute w-12 h-12 border rounded-full" style={{ borderColor: `${goldColor}20` }} />
-            </div>
+// Cover Page
+const CoverPage = React.forwardRef<HTMLDivElement, { dark: boolean }>(({ dark }, ref) => (
+    <div
+        ref={ref}
+        className="relative w-full h-full flex items-center justify-center overflow-hidden"
+        style={{
+            background: dark
+                ? 'linear-gradient(145deg, #1a1510 0%, #2d2318 25%, #1a1510 50%, #0d0a07 100%)'
+                : 'linear-gradient(145deg, #4a3520 0%, #6b4c2a 25%, #4a3520 50%, #2d1f14 100%)',
+            boxShadow: 'inset 0 0 150px rgba(0,0,0,0.6)',
+        }}
+    >
+        {/* Leather texture */}
+        <div className="absolute inset-0 opacity-30" style={{
+            backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
+        }} />
 
-            {/* Empty Side for Balance (or Visuals) */}
-            <div className="w-[45%] opacity-20 hover:opacity-40 transition-opacity duration-700 flex justify-center">
-                <Icon size={200} strokeWidth={0.5} className="rotate-12" style={{ color: goldColor }} />
-            </div>
-        </motion.div>
-    );
-};
+        {/* Embossed pattern overlay */}
+        <div className="absolute inset-0 opacity-5" style={{
+            backgroundImage: `repeating-linear-gradient(45deg, #D4AF37 0, #D4AF37 1px, transparent 0, transparent 50%)`,
+            backgroundSize: '20px 20px',
+        }} />
 
-const CentralThread = ({ dark }: { dark: boolean }) => {
-    const { scrollYProgress } = useScroll();
-    const height = useTransform(scrollYProgress, [0, 1], ['0%', '100%']);
-    const goldColor = dark ? '#D4AF37' : '#C8A051';
+        {/* Multiple decorative borders */}
+        <div className="absolute inset-4 border-2 border-[#D4AF37]/40 rounded-lg" />
+        <div className="absolute inset-6 border border-[#D4AF37]/25 rounded-lg" />
+        <div className="absolute inset-8 border border-[#D4AF37]/15 rounded" />
 
-    return (
-        <div className="absolute left-1/2 top-0 bottom-0 w-px -translate-x-1/2 z-10 h-full" style={{ backgroundColor: `${goldColor}10` }}>
-            <motion.div
-                style={{ height, backgroundColor: goldColor, boxShadow: `0 0 10px ${goldColor}` }}
-                className="w-full"
-            />
+        {/* Corner emblems - more ornate */}
+        <div className="absolute top-6 left-6 w-20 h-20">
+            <div className="absolute inset-0 border-t-3 border-l-3 border-[#D4AF37]/60 rounded-tl-2xl" />
+            <div className="absolute top-2 left-2 w-4 h-4 border-t-2 border-l-2 border-[#D4AF37]/40 rounded-tl" />
+            <div className="absolute top-4 left-4 w-2 h-2 bg-[#D4AF37]/30 rounded-full" />
         </div>
-    );
-};
+        <div className="absolute top-6 right-6 w-20 h-20">
+            <div className="absolute inset-0 border-t-3 border-r-3 border-[#D4AF37]/60 rounded-tr-2xl" />
+            <div className="absolute top-2 right-2 w-4 h-4 border-t-2 border-r-2 border-[#D4AF37]/40 rounded-tr" />
+            <div className="absolute top-4 right-4 w-2 h-2 bg-[#D4AF37]/30 rounded-full" />
+        </div>
+        <div className="absolute bottom-6 left-6 w-20 h-20">
+            <div className="absolute inset-0 border-b-3 border-l-3 border-[#D4AF37]/60 rounded-bl-2xl" />
+            <div className="absolute bottom-2 left-2 w-4 h-4 border-b-2 border-l-2 border-[#D4AF37]/40 rounded-bl" />
+            <div className="absolute bottom-4 left-4 w-2 h-2 bg-[#D4AF37]/30 rounded-full" />
+        </div>
+        <div className="absolute bottom-6 right-6 w-20 h-20">
+            <div className="absolute inset-0 border-b-3 border-r-3 border-[#D4AF37]/60 rounded-br-2xl" />
+            <div className="absolute bottom-2 right-2 w-4 h-4 border-b-2 border-r-2 border-[#D4AF37]/40 rounded-br" />
+            <div className="absolute bottom-4 right-4 w-2 h-2 bg-[#D4AF37]/30 rounded-full" />
+        </div>
+
+        {/* Center medallion glow */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="w-64 h-64 rounded-full blur-3xl opacity-20" style={{ background: '#D4AF37' }} />
+        </div>
+
+        {/* Title content */}
+        <div className="relative z-10 text-center px-8">
+            {/* Decorative top flourish */}
+            <div className="flex items-center justify-center gap-3 mb-6">
+                <div className="w-12 h-px bg-gradient-to-r from-transparent via-[#D4AF37]/60 to-transparent" />
+                <div className="w-1.5 h-1.5 rotate-45 bg-[#D4AF37]/60" />
+                <div className="w-12 h-px bg-gradient-to-r from-transparent via-[#D4AF37]/60 to-transparent" />
+            </div>
+
+            <BookMarked size={72} className="mx-auto mb-8 text-[#D4AF37] drop-shadow-[0_0_15px_rgba(212,175,55,0.3)]" strokeWidth={1} />
+
+            <h1 className="font-serif text-6xl md:text-8xl font-bold text-[#D4AF37] mb-2 tracking-wider drop-shadow-[0_2px_10px_rgba(212,175,55,0.3)]"
+                style={{ textShadow: '0 2px 4px rgba(0,0,0,0.5), 0 0 40px rgba(212,175,55,0.2)' }}>
+                REALMS
+            </h1>
+
+            <div className="flex items-center justify-center gap-4 mb-4">
+                <div className="h-px w-20 bg-gradient-to-r from-transparent to-[#D4AF37]/60" />
+                <div className="w-3 h-3 rotate-45 border-2 border-[#D4AF37]/60" />
+                <div className="h-px w-20 bg-gradient-to-l from-transparent to-[#D4AF37]/60" />
+            </div>
+
+            <p className="font-serif text-xl text-[#D4AF37]/80 tracking-[0.4em] uppercase mb-2">
+                The Living Chronicle
+            </p>
+
+            <p className="font-serif text-sm text-[#D4AF37]/50 italic tracking-wider">
+                Volume I
+            </p>
+
+            {/* Bottom flourish */}
+            <div className="mt-16 flex items-center justify-center gap-2">
+                <div className="w-16 h-px bg-gradient-to-r from-transparent to-[#D4AF37]/40" />
+                <Feather size={16} className="text-[#D4AF37]/50" />
+                <div className="w-16 h-px bg-gradient-to-l from-transparent to-[#D4AF37]/40" />
+            </div>
+
+            <p className="mt-6 text-xs text-[#D4AF37]/30 italic">
+                Click or drag to turn pages
+            </p>
+        </div>
+
+        {/* Spine shadow */}
+        <div className="absolute top-0 left-0 w-6 h-full bg-gradient-to-r from-black/50 to-transparent" />
+
+        {/* Edge highlight */}
+        <div className="absolute top-0 right-0 w-1 h-full bg-gradient-to-r from-transparent to-[#D4AF37]/10" />
+    </div>
+));
+CoverPage.displayName = 'CoverPage';
+
+// Content sections for pages
+const loreContent = [
+    {
+        icon: Brain,
+        subtitle: "Chapter I",
+        title: "The Mind that Dreams",
+        content: `We do not write the stories. We birth the storyteller.
+
+Gemini acts as your Dungeon Master, weaving narratives in real-time, reacting to your unpredictability with improvisational genius.
+
+It understands intent, weaves causality, and remembers every choice you make. Each decision ripples through the fabric of reality, creating consequences that echo through time.
+
+The AI doesn't just respond—it anticipates, it surprises, it challenges. Your story is never on rails; it flows like water, finding its own path through the landscape of possibility.`
+    },
+    {
+        icon: Hammer,
+        subtitle: "Chapter II",
+        title: "Forge Your Reality",
+        content: `You are not just a player; you are a creator.
+
+In The Forge, you define the laws of reality. Craft legendary swords that sing with ancient power, scribe custom spells that bend the elements to your will, and birth villains with complex motives that would make gods weep.
+
+Every item has a story. Every spell has a cost. Every character has a soul. The world obeys your design, limited only by the boundaries of your imagination.
+
+What will you create?`
+    },
+    {
+        icon: Sprout,
+        subtitle: "Chapter III",
+        title: "Instant World Genesis",
+        content: `Creation need not be tedious.
+
+With a single command, sprout entire continents from the void. From the snowy peaks of a Nordic realm to alien landscapes bathed in twin suns, our engine populates your world with thousands of entities, quests, and secrets in mere seconds.
+
+Mountains rise. Rivers carve their paths. Cities spring forth with histories already ancient. NPCs are born with memories, grudges, loves, and fears.
+
+A whole world, breathing and alive, ready for your first footstep.`
+    },
+    {
+        icon: BookOpen,
+        subtitle: "Chapter IV",
+        title: "Knowledge is Power",
+        content: `In Realms, the text itself is alive.
+
+Hover over the name of a forgotten king or a cursed blade, and the Archives instantly reveal its secrets. The lore is not hidden in a wiki; it is woven into the very air you breathe.
+
+Every word is a doorway. Every name holds power. The more you learn, the deeper you fall into the rabbit hole of interconnected histories and hidden truths.
+
+Knowledge here is not just information—it is a weapon, a key, a compass.`
+    },
+    {
+        icon: Users,
+        subtitle: "Chapter V",
+        title: "Destiny is Shared",
+        content: `The hero's journey need not be solitary.
+
+Connect your timelines. Form parties of unlikely allies. Forge alliances that span continents or declare wars that shake the heavens.
+
+The state of the world is persistent and shared—a living tapestry woven by thousands of hands. Your actions affect others. Their deeds shape your reality.
+
+In this interconnected web of fate, every player is both author and audience, hero and historian.`
+    },
+];
 
 export default function LorePage() {
-    const containerRef = useRef(null);
-    const { scrollYProgress } = useScroll({ target: containerRef });
-    const opacity = useTransform(scrollYProgress, [0, 0.15], [1, 0]);
-    const scale = useTransform(scrollYProgress, [0, 0.15], [1, 0.95]);
+    const bookRef = useRef<any>(null);
     const { theme, mounted } = useTheme();
     const dark = mounted ? theme === 'dark' : false;
 
-    const goldColor = dark ? '#D4AF37' : '#C8A051';
-    const textColor = dark ? '#e8e6e3' : '#3E4255';
-    const bgColor = dark ? '#0f1119' : '#F9F9F9';
-    const bgColorAlt = dark ? '#1a1d2e' : '#3E4255';
+    const goldColor = '#D4AF37';
+
+    const nextPage = useCallback(() => {
+        bookRef.current?.pageFlip()?.flipNext();
+    }, []);
+
+    const prevPage = useCallback(() => {
+        bookRef.current?.pageFlip()?.flipPrev();
+    }, []);
 
     return (
-        <div ref={containerRef} className="relative min-h-screen font-serif overflow-x-hidden" style={{ backgroundColor: bgColor, color: textColor }}>
-
-            {/* Background Layers */}
-            <div className="fixed inset-0 z-0 pointer-events-none">
-                <StarField dark={dark} />
-                <GlowGradient dark={dark} />
-                <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] opacity-[0.07]" />
+        <div
+            className="min-h-screen flex flex-col items-center justify-center py-20 px-4"
+            style={{
+                background: dark
+                    ? 'radial-gradient(ellipse at center, #1a1d2e 0%, #0f1119 100%)'
+                    : 'radial-gradient(ellipse at center, #f5f0e6 0%, #e8e0d0 100%)',
+            }}
+        >
+            {/* Ambient particles */}
+            <div className="fixed inset-0 pointer-events-none overflow-hidden">
+                {[...Array(20)].map((_, i) => (
+                    <motion.div
+                        key={i}
+                        className="absolute w-1 h-1 rounded-full bg-[#D4AF37]"
+                        initial={{
+                            x: Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 1000),
+                            y: Math.random() * (typeof window !== 'undefined' ? window.innerHeight : 800),
+                            opacity: 0,
+                        }}
+                        animate={{
+                            y: [null, -100],
+                            opacity: [0, 0.6, 0],
+                        }}
+                        transition={{
+                            duration: Math.random() * 5 + 5,
+                            repeat: Infinity,
+                            delay: Math.random() * 5,
+                        }}
+                    />
+                ))}
             </div>
 
-            {/* The Central Golden Thread */}
-            <CentralThread dark={dark} />
-
-            <main className="relative z-10 pb-40">
-
-                {/* --- HERO SECTION --- */}
-                <motion.section
-                    style={{ opacity, scale }}
-                    className="h-screen flex flex-col items-center justify-center text-center sticky top-0 z-0 px-4 pt-32"
+            {/* Title */}
+            <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="text-center mb-8"
+            >
+                <h1
+                    className="font-serif text-4xl md:text-5xl font-bold mb-2"
+                    style={{ color: dark ? '#e8e6e3' : '#3E4255' }}
                 >
-                    <div className="mb-8 relative">
-                        <div className="absolute inset-0 blur-[80px] opacity-20 rounded-full" style={{ backgroundColor: goldColor }} />
-                        <Compass size={64} strokeWidth={1} className="relative z-10" style={{ color: textColor }} />
-                    </div>
+                    The Archives
+                </h1>
+                <p className="text-sm tracking-[0.2em] uppercase" style={{ color: goldColor }}>
+                    Tome of Knowledge
+                </p>
+            </motion.div>
 
-                    <h1 className="text-7xl md:text-9xl font-medium tracking-tighter leading-none mb-6" style={{ color: textColor }}>
-                        Realms
-                    </h1>
+            {/* Book Container */}
+            <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.5, delay: 0.2 }}
+                className="relative"
+            >
+                {/* Book shadow */}
+                <div
+                    className="absolute -inset-4 rounded-lg blur-2xl opacity-30"
+                    style={{ background: goldColor }}
+                />
 
-                    <div className="flex items-center gap-4" style={{ color: goldColor }}>
-                        <div className="h-px w-12" style={{ backgroundColor: goldColor }} />
-                        <span className="text-sm font-sans font-bold tracking-[0.4em] uppercase">The Living Chronicle</span>
-                        <div className="h-px w-12" style={{ backgroundColor: goldColor }} />
-                    </div>
-
-                    <motion.div
-                        animate={{ y: [0, 10, 0] }}
-                        transition={{ duration: 2, repeat: Infinity }}
-                        className="absolute bottom-12 flex flex-col items-center gap-2"
-                        style={{ color: `${goldColor}50` }}
-                    >
-                        <span className="text-[10px] font-sans tracking-[0.2em] uppercase">Begin the Journey</span>
-                        <div className="w-px h-12 bg-gradient-to-b" style={{ backgroundImage: `linear-gradient(to bottom, ${goldColor}50, transparent)` }} />
-                    </motion.div>
-                </motion.section>
-
-                {/* --- SPACER for Hero Scroll --- */}
-                <div className="h-[80vh]" />
-
-
-                {/* --- CONTENT NODES --- */}
-                <div className="relative z-10 backdrop-blur-sm" style={{ backgroundColor: `${bgColor}cc` }}>
-                    <div className="max-w-7xl mx-auto px-6">
-
-                        {/* NODE 1: AI DM */}
-                        <ThreadNode
-                            index={0}
-                            align="left"
-                            icon={Brain}
-                            subtitle="The Architect"
-                            title="The Mind that Dreams"
-                            dark={dark}
-                        >
-                            We do not write the stories. We birth the storyteller. <span style={{ color: goldColor }}>Gemini</span> acts as your Dungeon Master, weaving narratives in real-time, reacting to your unpredictability with improvisational genius. It understands intent, weaves causality, and remembers every choice.
-                        </ThreadNode>
-
-                        {/* NODE 2: THE FORGE */}
-                        <ThreadNode
-                            index={1}
-                            align="right"
-                            icon={Hammer}
-                            subtitle="The Anvil"
-                            title="Forge Your Reality"
-                            dark={dark}
-                        >
-                            You are not just a player; you are a creator. In <span style={{ color: goldColor }}>The Forge</span>, you define the laws of reality. Craft legendary swords, scribe custom spells, and birth villains with complex motives. The world obeys your design.
-                        </ThreadNode>
-
-                        {/* NODE 3: SEEDING */}
-                        <ThreadNode
-                            index={2}
-                            align="left"
-                            icon={Sprout}
-                            subtitle="The Genesis"
-                            title="Instant World Genesis"
-                            dark={dark}
-                        >
-                            Creation need not be tedious. With a single command, sprout entire continents. From the snowy peaks of a Nordic realm to alien landscapes, our engine populates your world with thousands of entities, quests, and secrets in seconds.
-                        </ThreadNode>
-
-                        {/* NODE 4: INTERACTIVE LORE */}
-                        <ThreadNode
-                            index={3}
-                            align="right"
-                            icon={BookOpen}
-                            subtitle="The Codex"
-                            title="Knowledge is Power"
-                            dark={dark}
-                        >
-                            In Realms, the text itself is alive. Hover over the name of a forgotten king or a cursed blade, and the <span style={{ color: goldColor }}>Archives</span> instantly reveal its secrets. The lore is not hidden in a wiki; it is woven into the very air you breathe.
-                        </ThreadNode>
-
-                        {/* NODE 5: MULTIPLAYER */}
-                        <ThreadNode
-                            index={4}
-                            align="left"
-                            icon={Users}
-                            subtitle="The Gathering"
-                            title="Destiny is Shared"
-                            dark={dark}
-                        >
-                            The hero&apos;s journey need not be solitary. Connect your timelines. Form parties. Forge alliances or declare wars. The state of the world is persistent and shared, a living tapestry woven by thousands of hands.
-                        </ThreadNode>
-
-                    </div>
-                </div>
-
-                {/* --- FINAL CTA SECTION --- */}
-                <motion.section
-                    initial={{ opacity: 0 }}
-                    whileInView={{ opacity: 1 }}
-                    transition={{ duration: 1 }}
-                    className="relative h-screen flex items-center justify-center mt-40 overflow-hidden"
-                    style={{ backgroundColor: bgColorAlt, color: bgColor }}
+                {/* @ts-expect-error - react-pageflip types issue */}
+                <HTMLFlipBook
+                    ref={bookRef}
+                    width={700}
+                    height={900}
+                    size="stretch"
+                    minWidth={400}
+                    maxWidth={900}
+                    minHeight={520}
+                    maxHeight={1150}
+                    showCover={true}
+                    mobileScrollSupport={true}
+                    className="shadow-[0_25px_80px_-15px_rgba(0,0,0,0.5)]"
+                    style={{}}
+                    startPage={0}
+                    drawShadow={true}
+                    flippingTime={1000}
+                    usePortrait={true}
+                    startZIndex={0}
+                    autoSize={true}
+                    maxShadowOpacity={0.6}
+                    showPageCorners={true}
+                    disableFlipByClick={false}
+                    swipeDistance={30}
+                    clickEventForward={true}
+                    useMouseEvents={true}
                 >
-                    {/* Decorative Background Ring */}
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <div className="w-[800px] h-[800px] border rounded-full" style={{ borderColor: `${goldColor}10` }} />
-                        <div className="absolute w-[600px] h-[600px] border rounded-full border-dashed animate-[spin_60s_linear_infinite]" style={{ borderColor: `${goldColor}20` }} />
-                    </div>
+                    {/* Cover */}
+                    <CoverPage dark={dark} />
 
-                    <div className="text-center space-y-10 relative z-10 px-4">
-                        <Star size={48} className="mx-auto" style={{ color: goldColor }} fill={goldColor} />
+                    {/* Title Page */}
+                    <Page dark={dark}>
+                        <div className="h-full flex flex-col items-center justify-center text-center">
+                            <div className="mb-8">
+                                <div
+                                    className="w-24 h-24 mx-auto rounded-full flex items-center justify-center mb-6"
+                                    style={{
+                                        background: `linear-gradient(135deg, ${goldColor}20, ${goldColor}10)`,
+                                        border: `2px solid ${goldColor}40`,
+                                    }}
+                                >
+                                    <Feather size={40} style={{ color: goldColor }} />
+                                </div>
+                            </div>
 
-                        <h2 className="text-5xl md:text-7xl font-serif font-bold" style={{ color: dark ? '#e8e6e3' : '#F9F9F9' }}>
-                            The Realm <span className="italic" style={{ color: goldColor }}>Awaits</span>
-                        </h2>
+                            <h2
+                                className="font-serif text-3xl font-bold mb-4"
+                                style={{ color: dark ? '#e8e6e3' : '#3E4255' }}
+                            >
+                                Welcome, Traveler
+                            </h2>
 
-                        <p className="max-w-lg mx-auto text-lg font-light" style={{ color: dark ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.6)' }}>
-                            The history of this world has not yet been written. It is waiting for your ink.
-                        </p>
+                            <div className="h-px w-32 mx-auto mb-6" style={{ background: `${goldColor}40` }} />
 
-                        <div className="pt-8">
-                            <a href="/sign-up" className="group relative inline-flex items-center gap-4 px-12 py-5 font-bold rounded-full transition-all duration-500" style={{
-                                backgroundColor: dark ? goldColor : '#F9F9F9',
-                                color: dark ? '#0f1119' : '#3E4255'
-                            }}>
-                                <span className="text-sm font-sans font-bold uppercase tracking-[0.2em]">Enter the Forge</span>
-                                <Feather size={18} className="group-hover:-translate-y-1 group-hover:translate-x-1 transition-transform" />
+                            <p
+                                className="font-serif text-base leading-relaxed italic max-w-xs"
+                                style={{ color: dark ? '#a0a0a0' : '#6b6b6b' }}
+                            >
+                                Within these pages lies the knowledge of ages. Read carefully, for what you learn here shall shape your destiny.
+                            </p>
+
+                            <p
+                                className="mt-8 text-xs uppercase tracking-widest"
+                                style={{ color: goldColor }}
+                            >
+                                — The Archivists
+                            </p>
+                        </div>
+                    </Page>
+
+                    {/* Content Pages */}
+                    {loreContent.map((section, index) => (
+                        <Page key={index} dark={dark} pageNum={index + 2}>
+                            <div className="h-full flex flex-col">
+                                {/* Header */}
+                                <div className="mb-8">
+                                    <div className="flex items-center gap-4 mb-4">
+                                        <div
+                                            className="w-14 h-14 rounded-xl flex items-center justify-center"
+                                            style={{
+                                                background: `linear-gradient(135deg, ${goldColor}15, ${goldColor}05)`,
+                                                border: `1px solid ${goldColor}30`,
+                                            }}
+                                        >
+                                            <section.icon size={28} style={{ color: goldColor }} />
+                                        </div>
+                                        <div>
+                                            <p
+                                                className="text-xs font-bold uppercase tracking-[0.25em] mb-1"
+                                                style={{ color: goldColor }}
+                                            >
+                                                {section.subtitle}
+                                            </p>
+                                            <h3
+                                                className="font-serif text-3xl font-bold leading-tight"
+                                                style={{ color: dark ? '#e8e6e3' : '#3E4255' }}
+                                            >
+                                                {section.title}
+                                            </h3>
+                                        </div>
+                                    </div>
+
+                                    {/* Ornate Divider */}
+                                    <div className="flex items-center gap-3 mt-6">
+                                        <div className="flex-1 h-px" style={{ background: `linear-gradient(to right, transparent, ${goldColor}40)` }} />
+                                        <div className="flex items-center gap-1">
+                                            <div className="w-1 h-1 rotate-45" style={{ background: `${goldColor}60` }} />
+                                            <div className="w-2 h-2 rotate-45 border" style={{ borderColor: `${goldColor}50` }} />
+                                            <div className="w-1 h-1 rotate-45" style={{ background: `${goldColor}60` }} />
+                                        </div>
+                                        <div className="flex-1 h-px" style={{ background: `linear-gradient(to left, transparent, ${goldColor}40)` }} />
+                                    </div>
+                                </div>
+
+                                {/* Content */}
+                                <div className="flex-1 overflow-hidden">
+                                    <p
+                                        className="font-serif text-lg leading-[2] whitespace-pre-line"
+                                        style={{
+                                            color: dark ? '#c5c0b8' : '#4a4540',
+                                            textAlign: 'justify',
+                                            hyphens: 'auto',
+                                        }}
+                                    >
+                                        {section.content}
+                                    </p>
+                                </div>
+
+                                {/* Bottom ornament */}
+                                <div className="flex items-center justify-center gap-2 pt-6">
+                                    <div className="w-6 h-px" style={{ background: `${goldColor}30` }} />
+                                    <section.icon size={12} style={{ color: `${goldColor}40` }} />
+                                    <div className="w-6 h-px" style={{ background: `${goldColor}30` }} />
+                                </div>
+                            </div>
+                        </Page>
+                    ))}
+
+                    {/* Final Page */}
+                    <Page dark={dark}>
+                        <div className="h-full flex flex-col items-center justify-center text-center">
+                            <div className="mb-8">
+                                <BookMarked size={48} style={{ color: goldColor }} strokeWidth={1} />
+                            </div>
+
+                            <h2
+                                className="font-serif text-2xl font-bold mb-4"
+                                style={{ color: dark ? '#e8e6e3' : '#3E4255' }}
+                            >
+                                The Realm Awaits
+                            </h2>
+
+                            <p
+                                className="font-serif text-sm leading-relaxed italic max-w-xs mb-8"
+                                style={{ color: dark ? '#a0a0a0' : '#6b6b6b' }}
+                            >
+                                The history of this world has not yet been written. It is waiting for your ink.
+                            </p>
+
+                            <a
+                                href="/sign-up"
+                                className="inline-flex items-center gap-2 px-6 py-3 rounded-full font-bold text-sm transition-all hover:scale-105"
+                                style={{
+                                    background: goldColor,
+                                    color: dark ? '#0f1119' : '#fff',
+                                }}
+                            >
+                                <span>Enter the Forge</span>
+                                <Feather size={16} />
                             </a>
                         </div>
-                    </div>
-                </motion.section>
+                    </Page>
 
-            </main>
+                    {/* Back Cover */}
+                    <div
+                        className="w-full h-full"
+                        style={{
+                            background: dark
+                                ? 'linear-gradient(135deg, #1a1510 0%, #2a2015 50%, #1a1510 100%)'
+                                : 'linear-gradient(135deg, #3d2914 0%, #5a3d1e 50%, #3d2914 100%)',
+                        }}
+                    >
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            <BookMarked size={80} className="text-[#D4AF37]/20" strokeWidth={1} />
+                        </div>
+                    </div>
+                </HTMLFlipBook>
+            </motion.div>
+
+            {/* Navigation Controls */}
+            <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.5 }}
+                className="flex items-center gap-8 mt-10"
+            >
+                <button
+                    onClick={prevPage}
+                    className="group flex items-center gap-3 px-6 py-3 rounded-full transition-all hover:scale-105 hover:shadow-lg"
+                    style={{
+                        background: dark ? 'linear-gradient(135deg, #1a1d2e, #252a3d)' : 'linear-gradient(135deg, #fff, #f5f5f5)',
+                        color: goldColor,
+                        border: `2px solid ${goldColor}40`,
+                        boxShadow: `0 4px 20px rgba(0,0,0,0.1)`,
+                    }}
+                >
+                    <ChevronLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
+                    <span className="text-sm font-bold tracking-wide">Previous</span>
+                </button>
+
+                <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full" style={{ background: `${goldColor}40` }} />
+                    <div className="w-2 h-2 rounded-full" style={{ background: `${goldColor}60` }} />
+                    <div className="w-2 h-2 rounded-full" style={{ background: `${goldColor}40` }} />
+                </div>
+
+                <button
+                    onClick={nextPage}
+                    className="group flex items-center gap-3 px-6 py-3 rounded-full transition-all hover:scale-105 hover:shadow-xl"
+                    style={{
+                        background: `linear-gradient(135deg, ${goldColor}, #c9a227)`,
+                        color: dark ? '#0f1119' : '#fff',
+                        boxShadow: `0 4px 25px rgba(212,175,55,0.3)`,
+                    }}
+                >
+                    <span className="text-sm font-bold tracking-wide">Next Page</span>
+                    <ChevronRight size={20} className="group-hover:translate-x-1 transition-transform" />
+                </button>
+            </motion.div>
+
+            {/* Instructions */}
+            <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.8 }}
+                className="mt-6 text-sm flex items-center gap-2"
+                style={{ color: dark ? '#6b6b6b' : '#9b9b9b' }}
+            >
+                <BookOpen size={14} />
+                Click page corners or drag to turn pages
+            </motion.p>
         </div>
     );
 }

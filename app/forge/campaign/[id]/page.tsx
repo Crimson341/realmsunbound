@@ -6,7 +6,7 @@ import { useParams } from 'next/navigation';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
-import { Map, Users, Scroll, Zap, Settings, Plus, Save, ArrowLeft, Loader2, Link as LinkIcon, Package, Skull, Palette, Sparkles, ChevronDown, Sword, Shield, Crown } from 'lucide-react';
+import { Map, Users, Scroll, Zap, Settings, Plus, Save, ArrowLeft, Loader2, Link as LinkIcon, Package, Skull, Palette, Sparkles, ChevronDown, Sword, Shield, Crown, Store, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { MentionTextArea } from '@/components/MentionTextArea';
 import { motion } from 'framer-motion';
@@ -36,7 +36,14 @@ export default function CampaignManager() {
     const createItem = useMutation(api.forge.createItem);
     const updateRarityColors = useMutation(api.forge.updateRarityColors);
 
-    const [activeTab, setActiveTab] = useState<'overview' | 'realm' | 'npcs' | 'events' | 'quests' | 'items' | 'spells' | 'monsters' | 'players'>('overview');
+    // Shop mutations
+    const createShop = useMutation(api.shops.createShop);
+    const deleteShop = useMutation(api.shops.deleteShop);
+    const addItemToShop = useMutation(api.shops.addItemToShop);
+    const removeItemFromShop = useMutation(api.shops.removeItemFromShop);
+    const campaignShops = useQuery(api.shops.getCampaignShops, { campaignId });
+
+    const [activeTab, setActiveTab] = useState<'overview' | 'realm' | 'npcs' | 'events' | 'quests' | 'items' | 'spells' | 'monsters' | 'shops' | 'players'>('overview');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const { theme, mounted } = useTheme();
     const dark = mounted ? theme === 'dark' : false;
@@ -46,6 +53,7 @@ export default function CampaignManager() {
     const [locType, setLocType] = useState("Town");
     const [locEnvironment, setLocEnvironment] = useState("");
     const [locDesc, setLocDesc] = useState("");
+    const [locNeighbors, setLocNeighbors] = useState<Id<"locations">[]>([]);
 
     const [eventTrigger, setEventTrigger] = useState("");
     const [eventEffect, setEventEffect] = useState("");
@@ -123,6 +131,21 @@ export default function CampaignManager() {
     const [monsterDamage, setMonsterDamage] = useState(1);
     const [monsterDropIds, setMonsterDropIds] = useState<Id<"items">[]>([]);
 
+    // Shop State
+    const [shopName, setShopName] = useState("");
+    const [shopDesc, setShopDesc] = useState("");
+    const [shopType, setShopType] = useState("general");
+    const [shopLocationId, setShopLocationId] = useState("");
+    const [shopkeeperId, setShopkeeperId] = useState("");
+    const [shopPriceModifier, setShopPriceModifier] = useState(1.0);
+    const [shopBuybackModifier, setShopBuybackModifier] = useState(1.2);
+    const [shopBuybackDuration, setShopBuybackDuration] = useState<number | undefined>(undefined);
+    const [shopAiManaged, setShopAiManaged] = useState(false);
+    const [selectedShopId, setSelectedShopId] = useState<Id<"shops"> | null>(null);
+    const [shopItemId, setShopItemId] = useState("");
+    const [shopItemStock, setShopItemStock] = useState(-1);
+    const [shopItemPrice, setShopItemPrice] = useState<number | undefined>(undefined);
+
 
     // Derived Data
     const { campaign, locations, npcs, items, spells, monsters } = data || {};
@@ -146,8 +169,9 @@ export default function CampaignManager() {
                 type: locType,
                 environment: locEnvironment || undefined,
                 description: locDesc,
+                neighbors: locNeighbors.length > 0 ? locNeighbors : undefined,
             });
-            setLocName(""); setLocType("Town"); setLocEnvironment(""); setLocDesc("");
+            setLocName(""); setLocType("Town"); setLocEnvironment(""); setLocDesc(""); setLocNeighbors([]);
         } finally {
             setIsSubmitting(false);
         }
@@ -277,6 +301,69 @@ export default function CampaignManager() {
         }
     };
 
+    const handleCreateShop = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!shopLocationId) return;
+        setIsSubmitting(true);
+        try {
+            await createShop({
+                campaignId,
+                locationId: shopLocationId as Id<"locations">,
+                name: shopName,
+                description: shopDesc,
+                type: shopType,
+                shopkeeperId: shopkeeperId ? (shopkeeperId as Id<"npcs">) : undefined,
+                basePriceModifier: shopPriceModifier,
+                buybackModifier: shopBuybackModifier,
+                buybackDuration: shopBuybackDuration,
+                aiManaged: shopAiManaged,
+            });
+            setShopName(""); setShopDesc(""); setShopLocationId(""); setShopkeeperId("");
+            setShopPriceModifier(1.0); setShopBuybackModifier(1.2); setShopBuybackDuration(undefined);
+            setShopAiManaged(false);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleDeleteShop = async (shopId: Id<"shops">) => {
+        if (!confirm("Are you sure you want to delete this shop?")) return;
+        setIsSubmitting(true);
+        try {
+            await deleteShop({ shopId });
+            if (selectedShopId === shopId) setSelectedShopId(null);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleAddItemToShop = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!selectedShopId || !shopItemId) return;
+        setIsSubmitting(true);
+        try {
+            await addItemToShop({
+                shopId: selectedShopId,
+                itemId: shopItemId as Id<"items">,
+                stock: shopItemStock,
+                basePrice: shopItemPrice,
+            });
+            setShopItemId(""); setShopItemStock(-1); setShopItemPrice(undefined);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleRemoveItemFromShop = async (itemId: Id<"items">) => {
+        if (!selectedShopId) return;
+        setIsSubmitting(true);
+        try {
+            await removeItemFromShop({ shopId: selectedShopId, itemId });
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
     if (!data) return (
         <div className={`flex flex-col items-center justify-center h-screen ${dark ? 'bg-[#0f1119]' : 'bg-[#f8f9fa]'}`}>
              <div className="relative w-20 h-20 flex items-center justify-center mb-4">
@@ -310,7 +397,7 @@ export default function CampaignManager() {
                         </div>
                     </div>
                     <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide py-2">
-                        {['overview', 'realm', 'npcs', 'events', 'quests', 'items', 'spells', 'monsters', 'players'].map((tab) => (
+                        {['overview', 'realm', 'npcs', 'events', 'quests', 'items', 'spells', 'monsters', 'shops', 'players'].map((tab) => (
                             <button
                                 key={tab}
                                 onClick={() => setActiveTab(tab as any)}
@@ -369,20 +456,82 @@ export default function CampaignManager() {
                                 </h3>
                                 {locations && locations.length > 0 ? (
                                     <div className="grid gap-4">
-                                        {locations.map((loc: any) => (
-                                            <div key={loc._id} className="bg-white border border-[#D4AF37]/10 rounded-2xl p-6 hover:border-[#D4AF37]/30 transition-all group">
-                                                <div className="flex justify-between items-start">
-                                                    <div>
-                                                        <h4 className="font-bold text-[#43485C] text-lg group-hover:text-[#D4AF37] transition-colors">{loc.name}</h4>
-                                                        <span className="text-xs uppercase tracking-wider text-[#D4AF37] font-bold bg-[#D4AF37]/10 px-2 py-0.5 rounded-full">{loc.type}</span>
+                                        {locations.map((loc: any) => {
+                                            const locNpcs = npcs?.filter(n => n.locationId === loc._id) || [];
+                                            const locShops = campaignShops?.filter(s => s.locationId === loc._id) || [];
+                                            const locMonsters = monsters?.filter(m => m.locationId === loc._id) || [];
+                                            const connectedLocs = loc.neighbors?.map((nId: Id<"locations">) =>
+                                                locations.find((l: any) => l._id === nId)
+                                            ).filter(Boolean) || [];
+
+                                            return (
+                                                <div key={loc._id} className="bg-white border border-[#D4AF37]/10 rounded-2xl p-6 hover:border-[#D4AF37]/30 transition-all group">
+                                                    <div className="flex justify-between items-start">
+                                                        <div>
+                                                            <h4 className="font-bold text-[#43485C] text-lg group-hover:text-[#D4AF37] transition-colors">{loc.name}</h4>
+                                                            <span className="text-xs uppercase tracking-wider text-[#D4AF37] font-bold bg-[#D4AF37]/10 px-2 py-0.5 rounded-full">{loc.type}</span>
+                                                        </div>
                                                     </div>
+                                                    {loc.environment && (
+                                                        <p className="text-sm text-[#43485C]/60 mt-2 italic">Environment: {loc.environment}</p>
+                                                    )}
+                                                    <p className="text-sm text-[#43485C]/70 mt-2 font-sans leading-relaxed">{loc.description}</p>
+
+                                                    {/* Connected Locations */}
+                                                    {connectedLocs.length > 0 && (
+                                                        <div className="mt-4 pt-4 border-t border-[#D4AF37]/10">
+                                                            <p className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider mb-2">Connected to:</p>
+                                                            <div className="flex flex-wrap gap-2">
+                                                                {connectedLocs.map((connLoc: any) => (
+                                                                    <span key={connLoc._id} className="text-xs px-2 py-1 bg-[#f8f9fa] text-[#43485C]/70 rounded-full border border-[#D4AF37]/10">
+                                                                        {connLoc.name}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Location Contents */}
+                                                    {(locNpcs.length > 0 || locShops.length > 0 || locMonsters.length > 0) && (
+                                                        <div className="mt-4 pt-4 border-t border-[#D4AF37]/10 grid grid-cols-3 gap-4">
+                                                            {locNpcs.length > 0 && (
+                                                                <div>
+                                                                    <p className="text-[10px] font-bold text-[#43485C]/50 uppercase tracking-wider mb-1">NPCs</p>
+                                                                    <div className="space-y-1">
+                                                                        {locNpcs.slice(0, 3).map(npc => (
+                                                                            <p key={npc._id} className="text-xs text-[#43485C]/70 truncate">{npc.name}</p>
+                                                                        ))}
+                                                                        {locNpcs.length > 3 && <p className="text-xs text-[#D4AF37]">+{locNpcs.length - 3} more</p>}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            {locShops.length > 0 && (
+                                                                <div>
+                                                                    <p className="text-[10px] font-bold text-[#43485C]/50 uppercase tracking-wider mb-1">Shops</p>
+                                                                    <div className="space-y-1">
+                                                                        {locShops.slice(0, 3).map(shop => (
+                                                                            <p key={shop._id} className="text-xs text-[#43485C]/70 truncate">{shop.name}</p>
+                                                                        ))}
+                                                                        {locShops.length > 3 && <p className="text-xs text-[#D4AF37]">+{locShops.length - 3} more</p>}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            {locMonsters.length > 0 && (
+                                                                <div>
+                                                                    <p className="text-[10px] font-bold text-[#43485C]/50 uppercase tracking-wider mb-1">Monsters</p>
+                                                                    <div className="space-y-1">
+                                                                        {locMonsters.slice(0, 3).map(monster => (
+                                                                            <p key={monster._id} className="text-xs text-[#43485C]/70 truncate">{monster.name}</p>
+                                                                        ))}
+                                                                        {locMonsters.length > 3 && <p className="text-xs text-[#D4AF37]">+{locMonsters.length - 3} more</p>}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
                                                 </div>
-                                                {loc.environment && (
-                                                    <p className="text-sm text-[#43485C]/60 mt-2 italic">Environment: {loc.environment}</p>
-                                                )}
-                                                <p className="text-sm text-[#43485C]/70 mt-2 font-sans leading-relaxed">{loc.description}</p>
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 ) : (
                                     <div className="bg-white border border-[#D4AF37]/10 rounded-2xl p-8 text-center text-[#43485C]/50 italic font-sans">
@@ -416,6 +565,25 @@ export default function CampaignManager() {
                                         </select>
                                     </div>
                                     <Input label="Environment" placeholder="Dense foliage, misty paths..." value={locEnvironment} onChange={(e: any) => setLocEnvironment(e.target.value)} />
+
+                                    {/* Connected Locations */}
+                                    {locations && locations.length > 0 && (
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Connected To</label>
+                                            <select
+                                                multiple
+                                                className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm focus:outline-none focus:border-[#D4AF37] transition-colors min-h-[80px]"
+                                                value={locNeighbors}
+                                                onChange={(e) => setLocNeighbors(Array.from(e.target.selectedOptions, option => option.value as Id<"locations">))}
+                                            >
+                                                {locations.map((loc: any) => (
+                                                    <option key={loc._id} value={loc._id}>{loc.name}</option>
+                                                ))}
+                                            </select>
+                                            <p className="text-[10px] text-[#43485C]/50 ml-1">Hold Ctrl/Cmd to select multiple. These locations will be accessible from the new location.</p>
+                                        </div>
+                                    )}
+
                                     <div className="space-y-1">
                                         <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Description</label>
                                         <MentionTextArea
@@ -910,6 +1078,270 @@ export default function CampaignManager() {
                                             Create Monster
                                         </button>
                                     </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* SHOPS TAB */}
+                    {activeTab === 'shops' && (
+                        <div className="grid md:grid-cols-3 gap-8">
+                            {/* Shops List */}
+                            <div className="md:col-span-2 space-y-4">
+                                <h3 className="text-xl font-bold text-[#43485C] mb-4 flex items-center gap-2">
+                                    <Store className="text-[#D4AF37]" /> Shops ({campaignShops?.length || 0})
+                                </h3>
+                                {!campaignShops || campaignShops.length === 0 ? (
+                                    <div className="text-center py-12 border-2 border-dashed border-[#D4AF37]/20 rounded-2xl bg-white/50">
+                                        <Store className="mx-auto text-[#D4AF37]/50 mb-2" size={32} />
+                                        <p className="text-[#43485C]/50 font-sans">No shops yet. Create your first shop!</p>
+                                    </div>
+                                ) : (
+                                    <div className="grid gap-4">
+                                        {campaignShops.map((shop) => (
+                                            <div
+                                                key={shop._id}
+                                                className={`bg-white border rounded-2xl p-5 cursor-pointer transition-all ${
+                                                    selectedShopId === shop._id
+                                                        ? 'border-[#D4AF37] shadow-lg'
+                                                        : 'border-[#D4AF37]/10 hover:border-[#D4AF37]/30'
+                                                }`}
+                                                onClick={() => setSelectedShopId(shop._id)}
+                                            >
+                                                <div className="flex justify-between items-start">
+                                                    <div>
+                                                        <h4 className="font-bold text-[#43485C] text-lg">{shop.name}</h4>
+                                                        <div className="flex items-center gap-2 mt-1">
+                                                            <span className="text-xs uppercase tracking-wider text-[#D4AF37] font-bold bg-[#D4AF37]/10 px-2 py-0.5 rounded-full">{shop.type}</span>
+                                                            <span className="text-xs text-[#43485C]/50">{shop.locationName}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-xs text-[#43485C]/50">{shop.inventory?.length || 0} items</span>
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); handleDeleteShop(shop._id); }}
+                                                            className="p-1.5 hover:bg-red-100 rounded-lg transition-colors text-red-400"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                {shop.description && (
+                                                    <p className="text-sm text-[#43485C]/60 mt-2 line-clamp-2 font-sans">{shop.description}</p>
+                                                )}
+                                                {shop.shopkeeperName && (
+                                                    <p className="text-xs text-[#43485C]/50 mt-2">Shopkeeper: {shop.shopkeeperName}</p>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {/* Shop Inventory Editor */}
+                                {selectedShopId && (
+                                    <div className="bg-white border border-[#D4AF37]/20 rounded-2xl p-6 mt-6 shadow-lg">
+                                        <h3 className="text-lg font-bold text-[#43485C] mb-4 border-b border-[#D4AF37]/10 pb-4">
+                                            Edit Shop Inventory
+                                        </h3>
+
+                                        {/* Current Inventory */}
+                                        <div className="mb-6">
+                                            <h4 className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider mb-3">Current Items</h4>
+                                            {(() => {
+                                                const shop = campaignShops?.find(s => s._id === selectedShopId);
+                                                if (!shop?.inventory || shop.inventory.length === 0) {
+                                                    return <p className="text-sm text-[#43485C]/50 italic">No items in this shop yet.</p>;
+                                                }
+                                                return (
+                                                    <div className="space-y-2">
+                                                        {shop.inventory.map((invItem) => {
+                                                            const item = items?.find(i => i._id === invItem.itemId);
+                                                            if (!item) return null;
+                                                            return (
+                                                                <div key={invItem.itemId} className="flex items-center justify-between p-3 bg-[#f8f9fa] rounded-lg">
+                                                                    <div>
+                                                                        <span className="font-medium text-[#43485C]">{item.name}</span>
+                                                                        <span className="text-xs text-[#43485C]/50 ml-2">
+                                                                            Stock: {invItem.stock === -1 ? 'Unlimited' : invItem.stock}
+                                                                            {invItem.basePrice && ` | Price: ${invItem.basePrice}g`}
+                                                                        </span>
+                                                                    </div>
+                                                                    <button
+                                                                        onClick={() => handleRemoveItemFromShop(invItem.itemId)}
+                                                                        className="p-1 hover:bg-red-100 rounded text-red-400"
+                                                                    >
+                                                                        <Trash2 size={14} />
+                                                                    </button>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                );
+                                            })()}
+                                        </div>
+
+                                        {/* Add Item Form */}
+                                        <form onSubmit={handleAddItemToShop} className="space-y-4">
+                                            <div className="space-y-1">
+                                                <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Add Item</label>
+                                                <select
+                                                    className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                    value={shopItemId}
+                                                    onChange={(e) => setShopItemId(e.target.value)}
+                                                >
+                                                    <option value="">Select an item...</option>
+                                                    {items?.map(item => (
+                                                        <option key={item._id} value={item._id}>{item.name} ({item.rarity})</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="space-y-1">
+                                                    <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Stock (-1 = Unlimited)</label>
+                                                    <input
+                                                        type="number"
+                                                        value={shopItemStock}
+                                                        onChange={(e) => setShopItemStock(parseInt(e.target.value) || -1)}
+                                                        className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Custom Price (optional)</label>
+                                                    <input
+                                                        type="number"
+                                                        value={shopItemPrice || ''}
+                                                        onChange={(e) => setShopItemPrice(e.target.value ? parseInt(e.target.value) : undefined)}
+                                                        placeholder="Auto"
+                                                        className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                    />
+                                                </div>
+                                            </div>
+                                            <button
+                                                type="submit"
+                                                disabled={isSubmitting || !shopItemId}
+                                                className="w-full py-2 bg-[#D4AF37] hover:bg-[#c9a432] text-white rounded-xl font-bold text-sm uppercase tracking-wider disabled:opacity-50"
+                                            >
+                                                <Plus size={16} className="inline mr-1" /> Add to Shop
+                                            </button>
+                                        </form>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Create Shop Form */}
+                            <div className="bg-white border border-[#D4AF37]/20 rounded-2xl p-6 h-fit shadow-lg">
+                                <h3 className="text-lg font-bold text-[#43485C] mb-6 border-b border-[#D4AF37]/10 pb-4">Create Shop</h3>
+                                <form onSubmit={handleCreateShop} className="space-y-4">
+                                    <Input label="Shop Name" placeholder="The Rusty Sword" value={shopName} onChange={(e: any) => setShopName(e.target.value)} required />
+
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Shop Type</label>
+                                        <select
+                                            className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                            value={shopType}
+                                            onChange={(e) => setShopType(e.target.value)}
+                                        >
+                                            <option value="general">General Store</option>
+                                            <option value="blacksmith">Blacksmith</option>
+                                            <option value="potion">Potion Shop</option>
+                                            <option value="magic">Magic Shop</option>
+                                            <option value="armor">Armorer</option>
+                                            <option value="jeweler">Jeweler</option>
+                                            <option value="tailor">Tailor</option>
+                                            <option value="provisioner">Provisioner</option>
+                                        </select>
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Location *</label>
+                                        <select
+                                            className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                            value={shopLocationId}
+                                            onChange={(e) => setShopLocationId(e.target.value)}
+                                            required
+                                        >
+                                            <option value="">Select a location...</option>
+                                            {locations?.map(loc => (
+                                                <option key={loc._id} value={loc._id}>{loc.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Shopkeeper (optional)</label>
+                                        <select
+                                            className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                            value={shopkeeperId}
+                                            onChange={(e) => setShopkeeperId(e.target.value)}
+                                        >
+                                            <option value="">No Shopkeeper (Self-service)</option>
+                                            {npcs?.map(npc => (
+                                                <option key={npc._id} value={npc._id}>{npc.name} ({npc.role})</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <TextArea label="Description" placeholder="A dusty shop filled with weapons..." value={shopDesc} onChange={(e: any) => setShopDesc(e.target.value)} required />
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Price Modifier</label>
+                                            <input
+                                                type="number"
+                                                step="0.1"
+                                                min="0.1"
+                                                max="3"
+                                                value={shopPriceModifier}
+                                                onChange={(e) => setShopPriceModifier(parseFloat(e.target.value) || 1)}
+                                                className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                            />
+                                            <p className="text-[10px] text-[#43485C]/50 ml-1">1.0 = normal, 1.5 = expensive</p>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Buyback Modifier</label>
+                                            <input
+                                                type="number"
+                                                step="0.1"
+                                                min="1"
+                                                max="3"
+                                                value={shopBuybackModifier}
+                                                onChange={(e) => setShopBuybackModifier(parseFloat(e.target.value) || 1.2)}
+                                                className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                            />
+                                            <p className="text-[10px] text-[#43485C]/50 ml-1">Price to buy back sold items</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Buyback Duration (minutes)</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={shopBuybackDuration || ''}
+                                            onChange={(e) => setShopBuybackDuration(e.target.value ? parseInt(e.target.value) : undefined)}
+                                            placeholder="Leave empty for no expiry"
+                                            className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                        />
+                                    </div>
+
+                                    <div className="flex items-center gap-2 bg-[#f8f9fa] p-4 rounded-xl border border-[#D4AF37]/10">
+                                        <input
+                                            type="checkbox"
+                                            checked={shopAiManaged}
+                                            onChange={(e) => setShopAiManaged(e.target.checked)}
+                                            className="h-4 w-4 accent-[#D4AF37]"
+                                        />
+                                        <label className="text-sm text-[#43485C]">AI Managed (AI can modify inventory)</label>
+                                    </div>
+
+                                    <button
+                                        type="submit"
+                                        disabled={isSubmitting || !shopLocationId}
+                                        className="w-full py-3 bg-[#D4AF37] hover:bg-[#c9a432] text-white font-bold rounded-full transition-all shadow-lg text-sm flex items-center justify-center gap-2 uppercase tracking-widest mt-4 disabled:opacity-50"
+                                    >
+                                        {isSubmitting ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />}
+                                        Create Shop
+                                    </button>
                                 </form>
                             </div>
                         </div>

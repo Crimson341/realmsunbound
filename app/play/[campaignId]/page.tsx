@@ -7,7 +7,7 @@ import { useQuery, useAction, useMutation } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { Id } from '../../../convex/_generated/dataModel';
 import {
-    Send, Heart, MapPin,
+    Send, Heart, MapPin, Map,
     Menu, X, ArrowLeft,
     Loader2, Swords, Backpack, UserCircle, Search, Trophy,
     Tent, AlertTriangle, Skull, Coins, ShieldAlert
@@ -32,7 +32,9 @@ import {
     ScreenEffectType,
 } from '../../../components/GameUI';
 import { LootableBodiesList, TradingNPCsList } from '../../../components/NPCInteraction';
+import { ShopsAtLocation } from '../../../components/ShopsAtLocation';
 import { AbilitiesBar } from '../../../components/AbilitiesBar';
+import { WorldMapModal } from '../../../components/WorldMapModal';
 
 // --- TYPES ---
 
@@ -59,28 +61,22 @@ const streamNarrative = async (
     payload: any,
     onContent: (delta: string) => void,
     onData: (data: any) => void,
-    onError: (err: any) => void,
-    timeoutMs: number = 60000
-): Promise<boolean> => {
+    onError: (err: any) => void
+) => {
     const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL!;
     if (!convexUrl) {
         onError(new Error("NEXT_PUBLIC_CONVEX_URL not set"));
-        return false;
+        return;
     }
-    const httpUrl = convexUrl.includes("convex.cloud")
-        ? convexUrl.replace("convex.cloud", "convex.site")
+    const httpUrl = convexUrl.includes("convex.cloud") 
+        ? convexUrl.replace("convex.cloud", "convex.site") 
         : convexUrl;
-
-    // Create abort controller for timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
         const response = await fetch(`${httpUrl}/api/stream-narrative`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
-            signal: controller.signal,
         });
 
         if (!response.ok) throw new Error(await response.text());
@@ -166,19 +162,8 @@ const streamNarrative = async (
                 }
             }
         }
-
-        // Cleanup reader
-        reader.releaseLock();
-        return true;
     } catch (e) {
-        if (e instanceof Error && e.name === 'AbortError') {
-            onError(new Error('Request timed out'));
-        } else {
-            onError(e);
-        }
-        return false;
-    } finally {
-        clearTimeout(timeoutId);
+        onError(e);
     }
 };
 
@@ -189,15 +174,6 @@ const SmartTooltip = ({ children, content, className }: { children: React.ReactN
     const [position, setPosition] = useState<'top' | 'bottom'>('top');
     const timerRef = useRef<NodeJS.Timeout | null>(null);
     const ref = useRef<HTMLDivElement>(null);
-
-    // Cleanup timer on unmount to prevent memory leaks
-    useEffect(() => {
-        return () => {
-            if (timerRef.current) {
-                clearTimeout(timerRef.current);
-            }
-        };
-    }, []);
 
     const handleEnter = () => {
         if (ref.current) {
@@ -320,21 +296,35 @@ export default function PlayPage() {
 
     const data = useQuery(api.forge.getCampaignDetails, { campaignId });
     const generateQuest = useAction(api.ai.generateQuest);
-    
-    // --- ABILITIES QUERY ---
-    // Get the user's id for ability queries (use same variable as defined later)
+    const ensureCharacter = useMutation(api.forge.ensureCharacterForCampaign);
+
+    // --- PLAYER ID for queries ---
     const playerIdForAbilities = data?.character?.userId || "";
+
+    // Ensure character exists for this campaign and has stats initialized
+    const [characterEnsured, setCharacterEnsured] = useState(false);
+    const [statsInitialized, setStatsInitialized] = useState(false);
+    useEffect(() => {
+        if (campaignId && !characterEnsured) {
+            ensureCharacter({ campaignId })
+                .then(() => setCharacterEnsured(true))
+                .catch(console.error);
+        }
+    }, [campaignId, characterEnsured, ensureCharacter]);
+
+    // --- ABILITIES QUERY ---
     const abilities = useQuery(
         api.abilities.getPlayerAbilities,
         playerIdForAbilities ? { campaignId, playerId: playerIdForAbilities } : "skip"
     );
     const executeAbility = useMutation(api.abilities.useAbility);
 
-    // --- GOLD QUERY (source of truth for gold tracking) ---
-    const dbGold = useQuery(
-        api.abilities.getPlayerGold,
+    // --- CHARACTER STATS (for dice rolling) ---
+    const playerAttributes = useQuery(
+        api.dice.getPlayerAttributes,
         playerIdForAbilities ? { campaignId, playerId: playerIdForAbilities } : "skip"
     );
+    const initializeStats = useMutation(api.dice.initializeCharacterStats);
     
     // Parse campaign terminology (for custom names like "Chakra" instead of "Energy")
     const terminology = useMemo(() => {
@@ -345,18 +335,58 @@ export default function PlayPage() {
             return null;
         }
     }, [data?.campaign?.terminology]);
-    
+
+    // Initialize character stats if they don't have them yet
+    useEffect(() => {
+        if (characterEnsured && playerIdForAbilities && playerAttributes && !statsInitialized) {
+            // Check if stats are default (all 10s) - if so, initialize with random stats
+            const hasDefaultStats =
+                playerAttributes.strength === 10 &&
+                playerAttributes.dexterity === 10 &&
+                playerAttributes.constitution === 10 &&
+                playerAttributes.intelligence === 10 &&
+                playerAttributes.wisdom === 10 &&
+                playerAttributes.charisma === 10;
+
+            if (hasDefaultStats) {
+                initializeStats({
+                    campaignId,
+                    playerId: playerIdForAbilities,
+                    method: "random" // Roll 4d6 drop lowest for each stat
+                })
+                    .then(() => setStatsInitialized(true))
+                    .catch(console.error);
+            } else {
+                setStatsInitialized(true);
+            }
+        }
+    }, [characterEnsured, playerIdForAbilities, playerAttributes, statsInitialized, campaignId, initializeStats]);
+
     // World system mutations
     const killNPC = useMutation(api.forge.killNPC);
     const addBounty = useMutation(api.bounty.addBounty);
     const spreadRumor = useMutation(api.world.spreadRumor);
     const createDeathRumor = useMutation(api.world.createDeathRumor);
-    
+
+    // Message persistence
+    const saveMessage = useMutation(api.messages.saveMessage);
+
+    // Map system
+    const mapData = useQuery(api.map.getMapData, { campaignId });
+    const travelToLocation = useMutation(api.map.travelToLocation);
+
     // Get player ID from character data
     const playerId = data?.character?.userId || "";
 
+    // Load existing messages from DB
+    const savedMessages = useQuery(
+        api.messages.getMessages,
+        playerId ? { campaignId, playerId } : "skip"
+    );
+
     // --- CORE STATE ---
     const [messages, setMessages] = useState<Message[]>([]);
+    const [messagesInitialized, setMessagesInitialized] = useState(false);
     const [currentChoices, setCurrentChoices] = useState<string[]>([]);
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
@@ -365,6 +395,30 @@ export default function PlayPage() {
     const [selectedQuest, setSelectedQuest] = useState<any>(null);
     const [isGeneratingQuest, setIsGeneratingQuest] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
+
+    // --- MAP STATE ---
+    const [isMapOpen, setIsMapOpen] = useState(false);
+
+    // --- LOAD MESSAGES FROM DB ---
+    useEffect(() => {
+        if (savedMessages && !messagesInitialized) {
+            const loaded: Message[] = savedMessages.map(m => ({
+                role: m.role as 'user' | 'model',
+                content: m.content,
+                choices: m.choices,
+                questOffer: m.questOffer,
+            }));
+            if (loaded.length > 0) {
+                setMessages(loaded);
+                // Extract choices from last model message if any
+                const lastModelMsg = loaded.filter(m => m.role === 'model').pop();
+                if (lastModelMsg?.choices) {
+                    setCurrentChoices(lastModelMsg.choices);
+                }
+            }
+            setMessagesInitialized(true);
+        }
+    }, [savedMessages, messagesInitialized]);
 
     // --- GAME STATE ---
     const [currentLocationId, setCurrentLocationId] = useState<string | null>(null);
@@ -379,9 +433,7 @@ export default function PlayPage() {
     const [bountyAmount, setBountyAmount] = useState(0);
     const [isJailed, setIsJailed] = useState(false);
     const [killedNpcs, setKilledNpcs] = useState<string[]>([]);
-
-    // Use database gold as source of truth, with local state for optimistic updates
-    const gold = dbGold ?? 0;
+    const [gold, setGold] = useState(0);
     
     // --- ENERGY/ABILITY STATE ---
     const [energy, setEnergy] = useState(100);
@@ -472,8 +524,7 @@ export default function PlayPage() {
                     return [...prev.slice(0, -1), { ...last, choices: normalizedChoices }];
                 }
                 return prev;
-            });
-        }
+            }); }
 
         // Handle game events
         if (gameData.gameEvent) {
@@ -663,13 +714,103 @@ export default function PlayPage() {
                 abilities: data.spells?.map((s: any) => s.name) || [],
                 bounty: bountyAmount,
                 isJailed: isJailed,
+                stats: playerAttributes || {
+                    strength: 10,
+                    dexterity: 10,
+                    constitution: 10,
+                    intelligence: 10,
+                    wisdom: 10,
+                    charisma: 10,
+                },
             }
         };
 
-        try {
+        await streamNarrative(
+            payload,
+            (delta) => {
+                setMessages(prev => {
+                    const last = prev[prev.length - 1];
+                    if (last?.role === 'model') {
+                        return [...prev.slice(0, -1), { ...last, content: last.content + delta }];
+                    }
+                    return [...prev, { role: 'model', content: delta }];
+                });
+            },
+            handleGameData,
+            (err) => {
+                console.error(err);
+                setIsLoading(false);
+            }
+        );
+        setIsLoading(false);
+    };
+
+    // --- MAP TRAVEL HANDLER ---
+    const handleMapTravel = async (destination: any) => {
+        if (!destination || !currentLocationId || !data || !playerId) return;
+
+        // Execute travel mutation
+        const result = await travelToLocation({
+            campaignId,
+            playerId,
+            fromLocationId: currentLocationId as Id<"locations">,
+            toLocationId: destination._id,
+        });
+
+        if (result.success) {
+            // Update local state
+            setCurrentLocationId(result.to._id);
+            setIsMapOpen(false);
+
+            // Send travel prompt to AI for narrative
+            const fromLocation = data.locations?.find(l => l._id === currentLocationId);
+            const travelPrompt = `I travel from ${fromLocation?.name || "my current location"} to ${result.to.name}.
+
+[SYSTEM NOTE: The player has arrived at ${result.to.name} (${result.to.type}).
+${result.to.description}
+Describe the journey briefly and their arrival at the new location. Set the scene.]`;
+
+            setCurrentChoices([]);
+            const userMsg: Message = { role: 'user', content: `I travel to ${result.to.name}...` };
+            setMessages(prev => [...prev, userMsg]);
+            setIsLoading(true);
+
+            // Save user message
+            if (playerId) {
+                saveMessage({
+                    campaignId,
+                    playerId,
+                    role: 'user',
+                    content: `I travel to ${result.to.name}...`,
+                });
+            }
+
+            const payload = {
+                prompt: travelPrompt,
+                history: messages.map(m => ({ role: m.role, content: m.content })),
+                campaignId: data.campaign._id,
+                currentLocationId: result.to._id,
+                playerId: playerId,
+                playerState: {
+                    name: data.character?.name || "Traveler",
+                    class: data.character?.class || "Unknown",
+                    level: level,
+                    hp: hp,
+                    maxHp: maxHp,
+                    inventory: data.inventory?.map((i: any) => i.name) || [],
+                    abilities: data.spells?.map((s: any) => s.name) || [],
+                    bounty: bountyAmount,
+                    isJailed: isJailed,
+                }
+            };
+
+            let aiResponseContent = "";
+            let aiChoices: string[] | undefined;
+
             await streamNarrative(
                 payload,
                 (delta) => {
+                    aiResponseContent += delta;
                     setMessages(prev => {
                         const last = prev[prev.length - 1];
                         if (last?.role === 'model') {
@@ -678,12 +819,29 @@ export default function PlayPage() {
                         return [...prev, { role: 'model', content: delta }];
                     });
                 },
-                handleGameData,
+                (gameData) => {
+                    handleGameData(gameData);
+                    if (gameData.choices) {
+                        aiChoices = gameData.choices;
+                    }
+                },
                 (err) => {
-                    console.error("Stream error (handleAskQuest):", err);
+                    console.error(err);
+                    setIsLoading(false);
                 }
             );
-        } finally {
+
+            // Save AI response
+            if (playerId && aiResponseContent) {
+                saveMessage({
+                    campaignId,
+                    playerId,
+                    role: 'model',
+                    content: aiResponseContent,
+                    choices: aiChoices,
+                });
+            }
+
             setIsLoading(false);
         }
     };
@@ -698,12 +856,17 @@ export default function PlayPage() {
 
     // --- INITIAL GAME START ---
     useEffect(() => {
-        if (data && messages.length === 0 && !isLoading) {
+        // Only start a new game if:
+        // 1. Data is loaded
+        // 2. Messages have been initialized from DB
+        // 3. No messages exist (fresh game)
+        // 4. Not currently loading
+        if (data && messagesInitialized && messages.length === 0 && !isLoading) {
             const startLocation = data.locations[0];
             setCurrentLocationId(startLocation?._id || null);
             handleStartGame(startLocation);
         }
-    }, [data]);
+    }, [data, messagesInitialized]);
 
     // --- START GAME ---
     const handleStartGame = async (startLocation: any) => {
@@ -732,40 +895,76 @@ export default function PlayPage() {
                 abilities: data.spells?.map((s: any) => s.name) || [],
                 bounty: 0,
                 isJailed: false,
+                stats: playerAttributes || {
+                    strength: 10,
+                    dexterity: 10,
+                    constitution: 10,
+                    intelligence: 10,
+                    wisdom: 10,
+                    charisma: 10,
+                },
             }
         };
 
-        try {
-            await streamNarrative(
-                payload,
-                (delta) => {
-                    setMessages(prev => {
-                        const last = prev[prev.length - 1];
-                        if (last?.role === 'model') {
-                            return [...prev.slice(0, -1), { ...last, content: last.content + delta }];
-                        }
-                        return [...prev, { role: 'model', content: delta }];
-                    });
-                },
-                handleGameData,
-                (err) => console.error("Stream error (handleStartGame):", err)
-            );
-        } finally {
-            setIsLoading(false);
+        let aiResponseContent = "";
+        let aiChoices: string[] | undefined;
+
+        await streamNarrative(
+            payload,
+            (delta) => {
+                aiResponseContent += delta;
+                setMessages(prev => {
+                    const last = prev[prev.length - 1];
+                    if (last?.role === 'model') {
+                        return [...prev.slice(0, -1), { ...last, content: last.content + delta }];
+                    }
+                    return [...prev, { role: 'model', content: delta }];
+                });
+            },
+            (gameData) => {
+                handleGameData(gameData);
+                if (gameData.choices) {
+                    aiChoices = gameData.choices;
+                }
+            },
+            (err) => console.error(err)
+        );
+
+        // Save initial AI response to DB
+        if (playerId && aiResponseContent) {
+            saveMessage({
+                campaignId,
+                playerId,
+                role: 'model',
+                content: aiResponseContent,
+                choices: aiChoices,
+            });
         }
+
+        setIsLoading(false);
     };
 
     // --- SEND MESSAGE ---
     const handleSendMessage = async (manualContent?: string) => {
         const contentToSend = typeof manualContent === 'string' ? manualContent : input;
         if (!contentToSend.trim() || isLoading || !data) return;
-        
+
         setCurrentChoices([]);
 
         const userMsg: Message = { role: 'user', content: contentToSend };
         setMessages(prev => [...prev, userMsg]);
         setInput("");
         setIsLoading(true);
+
+        // Save user message to DB
+        if (playerId) {
+            saveMessage({
+                campaignId,
+                playerId,
+                role: 'user',
+                content: contentToSend,
+            });
+        }
 
         const payload = {
             prompt: contentToSend,
@@ -783,29 +982,57 @@ export default function PlayPage() {
                 abilities: data.spells?.map((s: any) => s.name) || [],
                 bounty: bountyAmount,
                 isJailed: isJailed,
+                stats: playerAttributes || {
+                    strength: 10,
+                    dexterity: 10,
+                    constitution: 10,
+                    intelligence: 10,
+                    wisdom: 10,
+                    charisma: 10,
+                },
             }
         };
 
-        try {
-            await streamNarrative(
-                payload,
-                (delta) => {
-                    setMessages(prev => {
-                        const last = prev[prev.length - 1];
-                        if (last?.role === 'model') {
-                            return [...prev.slice(0, -1), { ...last, content: last.content + delta }];
-                        }
-                        return [...prev, { role: 'model', content: delta }];
-                    });
-                },
-                handleGameData,
-                (err) => {
-                    console.error("Stream error (handleSendMessage):", err);
+        let aiResponseContent = "";
+        let aiChoices: string[] | undefined;
+
+        await streamNarrative(
+            payload,
+            (delta) => {
+                aiResponseContent += delta;
+                setMessages(prev => {
+                    const last = prev[prev.length - 1];
+                    if (last?.role === 'model') {
+                        return [...prev.slice(0, -1), { ...last, content: last.content + delta }];
+                    }
+                    return [...prev, { role: 'model', content: delta }];
+                });
+            },
+            (gameData) => {
+                handleGameData(gameData);
+                // Capture choices for saving
+                if (gameData.choices) {
+                    aiChoices = gameData.choices;
                 }
-            );
-        } finally {
-            setIsLoading(false);
+            },
+            (err) => {
+                console.error(err);
+                setIsLoading(false);
+            }
+        );
+
+        // Save AI response to DB after streaming completes
+        if (playerId && aiResponseContent) {
+            saveMessage({
+                campaignId,
+                playerId,
+                role: 'model',
+                content: aiResponseContent,
+                choices: aiChoices,
+            });
         }
+
+        setIsLoading(false);
     };
 
     // --- HANDLE ENTER KEY ---
@@ -963,6 +1190,13 @@ export default function PlayPage() {
                         <div className="hidden md:block w-32">
                             <XPBar currentXP={xp} maxXP={xpToLevel} level={level} compact />
                         </div>
+                        <button
+                            onClick={() => setIsMapOpen(true)}
+                            className="p-2 hover:bg-white/5 rounded-full text-stone-400 hover:text-genshin-gold transition-colors group relative"
+                            title="Open World Map"
+                        >
+                            <Map size={20} />
+                        </button>
                         <button onClick={() => setCharacterSheetOpen(true)} className="p-2 hover:bg-white/5 rounded-full text-stone-400 hover:text-genshin-gold transition-colors">
                             <UserCircle size={20} />
                         </button>
@@ -1102,7 +1336,51 @@ export default function PlayPage() {
                                 </div>
                             </div>
                         </div>
-                        
+
+                        {/* Character Attributes (D&D Stats) */}
+                        {playerAttributes && (
+                            <div className="space-y-3">
+                                <h3 className="text-xs font-bold uppercase tracking-widest text-stone-500 flex items-center gap-2 font-serif">
+                                    <Swords size={12} /> Attributes
+                                </h3>
+                                <div className="bg-genshin-dark rounded-lg p-3 border border-genshin-gold/10 shadow-inner">
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {[
+                                            { key: 'strength', abbr: 'STR', color: 'text-red-400' },
+                                            { key: 'dexterity', abbr: 'DEX', color: 'text-green-400' },
+                                            { key: 'constitution', abbr: 'CON', color: 'text-orange-400' },
+                                            { key: 'intelligence', abbr: 'INT', color: 'text-blue-400' },
+                                            { key: 'wisdom', abbr: 'WIS', color: 'text-purple-400' },
+                                            { key: 'charisma', abbr: 'CHA', color: 'text-pink-400' },
+                                        ].map((stat) => {
+                                            const value = playerAttributes[stat.key as keyof typeof playerAttributes] as number || 10;
+                                            const modifier = Math.floor((value - 10) / 2);
+                                            return (
+                                                <SmartTooltip
+                                                    key={stat.key}
+                                                    content={
+                                                        <div className="text-center">
+                                                            <p className="font-bold text-genshin-gold">{stat.key.charAt(0).toUpperCase() + stat.key.slice(1)}</p>
+                                                            <p className="text-xs text-stone-400">Score: {value}</p>
+                                                            <p className="text-xs text-stone-400">Modifier: {modifier >= 0 ? '+' : ''}{modifier}</p>
+                                                        </div>
+                                                    }
+                                                >
+                                                    <div className="bg-stone-800/50 rounded p-2 text-center cursor-help hover:bg-stone-700/50 transition-colors">
+                                                        <p className={`text-[10px] uppercase font-bold ${stat.color}`}>{stat.abbr}</p>
+                                                        <p className="text-lg font-bold text-white">{value}</p>
+                                                        <p className={`text-xs ${modifier >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                                            {modifier >= 0 ? '+' : ''}{modifier}
+                                                        </p>
+                                                    </div>
+                                                </SmartTooltip>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Inventory */}
                         <div className="space-y-3">
                             <h3 className="text-xs font-bold uppercase tracking-widest text-stone-500 flex items-center gap-2 font-serif">
@@ -1224,7 +1502,7 @@ export default function PlayPage() {
                                 campaignId={campaignId}
                                 locationId={currentLocationId as Id<"locations">}
                                 playerId={playerId}
-                                onLootComplete={(items) => {
+                                onLootComplete={(items, lootedGold) => {
                                     // Add rewards to queue
                                     items.forEach(item => {
                                         addReward({
@@ -1233,7 +1511,9 @@ export default function PlayPage() {
                                             xp: 0,
                                         });
                                     });
-                                    // Gold is now synced automatically via getPlayerGold query
+                                    if (lootedGold > 0) {
+                                        setGold(prev => prev + lootedGold);
+                                    }
                                 }}
                             />
                         )}
@@ -1247,6 +1527,19 @@ export default function PlayPage() {
                                 playerGold={gold}
                                 onTradeComplete={() => {
                                     // Refresh gold state would happen automatically via query
+                                }}
+                            />
+                        )}
+
+                        {/* Shops */}
+                        {currentLocationId && (
+                            <ShopsAtLocation
+                                campaignId={campaignId}
+                                locationId={currentLocationId as Id<"locations">}
+                                playerId={playerId}
+                                playerGold={gold}
+                                onTransactionComplete={() => {
+                                    // Gold updates automatically via Convex reactivity
                                 }}
                             />
                         )}
@@ -1290,6 +1583,18 @@ export default function PlayPage() {
                 quest={selectedQuest}
                 locationName={data.locations?.find(l => l._id === selectedQuest?.locationId)?.name}
             />
+
+            {/* World Map Modal */}
+            {mapData && (
+                <WorldMapModal
+                    isOpen={isMapOpen}
+                    onClose={() => setIsMapOpen(false)}
+                    campaignId={campaignId}
+                    locations={mapData}
+                    currentLocationId={currentLocationId as Id<"locations"> | null}
+                    onTravelRequest={handleMapTravel}
+                />
+            )}
         </div>
     );
 }

@@ -158,6 +158,19 @@ const generateWorldContext = (campaignData: any, playerState?: any, worldState?:
     The player can return to their camp to rest, manage followers, or store items.
     `;
       }
+
+      if (worldState.shopsAtLocation && worldState.shopsAtLocation.length > 0) {
+        context += `
+    SHOPS AT CURRENT LOCATION:
+    ${worldState.shopsAtLocation.map((s: any) => `- ${s.name} (${s.type}): ${s.description || 'No description'} | Items: ${s.itemCount}${!s.isOpen ? ' [CLOSED]' : ''}${s.shopkeeperName ? ` | Run by: ${s.shopkeeperName}` : ''}`).join('\n')}
+    SHOP INTERACTION RULES:
+    - Players can buy weapons, armor, potions, and other items from shops
+    - Prices vary based on shop type and rarity
+    - Players can sell items back to shops (at reduced price)
+    - Items sold to shops can be bought back for a limited time
+    - AI-managed shops may change inventory based on story events
+    `;
+      }
     }
 
     context += `
@@ -339,6 +352,17 @@ export const chatStream = httpAction(async (ctx, request) => {
       worldState.npcsAtLocation = knowledgeContext.npcsAtLocation;
       worldState.rumors = knowledgeContext.rumorsHere;
       worldState.deadAtLocation = knowledgeContext.deadAtLocation;
+
+      // Get shops at current location
+      try {
+        const shopsAtLocation = await ctx.runQuery((api as any).shops.getShopsAtLocation, {
+          campaignId: campaignId,
+          locationId: currentLocationId,
+        });
+        worldState.shopsAtLocation = shopsAtLocation;
+      } catch {
+        // Shops query may fail if shops table doesn't exist yet
+      }
     }
     
     // Get player camp if exists
@@ -358,13 +382,26 @@ export const chatStream = httpAction(async (ctx, request) => {
 
   const worldContext = generateWorldContext(campaignData, playerState, worldState);
 
-  // Enhanced prompt for game events
+  // Enhanced prompt for game events with dice rolling
   const bountyEnabled = campaignData.bountyEnabled;
+
+  // Get player stats for dice rolling context
+  const playerStats = playerState ? `
+PLAYER STATS (for dice roll modifiers):
+- Strength: ${playerState.stats?.strength || playerState.stats?.str || 10} (Modifier: ${Math.floor(((playerState.stats?.strength || playerState.stats?.str || 10) - 10) / 2)})
+- Dexterity: ${playerState.stats?.dexterity || playerState.stats?.dex || 10} (Modifier: ${Math.floor(((playerState.stats?.dexterity || playerState.stats?.dex || 10) - 10) / 2)})
+- Constitution: ${playerState.stats?.constitution || playerState.stats?.con || 10} (Modifier: ${Math.floor(((playerState.stats?.constitution || playerState.stats?.con || 10) - 10) / 2)})
+- Intelligence: ${playerState.stats?.intelligence || playerState.stats?.int || 10} (Modifier: ${Math.floor(((playerState.stats?.intelligence || playerState.stats?.int || 10) - 10) / 2)})
+- Wisdom: ${playerState.stats?.wisdom || playerState.stats?.wis || 10} (Modifier: ${Math.floor(((playerState.stats?.wisdom || playerState.stats?.wis || 10) - 10) / 2)})
+- Charisma: ${playerState.stats?.charisma || playerState.stats?.cha || 10} (Modifier: ${Math.floor(((playerState.stats?.charisma || playerState.stats?.cha || 10) - 10) / 2)})
+- Level: ${playerState.level || 1} (Proficiency Bonus: +${Math.ceil((playerState.level || 1) / 4) + 1})
+` : '';
+
   const gameEventInstructions = `
 IMPORTANT: Respond in this EXACT format:
 
 <narrative>
-[Write vivid, immersive narrative text here. Describe what happens, what the player sees, hears, and feels. Be dramatic and engaging.]
+[Write vivid, immersive narrative text here. Describe what happens, what the player sees, hears, and feels. Be dramatic and engaging. If a dice roll occurred, describe the outcome dramatically - a fumble, a lucky break, a clutch success, etc.]
 </narrative>
 
 <data>
@@ -374,7 +411,16 @@ IMPORTANT: Respond in this EXACT format:
   "gameEvent": {
     "type": "exploration|combat|social|skillCheck|reward|npcDeath|crime|recruitment",
     "combat": { "enemyName": "Enemy Name", "enemyHP": 20, "enemyMaxHP": 20, "isPlayerTurn": true },
-    "skillCheck": { "skill": "Perception", "roll": 15, "modifier": 3, "target": 12, "success": true },
+    "skillCheck": {
+      "skill": "Perception|Stealth|Athletics|Persuasion|etc",
+      "roll": 15,
+      "modifier": 3,
+      "target": 12,
+      "success": true,
+      "attribute": "wisdom|dexterity|strength|etc",
+      "isCritical": false,
+      "degree": "critical_success|success|failure|critical_failure"
+    },
     "reward": { "item": "Item Name", "rarity": "common|uncommon|rare|epic|legendary", "xp": 50 },
     "npcDeath": { "npcName": "NPC Name", "npcId": "npc_id_if_known", "cause": "How they died", "killedBy": "player|npc_name" },
     "crime": { "type": "murder|theft|assault|trespassing", "description": "What happened", "bountyAmount": 100 },
@@ -385,6 +431,50 @@ IMPORTANT: Respond in this EXACT format:
   "current_location": "Location Name"
 }
 </data>
+
+${playerStats}
+
+DICE ROLLING SYSTEM - CRITICAL RULES:
+1. WHEN TO ROLL DICE - Trigger a skillCheck for these actions:
+   - TRAVEL: Roll Survival (WIS) or Athletics (STR) when traveling to new locations (DC 10-15)
+   - COMBAT: Roll Attack (STR/DEX) vs enemy AC, or ability checks during combat
+   - STEALTH/SNEAKING: Roll Stealth (DEX) vs passive Perception (DC 10-20)
+   - STEALING/PICKPOCKETING: Roll Sleight of Hand (DEX) vs DC 15-25 depending on difficulty
+   - LOCKPICKING: Roll Sleight of Hand or Thieves' Tools (DEX) vs lock DC
+   - PERSUASION/DECEPTION: Roll Charisma-based skills vs NPC's insight
+   - SEARCHING: Roll Investigation (INT) or Perception (WIS) to find hidden things
+   - CLIMBING/JUMPING: Roll Athletics (STR) or Acrobatics (DEX)
+   - TRACKING: Roll Survival (WIS) to follow trails
+   - IDENTIFYING ITEMS/MAGIC: Roll Arcana (INT)
+   - SENSING MOTIVES: Roll Insight (WIS) vs NPC's Deception
+   - CALMING ANIMALS: Roll Animal Handling (WIS)
+
+2. HOW TO CALCULATE ROLLS:
+   - Roll 1d20 (generate a random number 1-20)
+   - Add the appropriate ability modifier based on the skill
+   - Add proficiency bonus (+2 at level 1-4, +3 at level 5-8, etc.)
+   - Compare to Difficulty Class (DC): Easy=10, Medium=15, Hard=20, Very Hard=25
+
+3. SKILL TO ATTRIBUTE MAPPING:
+   - STR: Athletics
+   - DEX: Acrobatics, Sleight of Hand, Stealth
+   - INT: Arcana, History, Investigation, Nature, Religion
+   - WIS: Animal Handling, Insight, Medicine, Perception, Survival
+   - CHA: Deception, Intimidation, Performance, Persuasion
+
+4. CRITICAL ROLLS:
+   - Natural 20 (roll=20): Always succeeds, describe an exceptional outcome
+   - Natural 1 (roll=1): Always fails, describe a comical or dramatic failure
+   - Critical Success (10+ over DC): Exceptional result with bonus effects
+   - Critical Failure (10+ under DC): Bad result with negative consequences
+
+5. DEGREE OF SUCCESS affects narrative:
+   - critical_success: The player exceeds expectations spectacularly
+   - success: The player accomplishes their goal
+   - failure: The player fails but may try again or face minor setback
+   - critical_failure: Something goes wrong - alerting guards, breaking tools, etc.
+
+6. ALWAYS include skillCheck in gameEvent when dice are rolled. Include the attribute used so the UI can show the correct modifier.
 
 GAME EVENT RULES:
 1. Set "context" based on the current situation:

@@ -40,6 +40,13 @@ export default defineSchema({
     
     // --- WORLD SYSTEMS ---
     bountyEnabled: v.optional(v.boolean()), // Enable bounty/crime system for this campaign
+
+    // --- CHARACTER CREATION CONFIG ---
+    availableClasses: v.optional(v.string()), // JSON array: [{ name: "Warrior", description: "...", bonusStats: {...} }]
+    availableRaces: v.optional(v.string()), // JSON array: [{ name: "Human", description: "...", bonusStats: {...} }]
+    statAllocationMethod: v.optional(v.string()), // "point_buy", "standard_array", "random", "fixed"
+    startingStatPoints: v.optional(v.number()), // Points for point buy (default 27)
+    allowCustomNames: v.optional(v.boolean()), // Whether players can enter custom names (default true)
   })
     .index("by_user", ["userId"])
     .index("by_genre", ["genre"])
@@ -78,9 +85,11 @@ export default defineSchema({
     campaignId: v.optional(v.id("campaigns")),
     name: v.string(),
     class: v.string(),
+    race: v.optional(v.string()), // Character race/species
     level: v.number(),
     stats: v.string(), // JSON string
     imageId: v.optional(v.id("_storage")),
+    background: v.optional(v.string()), // Character backstory
   }).index("by_user", ["userId"]).index("by_campaign", ["campaignId"]),
 
   items: defineTable({
@@ -89,6 +98,7 @@ export default defineSchema({
     name: v.string(),
     type: v.string(),
     rarity: v.string(),
+    category: v.optional(v.string()),  // "weapon", "armor", "potion", "consumable", "material", "quest", "scroll"
     effects: v.string(),
     effectId: v.optional(v.id("effectsLibrary")),
     spellId: v.optional(v.id("spells")),
@@ -152,6 +162,10 @@ export default defineSchema({
     neighbors: v.array(v.id("locations")), // Adjacency list
     imageId: v.optional(v.id("_storage")),
     embedding: v.optional(v.array(v.number())), // Searchable
+    // --- MAP SYSTEM ---
+    mapX: v.optional(v.number()),      // X position on map (0-1000 normalized)
+    mapY: v.optional(v.number()),      // Y position on map (0-1000 normalized)
+    mapIcon: v.optional(v.string()),   // Custom icon override
   })
   .index("by_campaign", ["campaignId"])
   .vectorIndex("by_embedding", {
@@ -295,32 +309,6 @@ export default defineSchema({
     iconEmoji: v.optional(v.string()), // Emoji icon for display (e.g., "🔥", "⚡")
   }).index("by_campaign", ["campaignId"]).index("by_user", ["userId"]),
 
-  // --- CREATOR HUB TABLES ---
-  // Each creator has one hub for their fans/community
-  hubs: defineTable({
-    creatorId: v.string(),        // tokenIdentifier of the creator
-    name: v.string(),             // Hub name
-    description: v.optional(v.string()),
-    imageId: v.optional(v.id("_storage")),
-  }).index("by_creator", ["creatorId"]),
-
-  // Chat channels within a hub (general, quest-help, off-topic, etc.)
-  hubChannels: defineTable({
-    hubId: v.id("hubs"),
-    name: v.string(),             // "general", "quest-help", etc.
-    description: v.optional(v.string()),
-    order: v.number(),            // Display order
-  }).index("by_hub", ["hubId"]),
-
-  // Real-time chat messages in a channel
-  hubMessages: defineTable({
-    channelId: v.id("hubChannels"),
-    userId: v.string(),           // tokenIdentifier of sender
-    userName: v.string(),         // Cached display name
-    userAvatar: v.optional(v.string()),
-    content: v.string(),
-  }).index("by_channel", ["channelId"]),
-
   // --- WORLD SYSTEMS ---
 
   // Factions - groups that NPCs can belong to
@@ -437,4 +425,81 @@ export default defineSchema({
   })
   .index("by_campaign_and_player", ["campaignId", "playerId"])
   .index("by_item", ["itemId"]),
+
+  // Game Messages - persisted chat history for gameplay sessions
+  gameMessages: defineTable({
+    campaignId: v.id("campaigns"),
+    playerId: v.string(),
+    role: v.string(), // "user" | "model"
+    content: v.string(),
+    timestamp: v.number(),
+    choices: v.optional(v.array(v.string())),
+    questOffer: v.optional(v.array(v.string())),
+  })
+  .index("by_campaign_and_player", ["campaignId", "playerId"]),
+
+  // --- SHOP SYSTEM ---
+
+  // Shops - location-bound stores that players can buy from
+  shops: defineTable({
+    campaignId: v.id("campaigns"),
+    locationId: v.id("locations"),           // Required - shops are location-bound
+    name: v.string(),                         // "Blacksmith's Forge"
+    description: v.string(),                  // Shop description for AI/display
+    type: v.string(),                         // "blacksmith", "potion", "general", "magic", "armor"
+    shopkeeperId: v.optional(v.id("npcs")),   // Optional - shops can be standalone (market stalls, vending)
+    imageId: v.optional(v.id("_storage")),
+
+    // Inventory - array of items with stock info
+    inventory: v.array(v.object({
+      itemId: v.id("items"),
+      stock: v.number(),                      // -1 for unlimited
+      basePrice: v.optional(v.number()),      // Override rarity-based price
+      restockRate: v.optional(v.number()),    // Items per game-day to restock
+    })),
+
+    // Pricing Rules
+    basePriceModifier: v.number(),            // 1.0 = normal, 1.5 = expensive
+    buybackModifier: v.number(),              // 0.5 = 50% of sell price for buyback
+    buybackDuration: v.optional(v.number()),  // Minutes until buyback expires (null = never expires)
+
+    // Dynamic Pricing Config
+    dynamicPricing: v.optional(v.object({
+      reputationFactor: v.optional(v.boolean()),
+      supplyDemandFactor: v.optional(v.boolean()),
+      eventFactor: v.optional(v.boolean()),
+    })),
+
+    // Buyback System - items players have sold
+    buybackInventory: v.optional(v.array(v.object({
+      itemId: v.id("items"),
+      soldByPlayerId: v.string(),
+      soldAt: v.number(),
+      buybackPrice: v.number(),
+      expiresAt: v.optional(v.number()),
+    }))),
+
+    isOpen: v.optional(v.boolean()),          // Can be closed by events
+    aiManaged: v.optional(v.boolean()),       // AI can modify inventory
+    lastAiUpdate: v.optional(v.number()),
+  })
+  .index("by_campaign", ["campaignId"])
+  .index("by_location", ["locationId"]),
+
+  // Shop Transactions - track all shop activity
+  shopTransactions: defineTable({
+    campaignId: v.id("campaigns"),
+    shopId: v.id("shops"),
+    playerId: v.string(),
+    type: v.string(),                         // "buy", "sell", "buyback"
+    itemId: v.id("items"),
+    quantity: v.number(),
+    pricePerUnit: v.number(),
+    totalPrice: v.number(),
+    timestamp: v.number(),
+  })
+  .index("by_campaign", ["campaignId"])
+  .index("by_shop", ["shopId"])
+  .index("by_player", ["playerId"]),
+
 });

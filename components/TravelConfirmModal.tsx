@@ -117,7 +117,7 @@ export function TravelConfirmModal({
             <div className="flex flex-col items-center gap-1.5">
               <div
                 className="w-4 h-4 rounded-full ring-2 ring-offset-2 ring-offset-slate-950"
-                style={{ backgroundColor: destColor, ringColor: destColor }}
+                style={{ backgroundColor: destColor, ['--tw-ring-color' as string]: destColor }}
               />
               <span className="text-xs text-slate-300 font-medium">{destination.name}</span>
             </div>

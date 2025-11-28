@@ -31,8 +31,8 @@ interface Campaign {
     xpRate?: number;
     character?: Character;
     creatorName?: string;
-    imageUrl?: string;
-    playerCount?: number;
+    imageUrl?: string | null;
+    playCount?: number;
 }
 
 interface HeroCharacter {

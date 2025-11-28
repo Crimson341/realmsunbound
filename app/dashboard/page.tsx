@@ -883,7 +883,7 @@ const RealmCard = ({ campaign, dark }: { campaign: Campaign; dark: boolean }) =>
                     <div className="flex items-center gap-2">
                         <User size={14} className="text-indigo-400" />
                         <span className={`text-xs font-bold ${dark ? 'text-gray-400' : 'text-gray-500'}`}>
-                            {campaign.playerCount || 0} Players
+                            {campaign.playCount || 0} Players
                         </span>
                     </div>
                     <ChevronRight size={16} className={`ml-auto transition-transform group-hover:translate-x-1 ${

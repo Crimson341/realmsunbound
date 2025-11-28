@@ -177,7 +177,7 @@ export default function ForgeDashboard() {
                                                 <div className={`flex items-center gap-4 pt-4 border-t ${dark ? 'border-[#2a2d3e]' : 'border-[#f0f0f0]'}`}>
                                                     <div className={`flex items-center gap-2 text-xs font-bold uppercase tracking-wider ${dark ? 'text-[#e8e6e3]/40' : 'text-[#43485C]/40'}`}>
                                                         <Shield size={12} />
-                                                        <span>{campaign.playerCount || 0} Heroes</span>
+                                                        <span>{campaign.playCount || 0} Heroes</span>
                                                     </div>
                                                     <div className={`flex items-center gap-2 text-xs font-bold uppercase tracking-wider ${dark ? 'text-[#e8e6e3]/40' : 'text-[#43485C]/40'}`}>
                                                         <Crown size={12} />

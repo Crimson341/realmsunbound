@@ -168,7 +168,7 @@ export function MapCanvas({
   };
 
   // Handle drawing line start
-  const handleNodeMouseDown = (id: string, _e: KonvaEventObject<MouseEvent>) => {
+  const handleNodeMouseDown = (id: string) => {
     if (!isEditor || tool !== "draw") return;
 
     const pos = getPosition(id);
@@ -417,7 +417,7 @@ export function MapCanvas({
                   y={pos.y}
                   draggable={isEditor && tool === "select"}
                   onDragEnd={(e) => handleDragEnd(loc._id, e)}
-                  onMouseDown={(e) => handleNodeMouseDown(loc._id, e)}
+                  onMouseDown={() => handleNodeMouseDown(loc._id)}
                   onMouseUp={() => handleNodeMouseUp(loc._id)}
                   onClick={() => handleNodeClick(loc)}
                   onDblClick={() => handleNodeDblClick(loc)}

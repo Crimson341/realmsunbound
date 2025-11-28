@@ -263,7 +263,7 @@ In this interconnected web of fate, every player is both author and audience, he
 ];
 
 export default function LorePage() {
-    const bookRef = useRef<any>(null);
+    const bookRef = useRef<{ pageFlip: () => { flipNext: () => void; flipPrev: () => void } | undefined }>(null);
     const { theme, mounted } = useTheme();
     const dark = mounted ? theme === 'dark' : false;
 

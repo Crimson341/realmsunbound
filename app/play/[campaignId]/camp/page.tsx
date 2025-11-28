@@ -25,7 +25,6 @@ import {
   MapPin,
   AlertTriangle,
   Sparkles,
-  Loader2,
 } from "lucide-react";
 
 // Follower role icons

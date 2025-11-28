@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Stage, Layer, Circle, Line, Text, Group } from "react-konva";
 import { KonvaEventObject } from "konva/lib/Node";
 import { useMutation } from "convex/react";
@@ -13,7 +13,6 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize,
-  Save,
   Loader2
 } from "lucide-react";
 
@@ -169,7 +168,7 @@ export function MapCanvas({
   };
 
   // Handle drawing line start
-  const handleNodeMouseDown = (id: string, e: KonvaEventObject<MouseEvent>) => {
+  const handleNodeMouseDown = (id: string, _e: KonvaEventObject<MouseEvent>) => {
     if (!isEditor || tool !== "draw") return;
 
     const pos = getPosition(id);

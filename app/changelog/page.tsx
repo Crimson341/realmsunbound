@@ -106,8 +106,6 @@ export default function GenshinChangelog() {
     }, []);
 
     const goldColor = dark ? '#D4AF37' : '#D3BC8E';
-    const textColor = dark ? '#e8e6e3' : '#3B4255';
-    const mutedColor = dark ? '#6b7280' : '#838692';
 
     return (
         <div className={`min-h-screen font-sans overflow-x-hidden relative ${

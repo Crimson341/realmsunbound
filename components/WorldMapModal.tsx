@@ -53,7 +53,6 @@ function getTypeColor(type: string): string {
 export function WorldMapModal({
   isOpen,
   onClose,
-  campaignId,
   locations,
   currentLocationId,
   onTravelRequest,

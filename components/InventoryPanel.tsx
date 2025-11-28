@@ -93,7 +93,7 @@ export function InventoryPanel({
     playerId,
   });
   
-  const useItemMutation = useMutation(api.inventory.useItem);
+  const itemMutation = useMutation(api.inventory.useItem);
   const equipItemMutation = useMutation(api.inventory.equipItem);
   const unequipItemMutation = useMutation(api.inventory.unequipItem);
 
@@ -137,7 +137,7 @@ export function InventoryPanel({
     setContextMenu(null);
 
     try {
-      const result = await useItemMutation({
+      const result = await itemMutation({
         campaignId,
         playerId,
         itemId: item.itemId,

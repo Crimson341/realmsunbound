@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Zap, Clock, Sword, Heart, Shield, Sparkles, Lock, X, Info } from "lucide-react";
+import { Zap, Clock, Sword, Heart, Shield, Sparkles, X, Info } from "lucide-react";
 
 // Type for ability data
 interface Ability {
@@ -384,11 +384,10 @@ export function AbilitiesBar({
 export function AbilitiesQuickBar({
     abilities,
     currentEnergy,
-    maxEnergy,
     energyName = "Energy",
     onUseAbility,
     disabled = false,
-}: Omit<AbilitiesBarProps, "inCombat">) {
+}: Omit<AbilitiesBarProps, "inCombat" | "maxEnergy">) {
     const activeAbilities = abilities.filter((a) => !a.isPassive).slice(0, 6); // Show max 6
 
     if (abilities.length === 0) {

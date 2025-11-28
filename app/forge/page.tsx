@@ -9,7 +9,7 @@ import { useAuth } from '@workos-inc/authkit-nextjs/components';
 import { useTheme } from '@/components/ThemeProvider';
 import { motion } from 'framer-motion';
 
-const StarPattern = ({ dark }: { dark?: boolean }) => (
+const StarPattern = () => (
     <div className="absolute inset-0 opacity-[0.03] pointer-events-none" 
          style={{ 
              backgroundImage: 'radial-gradient(#D4AF37 1px, transparent 1px)', 
@@ -21,7 +21,7 @@ const StarPattern = ({ dark }: { dark?: boolean }) => (
 const DivineLoader = ({ dark }: { dark?: boolean }) => (
     <div className={`flex flex-col items-center justify-center h-screen overflow-hidden relative selection:bg-[#D4AF37] selection:text-white ${dark ? 'bg-[#0f1119]' : 'bg-[#fcfcfc]'}`}>
         <div className={`absolute inset-0 ${dark ? 'bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-[#1a1d2e]/50 via-[#0f1119] to-[#0f1119]' : 'bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-yellow-50/50 via-white to-white'}`} />
-        <StarPattern dark={dark} />
+        <StarPattern />
         <div className="relative z-10 flex flex-col items-center gap-8">
             <div className="relative w-40 h-40 flex items-center justify-center">
                 <motion.div 
@@ -67,7 +67,7 @@ export default function ForgeDashboard() {
             {/* Background */}
             <div className={`fixed inset-0 z-0 pointer-events-none ${dark ? 'bg-[#0a0c12]' : 'bg-[#fcfcfc]'}`}>
                  <div className="absolute inset-0 opacity-[0.03] bg-[url('https://www.transparenttextures.com/patterns/paper.png')]" />
-                 <StarPattern dark={dark} />
+                 <StarPattern />
                  <div className={`absolute inset-0 ${dark ? 'bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0)_50%,rgba(212,175,55,0.02)_100%)]' : 'bg-[radial-gradient(circle_at_center,transparent_0%,rgba(255,255,255,0)_50%,rgba(212,175,55,0.03)_100%)]'}`} />
             </div>
 

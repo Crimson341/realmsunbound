@@ -272,7 +272,8 @@ const HighlightText = ({ text, entities }: { text: string, entities: { name: str
 
     const parts = useMemo(() => {
         if (sortedEntities.length === 0) return [text];
-        const pattern = new RegExp(`(${sortedEntities.map(e => e.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
+        // Use word boundaries \b to avoid matching substrings (e.g., "cat" in "suffocating")
+        const pattern = new RegExp(`\\b(${sortedEntities.map(e => e.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`, 'gi');
         return text.split(pattern);
     }, [text, sortedEntities]);
 

@@ -222,7 +222,7 @@ export default function UserDashboard() {
         ]
         : [
             { label: 'Realms', value: myCampaigns?.length || 0, icon: Map, color: 'text-amber-500' },
-            { label: 'Players', value: myCampaigns?.reduce((acc, c) => acc + (c.playerCount || 0), 0) || 0, icon: User, color: 'text-indigo-400' },
+            { label: 'Players', value: myCampaigns?.reduce((acc, c) => acc + (c.playCount || 0), 0) || 0, icon: User, color: 'text-indigo-400' },
         ];
 
     return (

@@ -37,6 +37,18 @@ export default defineSchema({
     terminology: v.optional(v.string()), // JSON: {"mana": "Chakra", "spells": "Jutsu"}
     statConfig: v.optional(v.string()), // JSON: Definition of stats [{"key": "nin", "label": "Ninjutsu"}]
     theme: v.optional(v.string()), // Visual preset: 'fantasy', 'sci-fi', 'ninja'
+
+    // --- ABILITY SYSTEM CONFIG ---
+    abilitySystemConfig: v.optional(v.string()), // JSON: Full ability system configuration
+    // Example: {
+    //   "abilityTermSingular": "Jutsu",
+    //   "abilityTermPlural": "Jutsu",
+    //   "energyTerm": "Chakra",
+    //   "categories": ["Ninjutsu", "Taijutsu", "Genjutsu", "Senjutsu"],
+    //   "damageTypes": ["Fire", "Water", "Earth", "Wind", "Lightning"],
+    //   "statusEffects": ["Burn", "Freeze", "Paralysis", "Poison"],
+    //   "rarityLevels": ["E-Rank", "D-Rank", "C-Rank", "B-Rank", "A-Rank", "S-Rank"]
+    // }
     
     // --- WORLD SYSTEMS ---
     bountyEnabled: v.optional(v.boolean()), // Enable bounty/crime system for this campaign
@@ -276,37 +288,77 @@ export default defineSchema({
     filterFields: ["campaignId"],
   }),
 
+  // Abilities/Spells/Jutsu/Powers - Genre-agnostic ability system
   spells: defineTable({
     userId: v.string(),
     campaignId: v.optional(v.id("campaigns")),
+
+    // --- CORE IDENTITY ---
     name: v.string(),
-    level: v.number(),
-    school: v.string(),
-    castingTime: v.string(),
-    range: v.string(),
+    description: v.optional(v.string()),              // What does this ability do?
+    category: v.optional(v.string()),                 // Creator-defined: "Ninjutsu", "Fire Magic", "Psychic", etc.
+    subcategory: v.optional(v.string()),              // More specific: "Fire Style", "Healing", "Offensive"
+    iconEmoji: v.optional(v.string()),                // Emoji icon for display
+    tags: v.optional(v.array(v.string())),            // Flexible tags for filtering
+
+    // --- REQUIREMENTS ---
+    requiredLevel: v.optional(v.number()),            // Minimum level to learn/use
+    requiredStats: v.optional(v.string()),            // JSON: { "ninjutsu": 10, "chakra_control": 5 }
+    requiredItems: v.optional(v.string()),            // JSON: ["Fire Scroll", "Chakra Paper"]
+    requiredAbilities: v.optional(v.string()),        // JSON: ["Basic Fireball"] - must know these first
+
+    // --- COST & COOLDOWN ---
+    energyCost: v.optional(v.number()),               // Cost in energy/mana/chakra to use
+    healthCost: v.optional(v.number()),               // Some abilities cost HP (forbidden jutsu)
+    cooldown: v.optional(v.number()),                 // Turns before can use again
+    usesPerDay: v.optional(v.number()),               // Limited uses per day/rest
+    isPassive: v.optional(v.boolean()),               // Always active, no activation needed
+
+    // --- EFFECTS ---
+    damage: v.optional(v.number()),                   // Direct damage amount
+    damageType: v.optional(v.string()),               // "fire", "lightning", "physical", etc.
+    damageScaling: v.optional(v.string()),            // JSON: { "stat": "ninjutsu", "ratio": 0.5 }
+    healing: v.optional(v.number()),                  // Healing amount
+    healingScaling: v.optional(v.string()),           // JSON: { "stat": "wisdom", "ratio": 0.3 }
+    buffEffect: v.optional(v.string()),               // JSON: { stat: "speed", amount: 5, duration: 3 }
+    debuffEffect: v.optional(v.string()),             // JSON: { stat: "defense", amount: -3, duration: 2 }
+    statusEffect: v.optional(v.string()),             // "burn", "freeze", "stun", "poison", etc.
+    statusDuration: v.optional(v.number()),           // How long status effect lasts
+
+    // --- TARGETING ---
+    targetType: v.optional(v.string()),               // "self", "single", "area", "all_enemies", "all_allies"
+    range: v.optional(v.string()),                    // "melee", "short", "medium", "long", "unlimited"
+    areaSize: v.optional(v.string()),                 // "small", "medium", "large", "massive"
+
+    // --- SPECIAL PROPERTIES ---
+    castTime: v.optional(v.string()),                 // "instant", "1 turn", "channeled", "ritual"
+    interruptible: v.optional(v.boolean()),           // Can be interrupted during cast
+
+    // --- UPGRADE/MASTERY ---
+    canUpgrade: v.optional(v.boolean()),              // Can this ability be improved?
+    upgradedVersion: v.optional(v.string()),          // Name of the upgraded ability
+
+    // --- LORE & FLAVOR ---
+    lore: v.optional(v.string()),                     // Background story of this ability
+    creator: v.optional(v.string()),                  // Who invented this ability?
+    rarity: v.optional(v.string()),                   // "common", "rare", "legendary", "forbidden"
+    isForbidden: v.optional(v.boolean()),             // Forbidden technique (narrative flag)
+    notes: v.optional(v.string()),                    // Creator notes
+
+    // --- LEGACY FIELDS (backwards compatibility) ---
+    level: v.optional(v.number()),
+    school: v.optional(v.string()),
+    castingTime: v.optional(v.string()),
+    range_legacy: v.optional(v.string()),
     components: v.optional(v.string()),
-    duration: v.string(),
+    duration: v.optional(v.string()),
     save: v.optional(v.string()),
     effectId: v.optional(v.id("effectsLibrary")),
-    description: v.optional(v.string()),
     damageDice: v.optional(v.string()),
-    damageType: v.optional(v.string()),
     areaShape: v.optional(v.string()),
-    areaSize: v.optional(v.string()),
     higherLevels: v.optional(v.string()),
     concentration: v.optional(v.boolean()),
     ritual: v.optional(v.boolean()),
-    tags: v.optional(v.array(v.string())),
-    notes: v.optional(v.string()),
-    // --- COMBAT ABILITY SYSTEM ---
-    energyCost: v.optional(v.number()), // Cost in mana/chakra/energy to cast
-    cooldown: v.optional(v.number()), // Turns before can use again (0 = instant)
-    damage: v.optional(v.number()), // Direct damage amount
-    healing: v.optional(v.number()), // Healing amount
-    buffEffect: v.optional(v.string()), // JSON: { stat: "strength", amount: 5, duration: 3 }
-    debuffEffect: v.optional(v.string()), // JSON: { stat: "defense", amount: -3, duration: 2 }
-    isPassive: v.optional(v.boolean()), // Always active, no energy cost
-    iconEmoji: v.optional(v.string()), // Emoji icon for display (e.g., "🔥", "⚡")
   }).index("by_campaign", ["campaignId"]).index("by_user", ["userId"]),
 
   // --- WORLD SYSTEMS ---
@@ -435,8 +487,75 @@ export default defineSchema({
     timestamp: v.number(),
     choices: v.optional(v.array(v.string())),
     questOffer: v.optional(v.array(v.string())),
+
+    // --- CONTEXT OPTIMIZATION ---
+    isAnchor: v.optional(v.boolean()),         // Anchor messages never get trimmed (major plot moments)
+    anchorReason: v.optional(v.string()),      // Why this is an anchor: "quest_complete", "npc_death", "major_choice", "location_discovery"
+    summarized: v.optional(v.boolean()),       // Has this message been included in a summary?
   })
-  .index("by_campaign_and_player", ["campaignId", "playerId"]),
+  .index("by_campaign_and_player", ["campaignId", "playerId"])
+  .index("by_anchor", ["campaignId", "playerId", "isAnchor"]),
+
+  // Story Events - key plot points for context reconstruction
+  storyEvents: defineTable({
+    campaignId: v.id("campaigns"),
+    playerId: v.string(),
+
+    // Event classification
+    type: v.string(),  // "quest_started", "quest_completed", "quest_failed", "npc_met", "npc_killed",
+                       // "location_discovered", "item_acquired", "item_lost", "level_up", "faction_joined",
+                       // "faction_left", "major_choice", "combat_victory", "combat_defeat", "secret_found",
+                       // "relationship_change", "story_milestone"
+
+    // Event details
+    title: v.string(),                         // Short title: "Met Sasuke at Training Grounds"
+    description: v.string(),                   // Brief description of what happened
+    importance: v.number(),                    // 1-10, affects retention priority
+
+    // Related entities
+    relatedNpcIds: v.optional(v.array(v.id("npcs"))),
+    relatedLocationId: v.optional(v.id("locations")),
+    relatedQuestId: v.optional(v.id("quests")),
+    relatedItemIds: v.optional(v.array(v.id("items"))),
+
+    // Consequences (for context reconstruction)
+    consequences: v.optional(v.string()),      // JSON: What changed as a result
+
+    // Tracking
+    timestamp: v.number(),
+    messageId: v.optional(v.id("gameMessages")),  // Link to the message where this happened
+  })
+  .index("by_campaign_player", ["campaignId", "playerId"])
+  .index("by_type", ["campaignId", "playerId", "type"])
+  .index("by_importance", ["campaignId", "playerId", "importance"]),
+
+  // Story Summaries - condensed story arcs for context efficiency
+  storySummaries: defineTable({
+    campaignId: v.id("campaigns"),
+    playerId: v.string(),
+
+    // Summary scope
+    type: v.string(),  // "chapter", "arc", "session", "full"
+    title: v.optional(v.string()),             // "Chapter 1: The Beginning", "Training Arc"
+
+    // The actual summary
+    content: v.string(),                       // Condensed narrative of events
+
+    // What this summary covers
+    startTimestamp: v.number(),
+    endTimestamp: v.number(),
+    messageCount: v.number(),                  // How many messages were summarized
+    eventIds: v.optional(v.array(v.id("storyEvents"))),  // Events included in this summary
+
+    // For sliding window - which messages to skip
+    lastSummarizedMessageId: v.optional(v.id("gameMessages")),
+
+    // Quality tracking
+    createdAt: v.number(),
+    updatedAt: v.optional(v.number()),
+  })
+  .index("by_campaign_player", ["campaignId", "playerId"])
+  .index("by_type", ["campaignId", "playerId", "type"]),
 
   // --- SHOP SYSTEM ---
 
@@ -501,5 +620,107 @@ export default defineSchema({
   .index("by_campaign", ["campaignId"])
   .index("by_shop", ["shopId"])
   .index("by_player", ["playerId"]),
+
+  // --- CONDITIONAL LOGIC SYSTEM ---
+
+  // Conditions - creator-defined if-else rules for game logic
+  conditions: defineTable({
+    campaignId: v.id("campaigns"),
+    name: v.string(),                           // Human-readable name for the rule
+    description: v.optional(v.string()),        // What this condition does
+
+    // When to evaluate this condition
+    trigger: v.string(), // "on_enter_location", "on_exit_location", "on_combat_start", "on_item_use",
+                         // "on_npc_interact", "on_quest_update", "on_level_up", "on_ability_use",
+                         // "on_game_start", "on_turn", "always"
+    triggerContext: v.optional(v.string()),     // Specific context (e.g., location ID, NPC ID)
+
+    // The condition logic (JSON AST)
+    // Examples:
+    // { "eq": ["player.faction", "Hidden Leaf"] }
+    // { "and": [{ "gte": ["player.level", 10] }, { "has_item": "Shadow Cloak" }] }
+    // { "or": [{ "quest_completed": "bell_test" }, { "gte": ["player.reputation.Hokage", 50] }] }
+    rules: v.string(),
+
+    // Actions when condition is TRUE (JSON array)
+    // [{ "type": "block_entry", "message": "You cannot enter here" }, { "type": "set_flag", "key": "warned", "value": true }]
+    thenActions: v.string(),
+
+    // Actions when condition is FALSE (optional)
+    elseActions: v.optional(v.string()),
+
+    // Execution settings
+    priority: v.number(),                       // Higher = evaluated first (default 0)
+    isActive: v.boolean(),                      // Can be toggled on/off
+    executeOnce: v.optional(v.boolean()),       // Only triggers once per player
+    cooldownSeconds: v.optional(v.number()),    // Cooldown before can trigger again
+
+    // Metadata
+    createdAt: v.number(),
+    updatedAt: v.optional(v.number()),
+  })
+  .index("by_campaign", ["campaignId"])
+  .index("by_trigger", ["trigger"])
+  .index("by_active", ["isActive"]),
+
+  // Condition Execution Log - track when conditions fire (for debugging & executeOnce)
+  conditionExecutions: defineTable({
+    campaignId: v.id("campaigns"),
+    conditionId: v.id("conditions"),
+    playerId: v.string(),
+    result: v.boolean(),                        // Did condition evaluate to true?
+    triggeredAt: v.number(),
+    actionsExecuted: v.optional(v.string()),    // JSON array of actions that ran
+  })
+  .index("by_condition", ["conditionId"])
+  .index("by_player", ["playerId"])
+  .index("by_campaign_player", ["campaignId", "playerId"]),
+
+  // Player Flags - custom key-value storage for condition system
+  playerFlags: defineTable({
+    campaignId: v.id("campaigns"),
+    playerId: v.string(),
+    key: v.string(),                            // Flag name (e.g., "discovered_secret_cave", "talked_to_elder")
+    value: v.string(),                          // JSON value (string, number, boolean, array)
+    setAt: v.number(),
+    setBy: v.optional(v.string()),              // "condition", "quest", "ai", "manual"
+  })
+  .index("by_campaign_player", ["campaignId", "playerId"])
+  .index("by_key", ["key"]),
+
+  // Player Abilities - track which abilities/spells a player has learned
+  playerAbilities: defineTable({
+    campaignId: v.id("campaigns"),
+    playerId: v.string(),
+    spellId: v.id("spells"),
+    learnedAt: v.number(),
+    learnedFrom: v.optional(v.string()),        // "level_up", "quest", "trainer", "condition", "scroll"
+    isEquipped: v.optional(v.boolean()),        // For ability loadout systems
+  })
+  .index("by_campaign_player", ["campaignId", "playerId"])
+  .index("by_spell", ["spellId"]),
+
+  // Player Visited Locations - track exploration for conditions
+  playerVisitedLocations: defineTable({
+    campaignId: v.id("campaigns"),
+    playerId: v.string(),
+    locationId: v.id("locations"),
+    firstVisitAt: v.number(),
+    lastVisitAt: v.number(),
+    visitCount: v.number(),
+  })
+  .index("by_campaign_player", ["campaignId", "playerId"])
+  .index("by_location", ["locationId"]),
+
+  // Player Reputation - track reputation with factions
+  playerReputation: defineTable({
+    campaignId: v.id("campaigns"),
+    playerId: v.string(),
+    factionId: v.id("factions"),
+    reputation: v.number(),                     // Can be negative (hostile) to positive (allied)
+    updatedAt: v.number(),
+  })
+  .index("by_campaign_player", ["campaignId", "playerId"])
+  .index("by_faction", ["factionId"]),
 
 });

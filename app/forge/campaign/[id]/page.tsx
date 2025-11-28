@@ -6,7 +6,7 @@ import { useParams } from 'next/navigation';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
-import { Map, Users, Scroll, Zap, Settings, Plus, Save, ArrowLeft, Loader2, Link as LinkIcon, Package, Skull, Palette, Sparkles, ChevronDown, Sword, Shield, Crown, Store, Trash2 } from 'lucide-react';
+import { Map, Users, Scroll, Zap, Settings, Plus, Save, ArrowLeft, Loader2, Link as LinkIcon, Package, Skull, Palette, Sparkles, ChevronDown, Sword, Shield, Crown, Store, Trash2, GitBranch, Play, Pause } from 'lucide-react';
 import Link from 'next/link';
 import { MentionTextArea } from '@/components/MentionTextArea';
 import { motion } from 'framer-motion';
@@ -43,7 +43,14 @@ export default function CampaignManager() {
     const removeItemFromShop = useMutation(api.shops.removeItemFromShop);
     const campaignShops = useQuery(api.shops.getCampaignShops, { campaignId });
 
-    const [activeTab, setActiveTab] = useState<'overview' | 'realm' | 'npcs' | 'events' | 'quests' | 'items' | 'spells' | 'monsters' | 'shops' | 'players'>('overview');
+    // Condition mutations
+    const createCondition = useMutation(api.conditions.createCondition);
+    const updateCondition = useMutation(api.conditions.updateCondition);
+    const deleteCondition = useMutation(api.conditions.deleteCondition);
+    const toggleCondition = useMutation(api.conditions.toggleCondition);
+    const campaignConditions = useQuery(api.conditions.getConditions, { campaignId });
+
+    const [activeTab, setActiveTab] = useState<'overview' | 'realm' | 'npcs' | 'events' | 'quests' | 'items' | 'spells' | 'monsters' | 'shops' | 'conditions' | 'players'>('overview');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const { theme, mounted } = useTheme();
     const dark = mounted ? theme === 'dark' : false;
@@ -100,28 +107,43 @@ export default function CampaignManager() {
     });
 
     // Spell State
-    const [spellName, setSpellName] = useState("");
-    const [spellSchool, setSpellSchool] = useState("");
-    const [spellLevel, setSpellLevel] = useState(0);
-    const [spellCastingTime, setSpellCastingTime] = useState("");
-    const [spellRange, setSpellRange] = useState("");
-    const [spellComponents, setSpellComponents] = useState("");
-    const [spellDuration, setSpellDuration] = useState("");
-    const [spellSave, setSpellSave] = useState("");
-    const [spellConcentration, setSpellConcentration] = useState(false);
-    const [spellRitual, setSpellRitual] = useState(false);
-    const [spellTags, setSpellTags] = useState("");
-    const [spellDamageDice, setSpellDamageDice] = useState("");
-    const [spellDamageType, setSpellDamageType] = useState("");
-    const [spellAreaShape, setSpellAreaShape] = useState("");
-    const [spellAreaSize, setSpellAreaSize] = useState("");
-    const [spellHigherLevels, setSpellHigherLevels] = useState("");
-    const [spellEffectId, setSpellEffectId] = useState("");
-    const [spellDescription, setSpellDescription] = useState("");
-    const [spellNotes, setSpellNotes] = useState("");
-    const [spellFilterTag, setSpellFilterTag] = useState("");
-    const [spellFilterConc, setSpellFilterConc] = useState(false);
-    const [spellFilterRitual, setSpellFilterRitual] = useState(false);
+    // Ability/Spell/Jutsu State - Genre-agnostic
+    const [abilityName, setAbilityName] = useState("");
+    const [abilityDescription, setAbilityDescription] = useState("");
+    const [abilityCategory, setAbilityCategory] = useState("");
+    const [abilitySubcategory, setAbilitySubcategory] = useState("");
+    const [abilityIconEmoji, setAbilityIconEmoji] = useState("");
+    const [abilityTags, setAbilityTags] = useState("");
+    // Requirements
+    const [abilityRequiredLevel, setAbilityRequiredLevel] = useState<number | undefined>(undefined);
+    const [abilityRequiredStats, setAbilityRequiredStats] = useState("");
+    // Cost & Cooldown
+    const [abilityEnergyCost, setAbilityEnergyCost] = useState<number | undefined>(undefined);
+    const [abilityHealthCost, setAbilityHealthCost] = useState<number | undefined>(undefined);
+    const [abilityCooldown, setAbilityCooldown] = useState<number | undefined>(undefined);
+    const [abilityUsesPerDay, setAbilityUsesPerDay] = useState<number | undefined>(undefined);
+    const [abilityIsPassive, setAbilityIsPassive] = useState(false);
+    // Effects
+    const [abilityDamage, setAbilityDamage] = useState<number | undefined>(undefined);
+    const [abilityDamageType, setAbilityDamageType] = useState("");
+    const [abilityHealing, setAbilityHealing] = useState<number | undefined>(undefined);
+    const [abilityStatusEffect, setAbilityStatusEffect] = useState("");
+    const [abilityStatusDuration, setAbilityStatusDuration] = useState<number | undefined>(undefined);
+    // Targeting
+    const [abilityTargetType, setAbilityTargetType] = useState("single");
+    const [abilityRange, setAbilityRange] = useState("melee");
+    const [abilityAreaSize, setAbilityAreaSize] = useState("");
+    // Special
+    const [abilityCastTime, setAbilityCastTime] = useState("instant");
+    const [abilityInterruptible, setAbilityInterruptible] = useState(false);
+    // Lore
+    const [abilityLore, setAbilityLore] = useState("");
+    const [abilityRarity, setAbilityRarity] = useState("common");
+    const [abilityIsForbidden, setAbilityIsForbidden] = useState(false);
+    const [abilityNotes, setAbilityNotes] = useState("");
+    // Upgrade
+    const [abilityCanUpgrade, setAbilityCanUpgrade] = useState(false);
+    const [abilityUpgradedVersion, setAbilityUpgradedVersion] = useState("");
 
     // Monster State
     const [monsterName, setMonsterName] = useState("");
@@ -146,9 +168,31 @@ export default function CampaignManager() {
     const [shopItemStock, setShopItemStock] = useState(-1);
     const [shopItemPrice, setShopItemPrice] = useState<number | undefined>(undefined);
 
+    // Condition State
+    const [conditionName, setConditionName] = useState("");
+    const [conditionDesc, setConditionDesc] = useState("");
+    const [conditionTrigger, setConditionTrigger] = useState("on_enter_location");
+    const [conditionTriggerContext, setConditionTriggerContext] = useState("");
+    const [conditionPriority, setConditionPriority] = useState(0);
+    const [conditionExecuteOnce, setConditionExecuteOnce] = useState(false);
+    const [selectedConditionId, setSelectedConditionId] = useState<Id<"conditions"> | null>(null);
+
+    // Condition Builder State - simplified for initial version
+    const [conditionType, setConditionType] = useState<'level' | 'faction' | 'has_item' | 'not_has_item' | 'has_ability' | 'at_location' | 'quest' | 'quest_active' | 'npc_alive' | 'npc_dead' | 'flag' | 'stat' | 'gold' | 'custom'>('level');
+    const [conditionOperator, setConditionOperator] = useState<'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte'>('gte');
+    const [conditionValue, setConditionValue] = useState("");
+    const [conditionValueNum, setConditionValueNum] = useState(1);
+    const [conditionStat, setConditionStat] = useState("strength"); // For stat-based conditions
+
+    // Action Builder State
+    const [actionType, setActionType] = useState<'block_entry' | 'show_message' | 'grant_ability' | 'remove_ability' | 'give_item' | 'remove_item' | 'set_flag' | 'clear_flag' | 'modify_reputation' | 'modify_hp' | 'modify_gold' | 'add_xp' | 'teleport' | 'spawn_npc' | 'kill_npc'>('block_entry');
+    const [actionMessage, setActionMessage] = useState("");
+    const [actionTarget, setActionTarget] = useState(""); // item name, ability name, flag key, etc.
+    const [actionAmount, setActionAmount] = useState(0);
+
 
     // Derived Data
-    const { campaign, locations, npcs, items, spells, monsters } = data || {};
+    const { campaign, locations, npcs, items, spells, monsters, factions, quests } = data || {};
 
     // Suggestions for MentionTextArea
     const mentionSuggestions = [
@@ -256,27 +300,47 @@ export default function CampaignManager() {
         try {
             await createSpell({
                 campaignId,
-                name: spellName,
-                school: spellSchool,
-                level: spellLevel,
-                castingTime: spellCastingTime,
-                range: spellRange,
-                components: spellComponents,
-                duration: spellDuration,
-                save: spellSave,
-                concentration: spellConcentration,
-                ritual: spellRitual,
-                tags: spellTags.split(',').map(t => t.trim()).filter(Boolean),
-                damageDice: spellDamageDice,
-                damageType: spellDamageType,
-                areaShape: spellAreaShape,
-                areaSize: spellAreaSize,
-                higherLevels: spellHigherLevels,
-                effectId: spellEffectId ? (spellEffectId as Id<"effectsLibrary">) : undefined,
-                description: spellDescription,
-                notes: spellNotes,
+                name: abilityName,
+                description: abilityDescription,
+                category: abilityCategory || undefined,
+                subcategory: abilitySubcategory || undefined,
+                iconEmoji: abilityIconEmoji || undefined,
+                tags: abilityTags ? abilityTags.split(',').map(t => t.trim()).filter(Boolean) : undefined,
+                requiredLevel: abilityRequiredLevel,
+                requiredStats: abilityRequiredStats || undefined,
+                energyCost: abilityEnergyCost,
+                healthCost: abilityHealthCost,
+                cooldown: abilityCooldown,
+                usesPerDay: abilityUsesPerDay,
+                isPassive: abilityIsPassive,
+                damage: abilityDamage,
+                damageType: abilityDamageType || undefined,
+                healing: abilityHealing,
+                statusEffect: abilityStatusEffect || undefined,
+                statusDuration: abilityStatusDuration,
+                targetType: abilityTargetType || undefined,
+                range: abilityRange || undefined,
+                areaSize: abilityAreaSize || undefined,
+                castTime: abilityCastTime || undefined,
+                interruptible: abilityInterruptible,
+                lore: abilityLore || undefined,
+                rarity: abilityRarity || undefined,
+                isForbidden: abilityIsForbidden,
+                canUpgrade: abilityCanUpgrade,
+                upgradedVersion: abilityUpgradedVersion || undefined,
+                notes: abilityNotes || undefined,
             });
-            setSpellName(""); setSpellDescription("");
+            // Reset form
+            setAbilityName(""); setAbilityDescription(""); setAbilityCategory(""); setAbilitySubcategory("");
+            setAbilityIconEmoji(""); setAbilityTags(""); setAbilityRequiredLevel(undefined);
+            setAbilityRequiredStats(""); setAbilityEnergyCost(undefined); setAbilityHealthCost(undefined);
+            setAbilityCooldown(undefined); setAbilityUsesPerDay(undefined); setAbilityIsPassive(false);
+            setAbilityDamage(undefined); setAbilityDamageType(""); setAbilityHealing(undefined);
+            setAbilityStatusEffect(""); setAbilityStatusDuration(undefined); setAbilityTargetType("single");
+            setAbilityRange("melee"); setAbilityAreaSize(""); setAbilityCastTime("instant");
+            setAbilityInterruptible(false); setAbilityLore(""); setAbilityRarity("common");
+            setAbilityIsForbidden(false); setAbilityCanUpgrade(false); setAbilityUpgradedVersion("");
+            setAbilityNotes("");
         } finally {
             setIsSubmitting(false);
         }
@@ -364,6 +428,144 @@ export default function CampaignManager() {
         }
     };
 
+    // Build rules JSON from form state
+    const buildRulesJson = () => {
+        switch (conditionType) {
+            case 'level':
+                return JSON.stringify({ [conditionOperator]: ["player.level", conditionValueNum] });
+            case 'faction':
+                return JSON.stringify({ eq: ["player.faction", conditionValue] });
+            case 'has_item':
+                return JSON.stringify({ has_item: conditionValue });
+            case 'not_has_item':
+                return JSON.stringify({ not: { has_item: conditionValue } });
+            case 'has_ability':
+                return JSON.stringify({ has_ability: conditionValue });
+            case 'at_location':
+                return JSON.stringify({ at_location: conditionValue });
+            case 'quest':
+                return JSON.stringify({ quest_completed: conditionValue });
+            case 'quest_active':
+                return JSON.stringify({ quest_status: [conditionValue, "active"] });
+            case 'npc_alive':
+                return JSON.stringify({ npc_alive: conditionValue });
+            case 'npc_dead':
+                return JSON.stringify({ npc_dead: conditionValue });
+            case 'flag':
+                return JSON.stringify({ flag: [conditionValue, true] });
+            case 'stat':
+                return JSON.stringify({ [conditionOperator]: [`player.stats.${conditionStat}`, conditionValueNum] });
+            case 'gold':
+                return JSON.stringify({ [conditionOperator]: ["player.gold", conditionValueNum] });
+            case 'custom':
+                return conditionValue; // User provides raw JSON
+            default:
+                return "{}";
+        }
+    };
+
+    // Build actions JSON from form state
+    const buildActionsJson = () => {
+        const action: Record<string, unknown> = { type: actionType };
+        switch (actionType) {
+            case 'block_entry':
+            case 'show_message':
+                action.message = actionMessage;
+                break;
+            case 'grant_ability':
+            case 'remove_ability':
+                action.abilityName = actionTarget;
+                break;
+            case 'give_item':
+                action.itemName = actionTarget;
+                action.quantity = actionAmount || 1;
+                break;
+            case 'remove_item':
+                action.itemName = actionTarget;
+                action.quantity = actionAmount || 1;
+                break;
+            case 'set_flag':
+                action.key = actionTarget;
+                action.value = true;
+                break;
+            case 'clear_flag':
+                action.key = actionTarget;
+                break;
+            case 'modify_reputation':
+                action.faction = actionTarget;
+                action.amount = actionAmount;
+                break;
+            case 'modify_hp':
+            case 'modify_gold':
+            case 'add_xp':
+                action.amount = actionAmount;
+                break;
+            case 'teleport':
+                action.locationId = actionTarget;
+                break;
+            case 'spawn_npc':
+            case 'kill_npc':
+                action.npcId = actionTarget;
+                break;
+        }
+        return JSON.stringify([action]);
+    };
+
+    const handleCreateCondition = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsSubmitting(true);
+        try {
+            await createCondition({
+                campaignId,
+                name: conditionName,
+                description: conditionDesc,
+                trigger: conditionTrigger,
+                triggerContext: conditionTriggerContext || undefined,
+                rules: buildRulesJson(),
+                thenActions: buildActionsJson(),
+                priority: conditionPriority,
+                executeOnce: conditionExecuteOnce,
+            });
+            // Reset form
+            setConditionName("");
+            setConditionDesc("");
+            setConditionTrigger("on_enter_location");
+            setConditionTriggerContext("");
+            setConditionPriority(0);
+            setConditionExecuteOnce(false);
+            setConditionType('level');
+            setConditionOperator('gte');
+            setConditionValue("");
+            setConditionValueNum(1);
+            setActionType('block_entry');
+            setActionMessage("");
+            setActionTarget("");
+            setActionAmount(0);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleDeleteCondition = async (conditionId: Id<"conditions">) => {
+        if (!confirm("Are you sure you want to delete this condition?")) return;
+        setIsSubmitting(true);
+        try {
+            await deleteCondition({ conditionId });
+            if (selectedConditionId === conditionId) setSelectedConditionId(null);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleToggleCondition = async (conditionId: Id<"conditions">) => {
+        setIsSubmitting(true);
+        try {
+            await toggleCondition({ conditionId });
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
     if (!data) return (
         <div className={`flex flex-col items-center justify-center h-screen ${dark ? 'bg-[#0f1119]' : 'bg-[#f8f9fa]'}`}>
              <div className="relative w-20 h-20 flex items-center justify-center mb-4">
@@ -397,7 +599,7 @@ export default function CampaignManager() {
                         </div>
                     </div>
                     <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide py-2">
-                        {['overview', 'realm', 'npcs', 'events', 'quests', 'items', 'spells', 'monsters', 'shops', 'players'].map((tab) => (
+                        {['overview', 'realm', 'npcs', 'events', 'quests', 'items', 'spells', 'monsters', 'shops', 'conditions', 'players'].map((tab) => (
                             <button
                                 key={tab}
                                 onClick={() => setActiveTab(tab as any)}
@@ -974,52 +1176,345 @@ export default function CampaignManager() {
                         </div>
                     )}
 
-                    {/* SPELLS TAB */}
+                    {/* ABILITIES TAB - Genre-agnostic (Spells/Jutsu/Powers/etc.) */}
                     {activeTab === 'spells' && (
-                        <div className="space-y-8">
-                            <div className="bg-white rounded-[2rem] border border-[#D4AF37]/20 p-8 shadow-lg relative">
-                                <div className="absolute top-0 right-0 w-full h-2 bg-gradient-to-l from-transparent via-[#D4AF37]/30 to-transparent" />
-                                <h3 className="text-xl font-bold mb-8 flex items-center gap-2 text-[#43485C]">
-                                    <Sparkles className="text-[#D4AF37]" />
-                                    Forge Spell
+                        <div className="grid md:grid-cols-3 gap-8">
+                            {/* Abilities List */}
+                            <div className="md:col-span-2 space-y-4">
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="text-xl font-bold text-[#43485C] flex items-center gap-2">
+                                        <Sparkles className="text-[#D4AF37]" /> Abilities ({spells?.length || 0})
+                                    </h3>
+                                </div>
+                                <p className="text-sm text-[#43485C]/60 font-sans mb-4">
+                                    Create abilities for your campaign - these can be spells, jutsu, techniques, powers, or anything else.
+                                </p>
+
+                                {!spells || spells.length === 0 ? (
+                                    <div className="text-center py-12 border-2 border-dashed border-[#D4AF37]/20 rounded-2xl bg-white/50">
+                                        <Sparkles className="mx-auto text-[#D4AF37]/50 mb-2" size={32} />
+                                        <p className="text-[#43485C]/50 font-sans">No abilities yet. Create your first one!</p>
+                                    </div>
+                                ) : (
+                                    <div className="grid gap-4">
+                                        {spells.map((spell: any) => (
+                                            <div key={spell._id} className="bg-white border border-[#D4AF37]/10 rounded-2xl p-5 hover:border-[#D4AF37]/30 transition-all">
+                                                <div className="flex justify-between items-start">
+                                                    <div className="flex items-start gap-3">
+                                                        {spell.iconEmoji && (
+                                                            <span className="text-2xl">{spell.iconEmoji}</span>
+                                                        )}
+                                                        <div>
+                                                            <h4 className="font-bold text-[#43485C] text-lg">{spell.name}</h4>
+                                                            <div className="flex flex-wrap items-center gap-2 mt-1">
+                                                                {spell.category && (
+                                                                    <span className="text-xs uppercase tracking-wider text-[#D4AF37] font-bold bg-[#D4AF37]/10 px-2 py-0.5 rounded-full">
+                                                                        {spell.category}
+                                                                    </span>
+                                                                )}
+                                                                {spell.rarity && (
+                                                                    <span className={`text-xs uppercase tracking-wider font-bold px-2 py-0.5 rounded-full ${
+                                                                        spell.rarity === 'legendary' || spell.rarity === 'S-Rank' ? 'bg-yellow-100 text-yellow-600' :
+                                                                        spell.rarity === 'rare' || spell.rarity === 'A-Rank' ? 'bg-purple-100 text-purple-600' :
+                                                                        spell.rarity === 'uncommon' || spell.rarity === 'B-Rank' ? 'bg-blue-100 text-blue-600' :
+                                                                        'bg-gray-100 text-gray-600'
+                                                                    }`}>
+                                                                        {spell.rarity}
+                                                                    </span>
+                                                                )}
+                                                                {spell.isForbidden && (
+                                                                    <span className="text-xs uppercase tracking-wider font-bold bg-red-100 text-red-600 px-2 py-0.5 rounded-full">
+                                                                        Forbidden
+                                                                    </span>
+                                                                )}
+                                                                {spell.isPassive && (
+                                                                    <span className="text-xs uppercase tracking-wider font-bold bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full">
+                                                                        Passive
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-right text-xs text-[#43485C]/50">
+                                                        {spell.energyCost && <div>{spell.energyCost} Energy</div>}
+                                                        {spell.damage && <div>{spell.damage} DMG</div>}
+                                                        {spell.healing && <div>{spell.healing} Heal</div>}
+                                                    </div>
+                                                </div>
+                                                {spell.description && (
+                                                    <p className="text-sm text-[#43485C]/60 mt-3 line-clamp-2 font-sans">{spell.description}</p>
+                                                )}
+                                                <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-[#D4AF37]/10">
+                                                    {spell.requiredLevel && (
+                                                        <span className="text-[10px] bg-[#f8f9fa] px-2 py-1 rounded text-[#43485C]/70">Lvl {spell.requiredLevel}+</span>
+                                                    )}
+                                                    {spell.cooldown && (
+                                                        <span className="text-[10px] bg-[#f8f9fa] px-2 py-1 rounded text-[#43485C]/70">{spell.cooldown} Turn CD</span>
+                                                    )}
+                                                    {spell.targetType && (
+                                                        <span className="text-[10px] bg-[#f8f9fa] px-2 py-1 rounded text-[#43485C]/70">{spell.targetType}</span>
+                                                    )}
+                                                    {spell.range && (
+                                                        <span className="text-[10px] bg-[#f8f9fa] px-2 py-1 rounded text-[#43485C]/70">{spell.range}</span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Create Ability Form */}
+                            <div className="bg-white border border-[#D4AF37]/20 rounded-2xl p-6 h-fit shadow-lg sticky top-4">
+                                <h3 className="text-lg font-bold text-[#43485C] mb-6 border-b border-[#D4AF37]/10 pb-4 flex items-center gap-2">
+                                    <Sparkles className="text-[#D4AF37]" size={18} />
+                                    Create Ability
                                 </h3>
-                                <form onSubmit={handleCreateSpell} className="space-y-6">
-                                    <div className="grid md:grid-cols-2 gap-6">
-                                        <Input label="Name" value={spellName} onChange={(e: any) => setSpellName(e.target.value)} required />
-                                        <Input label="School" value={spellSchool} onChange={(e: any) => setSpellSchool(e.target.value)} />
-                                    </div>
-                                    <div className="grid md:grid-cols-3 gap-6">
-                                        <Input label="Level" type="number" min={0} value={spellLevel} onChange={(e: any) => setSpellLevel(Math.max(0, parseInt(e.target.value, 10) || 0))} />
-                                        <Input label="Casting Time" value={spellCastingTime} onChange={(e: any) => setSpellCastingTime(e.target.value)} />
-                                        <Input label="Range" value={spellRange} onChange={(e: any) => setSpellRange(e.target.value)} />
-                                    </div>
-                                    <div className="grid md:grid-cols-3 gap-6">
-                                        <Input label="Components" value={spellComponents} onChange={(e: any) => setSpellComponents(e.target.value)} />
-                                        <Input label="Duration" value={spellDuration} onChange={(e: any) => setSpellDuration(e.target.value)} />
-                                        <Input label="Save / DC" value={spellSave} onChange={(e: any) => setSpellSave(e.target.value)} placeholder="DEX save" />
-                                    </div>
-                                    <div className="grid md:grid-cols-3 gap-6">
-                                        <div className="flex items-center gap-2 bg-[#f8f9fa] p-4 rounded-xl border border-[#D4AF37]/10">
-                                            <input type="checkbox" checked={spellConcentration} onChange={(e) => setSpellConcentration(e.target.checked)} className="h-4 w-4 accent-[#D4AF37]" />
-                                            <label className="text-sm font-bold text-[#43485C] uppercase tracking-wider text-xs">Concentration</label>
+                                <form onSubmit={handleCreateSpell} className="space-y-4">
+                                    {/* Core Identity */}
+                                    <div className="space-y-4">
+                                        <div className="grid grid-cols-4 gap-2">
+                                            <div className="col-span-3">
+                                                <Input label="Name" value={abilityName} onChange={(e: any) => setAbilityName(e.target.value)} required placeholder="Fire Ball Jutsu" />
+                                            </div>
+                                            <div>
+                                                <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Icon</label>
+                                                <input
+                                                    type="text"
+                                                    value={abilityIconEmoji}
+                                                    onChange={(e) => setAbilityIconEmoji(e.target.value)}
+                                                    placeholder="🔥"
+                                                    className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-center text-xl"
+                                                    maxLength={2}
+                                                />
+                                            </div>
                                         </div>
-                                        <div className="flex items-center gap-2 bg-[#f8f9fa] p-4 rounded-xl border border-[#D4AF37]/10">
-                                            <input type="checkbox" checked={spellRitual} onChange={(e) => setSpellRitual(e.target.checked)} className="h-4 w-4 accent-[#D4AF37]" />
-                                            <label className="text-sm font-bold text-[#43485C] uppercase tracking-wider text-xs">Ritual</label>
+                                        <TextArea label="Description" value={abilityDescription} onChange={(e: any) => setAbilityDescription(e.target.value)} placeholder="A powerful fire technique that..." />
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <Input label="Category" value={abilityCategory} onChange={(e: any) => setAbilityCategory(e.target.value)} placeholder="Ninjutsu" />
+                                            <Input label="Subcategory" value={abilitySubcategory} onChange={(e: any) => setAbilitySubcategory(e.target.value)} placeholder="Fire Style" />
                                         </div>
-                                        <Input label="Tags" value={spellTags} onChange={(e: any) => setSpellTags(e.target.value)} placeholder="fire, aoe, damage" />
+                                        <Input label="Tags (comma separated)" value={abilityTags} onChange={(e: any) => setAbilityTags(e.target.value)} placeholder="fire, offensive, aoe" />
                                     </div>
-                                    
-                                    <div className="pt-4">
-                                        <button
-                                            type="submit"
-                                            disabled={isSubmitting}
-                                            className="w-full bg-[#43485C] hover:bg-[#2d3142] text-white px-6 py-4 rounded-full font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg hover:shadow-xl text-sm uppercase tracking-widest"
-                                        >
-                                            {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : <Plus size={20} />}
-                                            Create Spell
-                                        </button>
+
+                                    {/* Requirements */}
+                                    <div className="border-t border-[#D4AF37]/10 pt-4">
+                                        <p className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider mb-3">Requirements</p>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div className="space-y-1">
+                                                <label className="text-xs text-[#43485C]/60 ml-1">Min Level</label>
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    value={abilityRequiredLevel ?? ''}
+                                                    onChange={(e) => setAbilityRequiredLevel(e.target.value ? parseInt(e.target.value) : undefined)}
+                                                    placeholder="5"
+                                                    className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-xs text-[#43485C]/60 ml-1">Rarity</label>
+                                                <select
+                                                    value={abilityRarity}
+                                                    onChange={(e) => setAbilityRarity(e.target.value)}
+                                                    className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                >
+                                                    <option value="common">Common</option>
+                                                    <option value="uncommon">Uncommon</option>
+                                                    <option value="rare">Rare</option>
+                                                    <option value="legendary">Legendary</option>
+                                                    <option value="E-Rank">E-Rank</option>
+                                                    <option value="D-Rank">D-Rank</option>
+                                                    <option value="C-Rank">C-Rank</option>
+                                                    <option value="B-Rank">B-Rank</option>
+                                                    <option value="A-Rank">A-Rank</option>
+                                                    <option value="S-Rank">S-Rank</option>
+                                                </select>
+                                            </div>
+                                        </div>
                                     </div>
+
+                                    {/* Cost & Cooldown */}
+                                    <div className="border-t border-[#D4AF37]/10 pt-4">
+                                        <p className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider mb-3">Cost & Cooldown</p>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div className="space-y-1">
+                                                <label className="text-xs text-[#43485C]/60 ml-1">Energy Cost</label>
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    value={abilityEnergyCost ?? ''}
+                                                    onChange={(e) => setAbilityEnergyCost(e.target.value ? parseInt(e.target.value) : undefined)}
+                                                    placeholder="10"
+                                                    className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-xs text-[#43485C]/60 ml-1">HP Cost (Forbidden)</label>
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    value={abilityHealthCost ?? ''}
+                                                    onChange={(e) => setAbilityHealthCost(e.target.value ? parseInt(e.target.value) : undefined)}
+                                                    placeholder="0"
+                                                    className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-xs text-[#43485C]/60 ml-1">Cooldown (turns)</label>
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    value={abilityCooldown ?? ''}
+                                                    onChange={(e) => setAbilityCooldown(e.target.value ? parseInt(e.target.value) : undefined)}
+                                                    placeholder="3"
+                                                    className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-xs text-[#43485C]/60 ml-1">Uses Per Day</label>
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    value={abilityUsesPerDay ?? ''}
+                                                    onChange={(e) => setAbilityUsesPerDay(e.target.value ? parseInt(e.target.value) : undefined)}
+                                                    placeholder="∞"
+                                                    className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2 mt-3 bg-[#f8f9fa] p-3 rounded-xl border border-[#D4AF37]/10">
+                                            <input type="checkbox" checked={abilityIsPassive} onChange={(e) => setAbilityIsPassive(e.target.checked)} className="h-4 w-4 accent-[#D4AF37]" />
+                                            <label className="text-xs text-[#43485C]">Passive (always active, no cost)</label>
+                                        </div>
+                                    </div>
+
+                                    {/* Effects */}
+                                    <div className="border-t border-[#D4AF37]/10 pt-4">
+                                        <p className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider mb-3">Effects</p>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div className="space-y-1">
+                                                <label className="text-xs text-[#43485C]/60 ml-1">Damage</label>
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    value={abilityDamage ?? ''}
+                                                    onChange={(e) => setAbilityDamage(e.target.value ? parseInt(e.target.value) : undefined)}
+                                                    placeholder="50"
+                                                    className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-xs text-[#43485C]/60 ml-1">Damage Type</label>
+                                                <input
+                                                    type="text"
+                                                    value={abilityDamageType}
+                                                    onChange={(e) => setAbilityDamageType(e.target.value)}
+                                                    placeholder="Fire"
+                                                    className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-xs text-[#43485C]/60 ml-1">Healing</label>
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    value={abilityHealing ?? ''}
+                                                    onChange={(e) => setAbilityHealing(e.target.value ? parseInt(e.target.value) : undefined)}
+                                                    placeholder="30"
+                                                    className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-xs text-[#43485C]/60 ml-1">Status Effect</label>
+                                                <input
+                                                    type="text"
+                                                    value={abilityStatusEffect}
+                                                    onChange={(e) => setAbilityStatusEffect(e.target.value)}
+                                                    placeholder="Burn"
+                                                    className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Targeting */}
+                                    <div className="border-t border-[#D4AF37]/10 pt-4">
+                                        <p className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider mb-3">Targeting</p>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            <div className="space-y-1">
+                                                <label className="text-xs text-[#43485C]/60 ml-1">Target</label>
+                                                <select
+                                                    value={abilityTargetType}
+                                                    onChange={(e) => setAbilityTargetType(e.target.value)}
+                                                    className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                >
+                                                    <option value="self">Self</option>
+                                                    <option value="single">Single Target</option>
+                                                    <option value="area">Area</option>
+                                                    <option value="all_enemies">All Enemies</option>
+                                                    <option value="all_allies">All Allies</option>
+                                                </select>
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-xs text-[#43485C]/60 ml-1">Range</label>
+                                                <select
+                                                    value={abilityRange}
+                                                    onChange={(e) => setAbilityRange(e.target.value)}
+                                                    className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                >
+                                                    <option value="self">Self</option>
+                                                    <option value="melee">Melee</option>
+                                                    <option value="short">Short</option>
+                                                    <option value="medium">Medium</option>
+                                                    <option value="long">Long</option>
+                                                    <option value="unlimited">Unlimited</option>
+                                                </select>
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-xs text-[#43485C]/60 ml-1">Cast Time</label>
+                                                <select
+                                                    value={abilityCastTime}
+                                                    onChange={(e) => setAbilityCastTime(e.target.value)}
+                                                    className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                >
+                                                    <option value="instant">Instant</option>
+                                                    <option value="1 turn">1 Turn</option>
+                                                    <option value="2 turns">2 Turns</option>
+                                                    <option value="channeled">Channeled</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Flags */}
+                                    <div className="border-t border-[#D4AF37]/10 pt-4">
+                                        <p className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider mb-3">Properties</p>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div className="flex items-center gap-2 bg-[#f8f9fa] p-3 rounded-xl border border-[#D4AF37]/10">
+                                                <input type="checkbox" checked={abilityIsForbidden} onChange={(e) => setAbilityIsForbidden(e.target.checked)} className="h-4 w-4 accent-[#D4AF37]" />
+                                                <label className="text-xs text-[#43485C]">Forbidden</label>
+                                            </div>
+                                            <div className="flex items-center gap-2 bg-[#f8f9fa] p-3 rounded-xl border border-[#D4AF37]/10">
+                                                <input type="checkbox" checked={abilityCanUpgrade} onChange={(e) => setAbilityCanUpgrade(e.target.checked)} className="h-4 w-4 accent-[#D4AF37]" />
+                                                <label className="text-xs text-[#43485C]">Can Upgrade</label>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Lore */}
+                                    <div className="border-t border-[#D4AF37]/10 pt-4">
+                                        <TextArea label="Lore/Background" value={abilityLore} onChange={(e: any) => setAbilityLore(e.target.value)} placeholder="The history of this technique..." />
+                                    </div>
+
+                                    <button
+                                        type="submit"
+                                        disabled={isSubmitting || !abilityName}
+                                        className="w-full py-3 bg-[#D4AF37] hover:bg-[#c9a432] text-white font-bold rounded-full transition-all shadow-lg text-sm flex items-center justify-center gap-2 uppercase tracking-widest mt-4 disabled:opacity-50"
+                                    >
+                                        {isSubmitting ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />}
+                                        Create Ability
+                                    </button>
                                 </form>
                             </div>
                         </div>
@@ -1341,6 +1836,692 @@ export default function CampaignManager() {
                                     >
                                         {isSubmitting ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />}
                                         Create Shop
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* CONDITIONS TAB */}
+                    {activeTab === 'conditions' && (
+                        <div className="grid md:grid-cols-3 gap-8">
+                            {/* Conditions List */}
+                            <div className="md:col-span-2 space-y-4">
+                                <h3 className="text-xl font-bold text-[#43485C] mb-4 flex items-center gap-2">
+                                    <GitBranch className="text-[#D4AF37]" /> Conditional Logic ({campaignConditions?.length || 0})
+                                </h3>
+                                <p className="text-sm text-[#43485C]/60 font-sans mb-4">
+                                    Create if-else rules that control game logic. For example: &quot;IF player is from Hidden Leaf village THEN block entry to Sand Village ANBU HQ&quot;.
+                                </p>
+                                {!campaignConditions || campaignConditions.length === 0 ? (
+                                    <div className="text-center py-12 border-2 border-dashed border-[#D4AF37]/20 rounded-2xl bg-white/50">
+                                        <GitBranch className="mx-auto text-[#D4AF37]/50 mb-2" size={32} />
+                                        <p className="text-[#43485C]/50 font-sans">No conditions yet. Create your first rule!</p>
+                                    </div>
+                                ) : (
+                                    <div className="grid gap-4">
+                                        {campaignConditions.map((condition) => {
+                                            let rulesDisplay = "";
+                                            try {
+                                                const rules = JSON.parse(condition.rules);
+                                                rulesDisplay = JSON.stringify(rules, null, 0).substring(0, 60) + "...";
+                                            } catch { rulesDisplay = condition.rules.substring(0, 60) + "..."; }
+
+                                            let actionsDisplay = "";
+                                            try {
+                                                const actions = JSON.parse(condition.thenActions);
+                                                if (Array.isArray(actions) && actions.length > 0) {
+                                                    actionsDisplay = actions.map((a: { type: string }) => a.type).join(", ");
+                                                }
+                                            } catch { actionsDisplay = "Custom"; }
+
+                                            return (
+                                                <div
+                                                    key={condition._id}
+                                                    className={`bg-white border rounded-2xl p-5 transition-all ${
+                                                        condition.isActive
+                                                            ? 'border-[#D4AF37]/30 hover:border-[#D4AF37]/50'
+                                                            : 'border-gray-200 opacity-60'
+                                                    }`}
+                                                >
+                                                    <div className="flex justify-between items-start">
+                                                        <div className="flex-1">
+                                                            <div className="flex items-center gap-2">
+                                                                <h4 className="font-bold text-[#43485C] text-lg">{condition.name}</h4>
+                                                                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                                                                    condition.isActive
+                                                                        ? 'bg-emerald-100 text-emerald-600'
+                                                                        : 'bg-gray-100 text-gray-500'
+                                                                }`}>
+                                                                    {condition.isActive ? 'Active' : 'Disabled'}
+                                                                </span>
+                                                            </div>
+                                                            <div className="flex items-center gap-2 mt-1">
+                                                                <span className="text-xs uppercase tracking-wider text-[#D4AF37] font-bold bg-[#D4AF37]/10 px-2 py-0.5 rounded-full">
+                                                                    {condition.trigger.replace(/_/g, ' ')}
+                                                                </span>
+                                                                {condition.executeOnce && (
+                                                                    <span className="text-xs uppercase tracking-wider text-blue-500 font-bold bg-blue-50 px-2 py-0.5 rounded-full">
+                                                                        Once Only
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <button
+                                                                onClick={() => handleToggleCondition(condition._id)}
+                                                                className={`p-1.5 rounded-lg transition-colors ${
+                                                                    condition.isActive
+                                                                        ? 'hover:bg-amber-100 text-amber-500'
+                                                                        : 'hover:bg-emerald-100 text-emerald-500'
+                                                                }`}
+                                                                title={condition.isActive ? 'Disable' : 'Enable'}
+                                                            >
+                                                                {condition.isActive ? <Pause size={14} /> : <Play size={14} />}
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleDeleteCondition(condition._id)}
+                                                                className="p-1.5 hover:bg-red-100 rounded-lg transition-colors text-red-400"
+                                                            >
+                                                                <Trash2 size={14} />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                    {condition.description && (
+                                                        <p className="text-sm text-[#43485C]/60 mt-2 line-clamp-2 font-sans">{condition.description}</p>
+                                                    )}
+                                                    <div className="mt-3 pt-3 border-t border-[#D4AF37]/10 grid grid-cols-2 gap-4">
+                                                        <div>
+                                                            <p className="text-[10px] font-bold text-[#D4AF37] uppercase tracking-wider mb-1">IF (Condition)</p>
+                                                            <p className="text-xs text-[#43485C]/70 font-mono bg-[#f8f9fa] p-2 rounded">{rulesDisplay}</p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-[10px] font-bold text-[#D4AF37] uppercase tracking-wider mb-1">THEN (Actions)</p>
+                                                            <p className="text-xs text-[#43485C]/70 bg-[#f8f9fa] p-2 rounded">{actionsDisplay}</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Create Condition Form */}
+                            <div className="bg-white border border-[#D4AF37]/20 rounded-2xl p-6 h-fit shadow-lg">
+                                <h3 className="text-lg font-bold text-[#43485C] mb-6 border-b border-[#D4AF37]/10 pb-4">Create Condition</h3>
+                                <form onSubmit={handleCreateCondition} className="space-y-4">
+                                    <Input label="Rule Name" placeholder="Block Hidden Leaf from Sand HQ" value={conditionName} onChange={(e: any) => setConditionName(e.target.value)} required />
+                                    <Input label="Description" placeholder="Prevents Hidden Leaf ninja from entering..." value={conditionDesc} onChange={(e: any) => setConditionDesc(e.target.value)} />
+
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Trigger (When to Check)</label>
+                                        <select
+                                            className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                            value={conditionTrigger}
+                                            onChange={(e) => setConditionTrigger(e.target.value)}
+                                        >
+                                            <option value="on_enter_location">On Enter Location</option>
+                                            <option value="on_exit_location">On Exit Location</option>
+                                            <option value="on_npc_interact">On NPC Interaction</option>
+                                            <option value="on_level_up">On Level Up</option>
+                                            <option value="on_quest_update">On Quest Update</option>
+                                            <option value="on_combat_start">On Combat Start</option>
+                                            <option value="on_item_use">On Item Use</option>
+                                            <option value="on_game_start">On Game Start</option>
+                                            <option value="always">Always (Every Turn)</option>
+                                        </select>
+                                    </div>
+
+                                    {(conditionTrigger === 'on_enter_location' || conditionTrigger === 'on_exit_location') && (
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Specific Location (Optional)</label>
+                                            <select
+                                                className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                value={conditionTriggerContext}
+                                                onChange={(e) => setConditionTriggerContext(e.target.value)}
+                                            >
+                                                <option value="">Any Location</option>
+                                                {locations?.map(loc => (
+                                                    <option key={loc._id} value={loc._id}>{loc.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    )}
+
+                                    {conditionTrigger === 'on_npc_interact' && (
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Specific NPC (Optional)</label>
+                                            <select
+                                                className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                value={conditionTriggerContext}
+                                                onChange={(e) => setConditionTriggerContext(e.target.value)}
+                                            >
+                                                <option value="">Any NPC</option>
+                                                {npcs?.map(npc => (
+                                                    <option key={npc._id} value={npc._id}>{npc.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    )}
+
+                                    <div className="border-t border-[#D4AF37]/10 pt-4">
+                                        <p className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider mb-3">IF (Condition)</p>
+
+                                        <div className="space-y-3">
+                                            <div className="space-y-1">
+                                                <label className="text-xs text-[#43485C]/60 ml-1">Check Type</label>
+                                                <select
+                                                    className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                    value={conditionType}
+                                                    onChange={(e) => setConditionType(e.target.value as any)}
+                                                >
+                                                    <optgroup label="Player Stats">
+                                                        <option value="level">Player Level</option>
+                                                        <option value="stat">Player Stat (Strength, etc.)</option>
+                                                        <option value="gold">Player Gold</option>
+                                                    </optgroup>
+                                                    <optgroup label="Inventory & Abilities">
+                                                        <option value="has_item">Has Item</option>
+                                                        <option value="not_has_item">Does NOT Have Item</option>
+                                                        <option value="has_ability">Has Ability/Spell</option>
+                                                    </optgroup>
+                                                    <optgroup label="World & Faction">
+                                                        <option value="faction">Player Faction Is</option>
+                                                        <option value="at_location">Player Is At Location</option>
+                                                        <option value="npc_alive">NPC Is Alive</option>
+                                                        <option value="npc_dead">NPC Is Dead</option>
+                                                    </optgroup>
+                                                    <optgroup label="Quests & Progress">
+                                                        <option value="quest">Quest Completed</option>
+                                                        <option value="quest_active">Quest Is Active</option>
+                                                        <option value="flag">Custom Flag Is Set</option>
+                                                    </optgroup>
+                                                    <optgroup label="Advanced">
+                                                        <option value="custom">Custom JSON (Advanced)</option>
+                                                    </optgroup>
+                                                </select>
+                                            </div>
+
+                                            {/* Level check */}
+                                            {conditionType === 'level' && (
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <select
+                                                        className="bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                        value={conditionOperator}
+                                                        onChange={(e) => setConditionOperator(e.target.value as any)}
+                                                    >
+                                                        <option value="gte">≥ (at least)</option>
+                                                        <option value="lte">≤ (at most)</option>
+                                                        <option value="eq">= (exactly)</option>
+                                                        <option value="gt">&gt; (greater than)</option>
+                                                        <option value="lt">&lt; (less than)</option>
+                                                    </select>
+                                                    <input
+                                                        type="number"
+                                                        min={1}
+                                                        value={conditionValueNum}
+                                                        onChange={(e) => setConditionValueNum(parseInt(e.target.value) || 1)}
+                                                        className="bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                        placeholder="Level"
+                                                    />
+                                                </div>
+                                            )}
+
+                                            {/* Stat check */}
+                                            {conditionType === 'stat' && (
+                                                <div className="space-y-2">
+                                                    <select
+                                                        className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                        value={conditionStat}
+                                                        onChange={(e) => setConditionStat(e.target.value)}
+                                                    >
+                                                        <option value="strength">Strength</option>
+                                                        <option value="dexterity">Dexterity</option>
+                                                        <option value="constitution">Constitution</option>
+                                                        <option value="intelligence">Intelligence</option>
+                                                        <option value="wisdom">Wisdom</option>
+                                                        <option value="charisma">Charisma</option>
+                                                        <option value="ninjutsu">Ninjutsu</option>
+                                                        <option value="taijutsu">Taijutsu</option>
+                                                        <option value="genjutsu">Genjutsu</option>
+                                                    </select>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <select
+                                                            className="bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                            value={conditionOperator}
+                                                            onChange={(e) => setConditionOperator(e.target.value as any)}
+                                                        >
+                                                            <option value="gte">≥ (at least)</option>
+                                                            <option value="lte">≤ (at most)</option>
+                                                            <option value="eq">= (exactly)</option>
+                                                        </select>
+                                                        <input
+                                                            type="number"
+                                                            min={1}
+                                                            value={conditionValueNum}
+                                                            onChange={(e) => setConditionValueNum(parseInt(e.target.value) || 1)}
+                                                            className="bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                            placeholder="Value"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Gold check */}
+                                            {conditionType === 'gold' && (
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <select
+                                                        className="bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                        value={conditionOperator}
+                                                        onChange={(e) => setConditionOperator(e.target.value as any)}
+                                                    >
+                                                        <option value="gte">≥ (at least)</option>
+                                                        <option value="lte">≤ (at most)</option>
+                                                        <option value="eq">= (exactly)</option>
+                                                    </select>
+                                                    <input
+                                                        type="number"
+                                                        min={0}
+                                                        value={conditionValueNum}
+                                                        onChange={(e) => setConditionValueNum(parseInt(e.target.value) || 0)}
+                                                        className="bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                        placeholder="Gold amount"
+                                                    />
+                                                </div>
+                                            )}
+
+                                            {/* Faction check - dropdown */}
+                                            {conditionType === 'faction' && (
+                                                <select
+                                                    className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                    value={conditionValue}
+                                                    onChange={(e) => setConditionValue(e.target.value)}
+                                                >
+                                                    <option value="">Select a faction...</option>
+                                                    {factions?.map((f: any) => (
+                                                        <option key={f._id} value={f.name}>{f.name}</option>
+                                                    ))}
+                                                </select>
+                                            )}
+
+                                            {/* Item checks - dropdown */}
+                                            {(conditionType === 'has_item' || conditionType === 'not_has_item') && (
+                                                <div className="space-y-1">
+                                                    <select
+                                                        className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                        value={conditionValue}
+                                                        onChange={(e) => setConditionValue(e.target.value)}
+                                                    >
+                                                        <option value="">Select an item...</option>
+                                                        {items?.map((item: any) => (
+                                                            <option key={item._id} value={item.name}>{item.name} ({item.rarity})</option>
+                                                        ))}
+                                                    </select>
+                                                    <p className="text-[10px] text-[#43485C]/50 ml-1">
+                                                        {conditionType === 'has_item' ? 'Player must have this item' : 'Player must NOT have this item'}
+                                                    </p>
+                                                </div>
+                                            )}
+
+                                            {/* Ability check - dropdown */}
+                                            {conditionType === 'has_ability' && (
+                                                <select
+                                                    className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                    value={conditionValue}
+                                                    onChange={(e) => setConditionValue(e.target.value)}
+                                                >
+                                                    <option value="">Select an ability...</option>
+                                                    {spells?.map((spell: any) => (
+                                                        <option key={spell._id} value={spell.name}>{spell.name}</option>
+                                                    ))}
+                                                </select>
+                                            )}
+
+                                            {/* Location check - dropdown */}
+                                            {conditionType === 'at_location' && (
+                                                <select
+                                                    className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                    value={conditionValue}
+                                                    onChange={(e) => setConditionValue(e.target.value)}
+                                                >
+                                                    <option value="">Select a location...</option>
+                                                    {locations?.map((loc: any) => (
+                                                        <option key={loc._id} value={loc._id}>{loc.name}</option>
+                                                    ))}
+                                                </select>
+                                            )}
+
+                                            {/* NPC checks - dropdown */}
+                                            {(conditionType === 'npc_alive' || conditionType === 'npc_dead') && (
+                                                <div className="space-y-1">
+                                                    <select
+                                                        className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                        value={conditionValue}
+                                                        onChange={(e) => setConditionValue(e.target.value)}
+                                                    >
+                                                        <option value="">Select an NPC...</option>
+                                                        {npcs?.map((npc: any) => (
+                                                            <option key={npc._id} value={npc._id}>{npc.name}</option>
+                                                        ))}
+                                                    </select>
+                                                    <p className="text-[10px] text-[#43485C]/50 ml-1">
+                                                        {conditionType === 'npc_alive' ? 'NPC must be alive' : 'NPC must be dead'}
+                                                    </p>
+                                                </div>
+                                            )}
+
+                                            {/* Quest checks - dropdown */}
+                                            {(conditionType === 'quest' || conditionType === 'quest_active') && (
+                                                <div className="space-y-1">
+                                                    <select
+                                                        className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                        value={conditionValue}
+                                                        onChange={(e) => setConditionValue(e.target.value)}
+                                                    >
+                                                        <option value="">Select a quest...</option>
+                                                        {quests?.map((q: any) => (
+                                                            <option key={q._id} value={q.title}>{q.title}</option>
+                                                        ))}
+                                                    </select>
+                                                    <p className="text-[10px] text-[#43485C]/50 ml-1">
+                                                        {conditionType === 'quest' ? 'Quest must be completed' : 'Quest must be active (in progress)'}
+                                                    </p>
+                                                </div>
+                                            )}
+
+                                            {/* Flag check */}
+                                            {conditionType === 'flag' && (
+                                                <div className="space-y-1">
+                                                    <input
+                                                        type="text"
+                                                        placeholder="e.g., discovered_secret_cave, talked_to_elder"
+                                                        value={conditionValue}
+                                                        onChange={(e) => setConditionValue(e.target.value)}
+                                                        className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                    />
+                                                    <p className="text-[10px] text-[#43485C]/50 ml-1">Custom flags you set via other conditions</p>
+                                                </div>
+                                            )}
+
+                                            {/* Custom JSON */}
+                                            {conditionType === 'custom' && (
+                                                <div className="space-y-1">
+                                                    <textarea
+                                                        placeholder='{"and": [{"gte": ["player.level", 10]}, {"has_item": "Magic Key"}]}'
+                                                        value={conditionValue}
+                                                        onChange={(e) => setConditionValue(e.target.value)}
+                                                        className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm font-mono min-h-[80px]"
+                                                    />
+                                                    <p className="text-[10px] text-[#43485C]/50 ml-1">Advanced: Use JSON for complex conditions with AND/OR logic</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="border-t border-[#D4AF37]/10 pt-4">
+                                        <p className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider mb-3">THEN (Action)</p>
+
+                                        <div className="space-y-3">
+                                            <select
+                                                className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                value={actionType}
+                                                onChange={(e) => setActionType(e.target.value as any)}
+                                            >
+                                                <optgroup label="Access Control">
+                                                    <option value="block_entry">Block Entry (Prevent Access)</option>
+                                                    <option value="teleport">Teleport Player</option>
+                                                </optgroup>
+                                                <optgroup label="Messaging">
+                                                    <option value="show_message">Show Message</option>
+                                                </optgroup>
+                                                <optgroup label="Items">
+                                                    <option value="give_item">Give Item</option>
+                                                    <option value="remove_item">Remove Item (Consume/Destroy)</option>
+                                                </optgroup>
+                                                <optgroup label="Abilities">
+                                                    <option value="grant_ability">Grant Ability/Spell</option>
+                                                    <option value="remove_ability">Remove Ability/Spell</option>
+                                                </optgroup>
+                                                <optgroup label="Player Stats">
+                                                    <option value="modify_hp">Modify HP</option>
+                                                    <option value="modify_gold">Modify Gold</option>
+                                                    <option value="add_xp">Add XP</option>
+                                                </optgroup>
+                                                <optgroup label="World">
+                                                    <option value="modify_reputation">Modify Faction Reputation</option>
+                                                    <option value="spawn_npc">Spawn NPC</option>
+                                                    <option value="kill_npc">Kill NPC</option>
+                                                </optgroup>
+                                                <optgroup label="Progress Tracking">
+                                                    <option value="set_flag">Set Custom Flag</option>
+                                                    <option value="clear_flag">Clear Custom Flag</option>
+                                                </optgroup>
+                                            </select>
+
+                                            {/* Block Entry / Show Message */}
+                                            {(actionType === 'block_entry' || actionType === 'show_message') && (
+                                                <div className="space-y-1">
+                                                    <textarea
+                                                        placeholder="The guards eye you suspiciously. 'Leaf ninja are not welcome here.'"
+                                                        value={actionMessage}
+                                                        onChange={(e) => setActionMessage(e.target.value)}
+                                                        className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm min-h-[60px]"
+                                                    />
+                                                    <p className="text-[10px] text-[#43485C]/50 ml-1">
+                                                        {actionType === 'block_entry' ? 'Message shown when player is blocked' : 'Message shown to player'}
+                                                    </p>
+                                                </div>
+                                            )}
+
+                                            {/* Grant/Remove Ability */}
+                                            {(actionType === 'grant_ability' || actionType === 'remove_ability') && (
+                                                <div className="space-y-1">
+                                                    <select
+                                                        className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                        value={actionTarget}
+                                                        onChange={(e) => setActionTarget(e.target.value)}
+                                                    >
+                                                        <option value="">Select ability...</option>
+                                                        {spells?.map((spell: any) => (
+                                                            <option key={spell._id} value={spell.name}>{spell.name}</option>
+                                                        ))}
+                                                    </select>
+                                                    <p className="text-[10px] text-[#43485C]/50 ml-1">
+                                                        {actionType === 'grant_ability' ? 'Player will learn this ability' : 'Player will lose this ability'}
+                                                    </p>
+                                                </div>
+                                            )}
+
+                                            {/* Give/Remove Item */}
+                                            {(actionType === 'give_item' || actionType === 'remove_item') && (
+                                                <div className="space-y-2">
+                                                    <div className="grid grid-cols-3 gap-2">
+                                                        <select
+                                                            className="col-span-2 bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                            value={actionTarget}
+                                                            onChange={(e) => setActionTarget(e.target.value)}
+                                                        >
+                                                            <option value="">Select item...</option>
+                                                            {items?.map((item: any) => (
+                                                                <option key={item._id} value={item.name}>{item.name} ({item.rarity})</option>
+                                                            ))}
+                                                        </select>
+                                                        <input
+                                                            type="number"
+                                                            min={1}
+                                                            placeholder="Qty"
+                                                            value={actionAmount || 1}
+                                                            onChange={(e) => setActionAmount(parseInt(e.target.value) || 1)}
+                                                            className="bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                        />
+                                                    </div>
+                                                    <p className="text-[10px] text-[#43485C]/50 ml-1">
+                                                        {actionType === 'give_item'
+                                                            ? 'Add this item to player inventory'
+                                                            : 'Remove/consume this item (e.g., one-time pass)'}
+                                                    </p>
+                                                </div>
+                                            )}
+
+                                            {/* Set/Clear Flag */}
+                                            {(actionType === 'set_flag' || actionType === 'clear_flag') && (
+                                                <div className="space-y-1">
+                                                    <input
+                                                        type="text"
+                                                        placeholder="e.g., entered_secret_area, used_village_pass"
+                                                        value={actionTarget}
+                                                        onChange={(e) => setActionTarget(e.target.value)}
+                                                        className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                    />
+                                                    <p className="text-[10px] text-[#43485C]/50 ml-1">
+                                                        {actionType === 'set_flag'
+                                                            ? 'Set this flag to true (use in other conditions)'
+                                                            : 'Remove this flag (reset progress)'}
+                                                    </p>
+                                                </div>
+                                            )}
+
+                                            {/* Modify Reputation */}
+                                            {actionType === 'modify_reputation' && (
+                                                <div className="space-y-2">
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <select
+                                                            className="bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                            value={actionTarget}
+                                                            onChange={(e) => setActionTarget(e.target.value)}
+                                                        >
+                                                            <option value="">Select faction...</option>
+                                                            {factions?.map((f: any) => (
+                                                                <option key={f._id} value={f.name}>{f.name}</option>
+                                                            ))}
+                                                        </select>
+                                                        <input
+                                                            type="number"
+                                                            placeholder="+10 or -10"
+                                                            value={actionAmount || ''}
+                                                            onChange={(e) => setActionAmount(parseInt(e.target.value) || 0)}
+                                                            className="bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                        />
+                                                    </div>
+                                                    <p className="text-[10px] text-[#43485C]/50 ml-1">Positive = increase reputation, Negative = decrease</p>
+                                                </div>
+                                            )}
+
+                                            {/* Modify HP */}
+                                            {actionType === 'modify_hp' && (
+                                                <div className="space-y-1">
+                                                    <input
+                                                        type="number"
+                                                        placeholder="+20 (heal) or -10 (damage)"
+                                                        value={actionAmount || ''}
+                                                        onChange={(e) => setActionAmount(parseInt(e.target.value) || 0)}
+                                                        className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                    />
+                                                    <p className="text-[10px] text-[#43485C]/50 ml-1">Positive = heal, Negative = damage</p>
+                                                </div>
+                                            )}
+
+                                            {/* Modify Gold */}
+                                            {actionType === 'modify_gold' && (
+                                                <div className="space-y-1">
+                                                    <input
+                                                        type="number"
+                                                        placeholder="+100 (give) or -50 (take)"
+                                                        value={actionAmount || ''}
+                                                        onChange={(e) => setActionAmount(parseInt(e.target.value) || 0)}
+                                                        className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                    />
+                                                    <p className="text-[10px] text-[#43485C]/50 ml-1">Positive = give gold, Negative = take gold</p>
+                                                </div>
+                                            )}
+
+                                            {/* Add XP */}
+                                            {actionType === 'add_xp' && (
+                                                <div className="space-y-1">
+                                                    <input
+                                                        type="number"
+                                                        min={1}
+                                                        placeholder="100"
+                                                        value={actionAmount || ''}
+                                                        onChange={(e) => setActionAmount(parseInt(e.target.value) || 0)}
+                                                        className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                    />
+                                                    <p className="text-[10px] text-[#43485C]/50 ml-1">XP to award the player</p>
+                                                </div>
+                                            )}
+
+                                            {/* Teleport */}
+                                            {actionType === 'teleport' && (
+                                                <div className="space-y-1">
+                                                    <select
+                                                        className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                        value={actionTarget}
+                                                        onChange={(e) => setActionTarget(e.target.value)}
+                                                    >
+                                                        <option value="">Select destination...</option>
+                                                        {locations?.map((loc: any) => (
+                                                            <option key={loc._id} value={loc._id}>{loc.name}</option>
+                                                        ))}
+                                                    </select>
+                                                    <p className="text-[10px] text-[#43485C]/50 ml-1">Instantly move player to this location</p>
+                                                </div>
+                                            )}
+
+                                            {/* Spawn/Kill NPC */}
+                                            {(actionType === 'spawn_npc' || actionType === 'kill_npc') && (
+                                                <div className="space-y-1">
+                                                    <select
+                                                        className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                        value={actionTarget}
+                                                        onChange={(e) => setActionTarget(e.target.value)}
+                                                    >
+                                                        <option value="">Select NPC...</option>
+                                                        {npcs?.map((npc: any) => (
+                                                            <option key={npc._id} value={npc._id}>{npc.name}</option>
+                                                        ))}
+                                                    </select>
+                                                    <p className="text-[10px] text-[#43485C]/50 ml-1">
+                                                        {actionType === 'spawn_npc'
+                                                            ? 'Spawn this NPC at their default location'
+                                                            : 'Kill this NPC (mark as dead)'}
+                                                    </p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="border-t border-[#D4AF37]/10 pt-4 space-y-3">
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="space-y-1">
+                                                <label className="text-xs text-[#43485C]/60 ml-1">Priority (higher = first)</label>
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    value={conditionPriority}
+                                                    onChange={(e) => setConditionPriority(parseInt(e.target.value) || 0)}
+                                                    className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                />
+                                            </div>
+                                            <div className="flex items-center gap-2 bg-[#f8f9fa] p-3 rounded-xl border border-[#D4AF37]/10">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={conditionExecuteOnce}
+                                                    onChange={(e) => setConditionExecuteOnce(e.target.checked)}
+                                                    className="h-4 w-4 accent-[#D4AF37]"
+                                                />
+                                                <label className="text-xs text-[#43485C]">Execute Once Per Player</label>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <button
+                                        type="submit"
+                                        disabled={isSubmitting || !conditionName}
+                                        className="w-full py-3 bg-[#D4AF37] hover:bg-[#c9a432] text-white font-bold rounded-full transition-all shadow-lg text-sm flex items-center justify-center gap-2 uppercase tracking-widest mt-4 disabled:opacity-50"
+                                    >
+                                        {isSubmitting ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />}
+                                        Create Condition
                                     </button>
                                 </form>
                             </div>

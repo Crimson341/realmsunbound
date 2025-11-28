@@ -46,6 +46,7 @@ interface Quest {
     description: string;
     status: string;
     npcId?: Id<"npcs">;
+    locationId?: Id<"locations">;
 }
 
 interface Monster {
@@ -64,6 +65,12 @@ interface Item {
     consumable?: boolean;
 }
 
+interface AbilitySystemConfig {
+    abilityName?: string;  // "Spells", "Jutsu", "Powers", etc.
+    energyName?: string;   // "Mana", "Chakra", "Stamina", etc.
+    categories?: string[]; // ["Ninjutsu", "Taijutsu", "Genjutsu"]
+}
+
 interface Campaign {
     _id: Id<"campaigns">;
     title: string;
@@ -72,6 +79,7 @@ interface Campaign {
     worldBible?: string;
     aiPersona?: string;
     terminology?: string;
+    abilitySystemConfig?: AbilitySystemConfig;
     bountyEnabled?: boolean;
 }
 
@@ -146,6 +154,26 @@ interface Shop {
     shopkeeperName?: string;
 }
 
+interface ConditionSummary {
+    blockedLocations?: { locationName: string; reason: string }[];
+    activeRules?: string[];
+    playerFlags?: { key: string; value: string }[];
+}
+
+// Story context from context optimization system
+interface StoryEvent {
+    type: string;
+    title: string;
+    description: string;
+    importance: number;
+}
+
+interface StoryContext {
+    storySummary?: string;         // Condensed summary of past events
+    storyEvents?: StoryEvent[];    // Key plot points
+    anchorMoments?: string[];      // Important moments that should always be remembered
+}
+
 interface WorldState {
     bounty?: Bounty;
     isJailed?: boolean;
@@ -154,12 +182,128 @@ interface WorldState {
     deadAtLocation?: NPC[];
     camp?: Camp;
     shopsAtLocation?: Shop[];
+    conditions?: ConditionSummary;
+    storyContext?: StoryContext;   // New: optimized story context
+    currentLocationId?: string;    // New: for relevance filtering
 }
 
 interface ChatMessage {
     role: string;
     content: string;
 }
+
+// =============================================================================
+// TIERED CONTEXT HELPERS - Filter and prioritize entities by relevance
+// =============================================================================
+
+// Filter NPCs by relevance to current situation
+function filterNpcsByRelevance(
+  npcs: NPC[],
+  locations: Location[],
+  currentLocationId?: string,
+  maxNpcs: number = 25
+): { critical: NPC[]; relevant: NPC[]; background: NPC[] } {
+  const critical: NPC[] = [];
+  const relevant: NPC[] = [];
+  const background: NPC[] = [];
+
+  // Get current location's neighbor IDs for "nearby" filtering
+  const currentLocation = currentLocationId
+    ? locations.find((l) => l._id.toString() === currentLocationId)
+    : null;
+  const neighborIds = new Set<string>();
+  // Note: neighbors not in Location interface yet, would need to be added
+
+  for (const npc of npcs) {
+    // Skip dead NPCs for regular lists
+    if (npc.isDead) {
+      continue;
+    }
+
+    // Critical: At current location OR essential
+    if (
+      (currentLocationId && npc.locationId?.toString() === currentLocationId) ||
+      npc.isEssential
+    ) {
+      critical.push(npc);
+    }
+    // Relevant: Nearby locations or recruitable
+    else if (
+      npc.isRecruitable ||
+      (npc.locationId && neighborIds.has(npc.locationId.toString()))
+    ) {
+      relevant.push(npc);
+    }
+    // Background: Everything else
+    else {
+      background.push(npc);
+    }
+  }
+
+  // Limit background to prevent context bloat
+  const maxBackground = Math.max(0, maxNpcs - critical.length - relevant.length);
+
+  return {
+    critical,
+    relevant,
+    background: background.slice(0, maxBackground),
+  };
+}
+
+// Filter locations by relevance
+function filterLocationsByRelevance(
+  locations: Location[],
+  currentLocationId?: string,
+  questLocationIds: string[] = [],
+  maxLocations: number = 15
+): { critical: Location[]; relevant: Location[]; background: Location[] } {
+  const critical: Location[] = [];
+  const relevant: Location[] = [];
+  const background: Location[] = [];
+
+  const questLocSet = new Set(questLocationIds);
+
+  for (const loc of locations) {
+    // Critical: Current location
+    if (currentLocationId && loc._id.toString() === currentLocationId) {
+      critical.push(loc);
+    }
+    // Relevant: Quest-related locations
+    else if (questLocSet.has(loc._id.toString())) {
+      relevant.push(loc);
+    }
+    // Background: Everything else
+    else {
+      background.push(loc);
+    }
+  }
+
+  const maxBackground = Math.max(0, maxLocations - critical.length - relevant.length);
+
+  return {
+    critical,
+    relevant,
+    background: background.slice(0, maxBackground),
+  };
+}
+
+// Filter quests - only include active ones
+function filterQuestsByRelevance(
+  quests: Quest[],
+  maxQuests: number = 10
+): { active: Quest[]; available: Quest[] } {
+  const active = quests.filter((q) => q.status === "active");
+  const available = quests.filter((q) => q.status === "available");
+
+  return {
+    active: active.slice(0, maxQuests),
+    available: available.slice(0, Math.max(0, maxQuests - active.length)),
+  };
+}
+
+// =============================================================================
+// MAIN CONTEXT GENERATOR
+// =============================================================================
 
 // Helper to generate context
 const generateWorldContext = (campaignData: CampaignData, playerState?: PlayerState, worldState?: WorldState) => {
@@ -176,8 +320,20 @@ const generateWorldContext = (campaignData: CampaignData, playerState?: PlayerSt
       bountyEnabled
     } = campaignData;
 
-    // Parse terminology if it exists
+    // Parse terminology - prefer abilitySystemConfig, fall back to legacy terminology
     let terms = { spells: "Spells", mana: "Mana", class: "Class", level: "Level" };
+
+    // Use abilitySystemConfig if available (new genre-agnostic system)
+    if (campaign.abilitySystemConfig) {
+        if (campaign.abilitySystemConfig.abilityName) {
+            terms.spells = campaign.abilitySystemConfig.abilityName;
+        }
+        if (campaign.abilitySystemConfig.energyName) {
+            terms.mana = campaign.abilitySystemConfig.energyName;
+        }
+    }
+
+    // Fall back to legacy terminology for any remaining values
     if (campaign.terminology) {
         try {
             const customTerms = JSON.parse(campaign.terminology);
@@ -185,44 +341,100 @@ const generateWorldContext = (campaignData: CampaignData, playerState?: PlayerSt
         } catch { /* ignore */ }
     }
 
+    // Get ability categories for context
+    const abilityCategories = campaign.abilitySystemConfig?.categories || [];
+
+    // =============================================================================
+    // TIERED CONTEXT FILTERING - Prioritize relevant information
+    // =============================================================================
+
+    const currentLocationId = worldState?.currentLocationId;
+
+    // Filter NPCs by relevance
+    const npcTiers = filterNpcsByRelevance(npcs, locations, currentLocationId);
+    const allFilteredNpcs = [...npcTiers.critical, ...npcTiers.relevant, ...npcTiers.background];
+
+    // Get quest location IDs for location filtering
+    const questLocationIds = quests
+      .filter((q) => q.status === "active" || q.status === "available")
+      .map((q) => q.locationId?.toString())
+      .filter((id): id is string => !!id);
+
+    // Filter locations by relevance
+    const locationTiers = filterLocationsByRelevance(locations, currentLocationId, questLocationIds);
+
+    // Filter quests - only active/available
+    const questTiers = filterQuestsByRelevance(quests);
+
+    // Helper to format NPC
+    const formatNpc = (n: NPC) => {
+      const location = locations.find((l) => l._id === n.locationId);
+      const faction = factions?.find((f) => f._id === n.factionId);
+      return `- ${n.name} (${n.role}, ${n.attitude}): ${n.description} | Location: ${location?.name || 'Unknown'}${faction ? ` | Faction: ${faction.name}` : ''}${n.isRecruitable ? ' | [RECRUITABLE]' : ''}${n.isEssential ? ' | [ESSENTIAL - Cannot die]' : ''}`;
+    };
+
+    // Helper to format location
+    const formatLocation = (l: Location, priority: string) => {
+      return `- ${l.name} (${l.type})${priority ? ` [${priority}]` : ''}: ${l.description}`;
+    };
+
     let context = `
     ROLE: ${campaign.aiPersona || "You are the Dungeon Master for a TTRPG campaign."}
-    
+
     WORLD BIBLE (THE ABSOLUTE TRUTH):
     ${campaign.worldBible || campaign.description}
-    
-    STRICTLY ADHERE to the following world details. 
-    
+
+    STRICTLY ADHERE to the following world details.
+
     SYSTEM TERMINOLOGY:
     - Magic/Abilities are called: "${terms.spells}"
     - Energy/Resource is called: "${terms.mana}"
-    - Character Archetype is called: "${terms.class}"
-    
+    - Character Archetype is called: "${terms.class}"${abilityCategories.length > 0 ? `
+    - ${terms.spells} Categories: ${abilityCategories.join(", ")}` : ""}
+
     CRITICAL RULES:
-    1. Do NOT invent new NPCs, Locations, or Quests unless absolutely necessary for the immediate narrative flow. 
+    1. Do NOT invent new NPCs, Locations, or Quests unless absolutely necessary for the immediate narrative flow.
     2. PRIORITIZE using the provided Lists of NPCs, Locations, and Quests.
     3. If the user asks about a character or place not in the list, check if an existing one fits first.
     4. Only create new content if the user explicitly asks for something that doesn't exist, and even then, try to tie it to existing lore.
     5. DEAD NPCs CANNOT appear, speak, or interact - they are GONE FOREVER.
     6. NPCs only know about deaths/events if it makes sense (local knowledge, same faction, rumors spreading).
-    
+
     CAMPAIGN: ${campaign.title}
     DESCRIPTION: ${campaign.description}
     RULES: ${campaign.rules}
-    
-    LOCATIONS:
-    ${locations.map((l) => `- ${l.name} (${l.type}): ${l.description}`).join('\n')}
 
-    NPCs (LIVING - USE THESE):
-    ${npcs.map((n) => {
-        const location = locations.find((l) => l._id === n.locationId);
-        const faction = factions?.find((f) => f._id === n.factionId);
-        return `- ${n.name} (${n.role}, ${n.attitude}): ${n.description} | Location: ${location?.name || 'Unknown'}${faction ? ` | Faction: ${faction.name}` : ''}${n.isRecruitable ? ' | [RECRUITABLE]' : ''}${n.isEssential ? ' | [ESSENTIAL - Cannot die]' : ''}`;
-    }).join('\n')}
+    === LOCATIONS (Tiered by Relevance) ===
+    ${locationTiers.critical.length > 0 ? `
+    CURRENT LOCATION (HIGHEST PRIORITY):
+    ${locationTiers.critical.map((l) => formatLocation(l, 'CURRENT')).join('\n')}
+    ` : ''}
+    ${locationTiers.relevant.length > 0 ? `
+    QUEST-RELATED LOCATIONS:
+    ${locationTiers.relevant.map((l) => formatLocation(l, 'QUEST')).join('\n')}
+    ` : ''}
+    ${locationTiers.background.length > 0 ? `
+    OTHER KNOWN LOCATIONS:
+    ${locationTiers.background.map((l) => formatLocation(l, '')).join('\n')}
+    ` : ''}
+
+    === NPCs (Tiered by Relevance) ===
+    ${npcTiers.critical.length > 0 ? `
+    NPCs AT CURRENT LOCATION / ESSENTIAL (HIGHEST PRIORITY):
+    ${npcTiers.critical.map(formatNpc).join('\n')}
+    ` : ''}
+    ${npcTiers.relevant.length > 0 ? `
+    NEARBY / RECRUITABLE NPCs:
+    ${npcTiers.relevant.map(formatNpc).join('\n')}
+    ` : ''}
+    ${npcTiers.background.length > 0 ? `
+    OTHER KNOWN NPCs:
+    ${npcTiers.background.map(formatNpc).join('\n')}
+    ` : ''}
 
     ${deadNpcs && deadNpcs.length > 0 ? `
     DEAD NPCs (DO NOT USE - FOR REFERENCE ONLY):
-    ${deadNpcs.map((n) => `- ${n.name} (${n.role}): Died from "${n.deathCause}" | Killed by: ${n.killedBy || 'Unknown'}`).join('\n')}
+    ${deadNpcs.slice(0, 10).map((n) => `- ${n.name} (${n.role}): Died from "${n.deathCause}" | Killed by: ${n.killedBy || 'Unknown'}`).join('\n')}
     IMPORTANT: These NPCs are DEAD. They cannot appear in scenes. Other NPCs may reference their deaths if they would realistically know.
     ` : ''}
 
@@ -236,14 +448,21 @@ const generateWorldContext = (campaignData: CampaignData, playerState?: PlayerSt
     ${regions.map((r) => `- ${r.name}: ${r.description || 'No description'}${r.governingFactionId ? ` | Governed by faction` : ''}`).join('\n')}
     ` : ''}
 
-    QUESTS (ACTIVE/AVAILABLE):
-    ${quests.map((q) => `- ${q.title}: ${q.description} (Giver: ${npcs.find((n) => n._id === q.npcId)?.name || 'Unknown'}, Status: ${q.status})`).join('\n')}
+    === QUESTS (Prioritized) ===
+    ${questTiers.active.length > 0 ? `
+    ACTIVE QUESTS (CURRENT OBJECTIVES):
+    ${questTiers.active.map((q) => `- [ACTIVE] ${q.title}: ${q.description} (Giver: ${allFilteredNpcs.find((n) => n._id === q.npcId)?.name || 'Unknown'})`).join('\n')}
+    ` : ''}
+    ${questTiers.available.length > 0 ? `
+    AVAILABLE QUESTS:
+    ${questTiers.available.map((q) => `- [AVAILABLE] ${q.title}: ${q.description} (Giver: ${allFilteredNpcs.find((n) => n._id === q.npcId)?.name || 'Unknown'})`).join('\n')}
+    ` : ''}
 
-    MONSTERS (Known):
-    ${monsters.map((m) => `- ${m.name}: ${m.description}`).join('\n')}
+    MONSTERS (Known, limited):
+    ${monsters.slice(0, 10).map((m) => `- ${m.name}: ${m.description}`).join('\n')}
 
-    ITEMS (Key):
-    ${items.slice(0, 20).map((i) => `- ${i.name} (${i.type}): ${i.description || i.effects}${i.usable ? ' [USABLE]' : ''}${i.consumable ? ' [CONSUMABLE]' : ''}`).join('\n')}
+    KEY ITEMS (Player-relevant):
+    ${items.slice(0, 15).map((i) => `- ${i.name} (${i.type}): ${i.description || i.effects}${i.usable ? ' [USABLE]' : ''}${i.consumable ? ' [CONSUMABLE]' : ''}`).join('\n')}
     `;
 
     if (playerState) {
@@ -329,6 +548,63 @@ const generateWorldContext = (campaignData: CampaignData, playerState?: PlayerSt
     - Items sold to shops can be bought back for a limited time
     - AI-managed shops may change inventory based on story events
     `;
+      }
+
+      // Conditional Logic System - Creator-defined rules
+      if (worldState.conditions) {
+        if (worldState.conditions.blockedLocations && worldState.conditions.blockedLocations.length > 0) {
+          context += `
+    LOCATION RESTRICTIONS (STRICTLY ENFORCE):
+    ${worldState.conditions.blockedLocations.map((b) => `- BLOCKED: "${b.locationName}" - ${b.reason}`).join('\n')}
+    IMPORTANT: The player CANNOT enter these locations. If they try, describe why they are blocked and offer alternatives.
+    `;
+        }
+
+        if (worldState.conditions.activeRules && worldState.conditions.activeRules.length > 0) {
+          context += `
+    ACTIVE CONDITIONAL RULES (ENFORCE THESE):
+    ${worldState.conditions.activeRules.map((r) => `- ${r}`).join('\n')}
+    These are creator-defined rules that modify gameplay. Apply them when relevant.
+    `;
+        }
+
+        if (worldState.conditions.playerFlags && worldState.conditions.playerFlags.length > 0) {
+          context += `
+    PLAYER FLAGS (Story State):
+    ${worldState.conditions.playerFlags.map((f) => `- ${f.key}: ${f.value}`).join('\n')}
+    These flags track player progress and choices. Reference them when narratively appropriate.
+    `;
+        }
+      }
+
+      // Story Context - Optimized narrative memory
+      if (worldState.storyContext) {
+        // Story summary from past sessions
+        if (worldState.storyContext.storySummary) {
+          context += `
+    STORY SO FAR (Summary of past events):
+    ${worldState.storyContext.storySummary}
+    Use this summary to maintain narrative continuity. Reference past events naturally.
+    `;
+        }
+
+        // Key story events/milestones
+        if (worldState.storyContext.storyEvents && worldState.storyContext.storyEvents.length > 0) {
+          context += `
+    KEY STORY MILESTONES (Most important plot points):
+    ${worldState.storyContext.storyEvents.map((e) => `- [${e.type.toUpperCase()}] ${e.title}: ${e.description}`).join('\n')}
+    These are significant events the player has experienced. Reference them when relevant to current situations.
+    `;
+        }
+
+        // Anchor moments - critical narrative beats
+        if (worldState.storyContext.anchorMoments && worldState.storyContext.anchorMoments.length > 0) {
+          context += `
+    CRITICAL NARRATIVE MOMENTS (Never forget these):
+    ${worldState.storyContext.anchorMoments.map((m) => `- ${m}`).join('\n')}
+    These moments define the player's journey. They should influence NPC reactions and story development.
+    `;
+        }
       }
     }
 
@@ -543,10 +819,96 @@ export const chatStream = httpAction(async (ctx, request) => {
         worldState.camp = camp;
       }
     }
+
+    // Get active conditions for AI context
+    if (playerId) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- api cast avoids circular type inference
+        const conditionsSummary = await ctx.runQuery((api as any).conditions.getActiveConditionsSummary, {
+          campaignId: campaignId,
+          playerId: playerId,
+        });
+
+        if (conditionsSummary) {
+          // Parse conditions to find blocked locations
+          const blockedLocations: { locationName: string; reason: string }[] = [];
+          const activeRules: string[] = [];
+
+          for (const condition of conditionsSummary.conditions || []) {
+            if (condition.description) {
+              activeRules.push(condition.description);
+            }
+          }
+
+          // Parse summary for blocked locations
+          if (conditionsSummary.summary) {
+            const lines = conditionsSummary.summary.split('\n');
+            for (const line of lines) {
+              if (line.startsWith('BLOCKED:')) {
+                const match = line.match(/BLOCKED: Player cannot enter "(.+)" - (.+)/);
+                if (match) {
+                  blockedLocations.push({ locationName: match[1], reason: match[2] });
+                }
+              }
+            }
+          }
+
+          worldState.conditions = {
+            blockedLocations: blockedLocations.length > 0 ? blockedLocations : undefined,
+            activeRules: activeRules.length > 0 ? activeRules : undefined,
+            playerFlags: conditionsSummary.flags?.map((f: { key: string; value: string }) => ({
+              key: f.key,
+              value: f.value,
+            })),
+          };
+        }
+      } catch {
+        // Conditions system may not be set up yet
+      }
+
+      // Fetch optimized story context (summaries, events, anchors)
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- api cast avoids circular type inference
+        const optimizedContext = await ctx.runQuery((api as any).contextOptimization.getOptimizedContext, {
+          campaignId: campaignId,
+          playerId: playerId,
+          currentLocationId: currentLocationId,
+        });
+
+        if (optimizedContext) {
+          worldState.storyContext = {
+            storySummary: optimizedContext.storySummary || undefined,
+            storyEvents: optimizedContext.storyEvents || [],
+            anchorMoments: optimizedContext.anchorMessages
+              ?.filter((m: { reason?: string }) => m.reason)
+              .map((m: { content: string; reason?: string }) => m.content.substring(0, 200)) || [],
+          };
+        }
+      } catch {
+        // Context optimization may not be set up yet
+      }
+
+      // Trigger auto-summarization if history is getting long (every 50 messages)
+      if (history.length > 0 && history.length % 50 === 0) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- api cast avoids circular type inference
+          await ctx.scheduler.runAfter(0, (api as any).contextOptimization.summarizeOldMessages, {
+            campaignId: campaignId,
+            playerId: playerId,
+            maxMessagesToSummarize: 40,
+          });
+        } catch {
+          // Summarization may fail silently
+        }
+      }
+    }
   } catch (e) {
     // Silently continue if any world state queries fail
     console.error("Failed to fetch world state:", e);
   }
+
+  // Set current location for relevance filtering
+  worldState.currentLocationId = currentLocationId;
 
   const worldContext = generateWorldContext(campaignData, playerState, worldState);
 

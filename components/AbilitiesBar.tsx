@@ -4,14 +4,17 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Zap, Clock, Sword, Heart, Shield, Sparkles, X, Info } from "lucide-react";
 
-// Type for ability data
+// Type for ability data - genre-agnostic
 interface Ability {
     _id: string;
     name: string;
-    level: number;
-    school: string;
+    level?: number;
+    school?: string;
+    category?: string;  // New field for genre-agnostic categorization
+    subcategory?: string;
     description?: string;
     energyCost?: number;
+    healthCost?: number;
     cooldown?: number;
     cooldownRemaining?: number;
     canUse?: boolean;
@@ -21,6 +24,8 @@ interface Ability {
     healing?: number;
     iconEmoji?: string;
     isPassive?: boolean;
+    isForbidden?: boolean;
+    rarity?: string;
     tags?: string[];
 }
 
@@ -51,8 +56,9 @@ const SCHOOL_COLORS: Record<string, { bg: string; border: string; text: string; 
     default: { bg: "bg-neutral-500/20", border: "border-neutral-500/50", text: "text-neutral-400", glow: "shadow-neutral-500/30" },
 };
 
-function getSchoolColors(school: string) {
-    return SCHOOL_COLORS[school.toLowerCase()] || SCHOOL_COLORS.default;
+function getSchoolColors(school?: string, category?: string) {
+    const key = school || category || "";
+    return SCHOOL_COLORS[key.toLowerCase()] || SCHOOL_COLORS.default;
 }
 
 // Get icon based on ability type
@@ -60,18 +66,21 @@ function getAbilityIcon(ability: Ability) {
     if (ability.iconEmoji) return ability.iconEmoji;
     if (ability.healing) return "💚";
     if (ability.damage) return "⚔️";
-    if (ability.school.toLowerCase() === "fire") return "🔥";
-    if (ability.school.toLowerCase() === "ice") return "❄️";
-    if (ability.school.toLowerCase() === "lightning") return "⚡";
-    if (ability.school.toLowerCase() === "ninjutsu") return "🌀";
-    if (ability.school.toLowerCase() === "taijutsu") return "👊";
-    if (ability.school.toLowerCase() === "genjutsu") return "👁️";
+    const schoolOrCategory = (ability.school || ability.category || "").toLowerCase();
+    if (schoolOrCategory === "fire") return "🔥";
+    if (schoolOrCategory === "ice") return "❄️";
+    if (schoolOrCategory === "lightning") return "⚡";
+    if (schoolOrCategory === "ninjutsu") return "🌀";
+    if (schoolOrCategory === "taijutsu") return "👊";
+    if (schoolOrCategory === "genjutsu") return "👁️";
+    if (ability.isForbidden) return "💀";
     return "✨";
 }
 
 // Ability tooltip component
 function AbilityTooltip({ ability, energyName }: { ability: Ability; energyName: string }) {
-    const colors = getSchoolColors(ability.school);
+    const colors = getSchoolColors(ability.school, ability.category);
+    const categoryDisplay = ability.school || ability.category || "General";
 
     return (
         <motion.div
@@ -87,7 +96,10 @@ function AbilityTooltip({ ability, energyName }: { ability: Ability; energyName:
                         <span className="text-xl">{getAbilityIcon(ability)}</span>
                         <div>
                             <h4 className="font-bold text-white text-sm">{ability.name}</h4>
-                            <p className={`text-xs ${colors.text}`}>{ability.school} • Level {ability.level}</p>
+                            <p className={`text-xs ${colors.text}`}>
+                                {categoryDisplay}{ability.level ? ` • Level ${ability.level}` : ""}
+                                {ability.rarity && ` • ${ability.rarity}`}
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -177,7 +189,7 @@ function AbilityButton({
     disabled: boolean;
 }) {
     const [showTooltip, setShowTooltip] = useState(false);
-    const colors = getSchoolColors(ability.school);
+    const colors = getSchoolColors(ability.school, ability.category);
     const icon = getAbilityIcon(ability);
 
     const onCooldown = (ability.cooldownRemaining ?? 0) > 0;

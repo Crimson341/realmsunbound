@@ -12,6 +12,8 @@ import type * as abilities from "../abilities.js";
 import type * as ai from "../ai.js";
 import type * as bounty from "../bounty.js";
 import type * as camp from "../camp.js";
+import type * as conditions from "../conditions.js";
+import type * as contextOptimization from "../contextOptimization.js";
 import type * as dice from "../dice.js";
 import type * as forge from "../forge.js";
 import type * as http from "../http.js";
@@ -38,6 +40,8 @@ declare const fullApi: ApiFromModules<{
   ai: typeof ai;
   bounty: typeof bounty;
   camp: typeof camp;
+  conditions: typeof conditions;
+  contextOptimization: typeof contextOptimization;
   dice: typeof dice;
   forge: typeof forge;
   http: typeof http;

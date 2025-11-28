@@ -340,7 +340,6 @@ export default function LorePage() {
                     style={{ background: goldColor }}
                 />
 
-                {/* @ts-expect-error - react-pageflip types issue */}
                 <HTMLFlipBook
                     ref={bookRef}
                     width={700}

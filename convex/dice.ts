@@ -257,8 +257,8 @@ export const performSkillCheck = mutation({
         const totalModifier = abilityMod + proficiencyBonus + bonusMod;
 
         // Roll the d20
-        let roll1 = rollDie(20);
-        let roll2 = rollDie(20);
+        const roll1 = rollDie(20);
+        const roll2 = rollDie(20);
         let finalRoll = roll1;
 
         // Handle advantage/disadvantage
@@ -358,8 +358,8 @@ export const performAttackRoll = mutation({
         const totalModifier = abilityMod + profBonus + weaponBonus;
 
         // Roll
-        let roll1 = rollDie(20);
-        let roll2 = rollDie(20);
+        const roll1 = rollDie(20);
+        const roll2 = rollDie(20);
         let finalRoll = roll1;
 
         if (args.advantage && !args.disadvantage) {
@@ -456,8 +456,8 @@ export const performSavingThrow = mutation({
         const totalModifier = abilityMod + profBonus;
 
         // Roll
-        let roll1 = rollDie(20);
-        let roll2 = rollDie(20);
+        const roll1 = rollDie(20);
+        const roll2 = rollDie(20);
         let finalRoll = roll1;
 
         if (args.advantage && !args.disadvantage) {

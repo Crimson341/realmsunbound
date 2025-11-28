@@ -1,9 +1,168 @@
 import { action, httpAction } from "./_generated/server";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
+import { Id } from "./_generated/dataModel";
+
+// Type definitions for campaign entities
+interface Location {
+    _id: Id<"locations">;
+    name: string;
+    type: string;
+    description: string;
+}
+
+interface NPC {
+    _id: Id<"npcs">;
+    name: string;
+    description: string;
+    role: string;
+    attitude: string;
+    locationId?: Id<"locations">;
+    factionId?: Id<"factions">;
+    isRecruitable?: boolean;
+    isEssential?: boolean;
+    isDead?: boolean;
+    deathCause?: string;
+    killedBy?: string;
+}
+
+interface Faction {
+    _id: Id<"factions">;
+    name: string;
+    description: string;
+    territory?: string;
+}
+
+interface Region {
+    _id: Id<"regions">;
+    name: string;
+    description?: string;
+    governingFactionId?: Id<"factions">;
+}
+
+interface Quest {
+    _id: Id<"quests">;
+    title: string;
+    description: string;
+    status: string;
+    npcId?: Id<"npcs">;
+}
+
+interface Monster {
+    _id: Id<"monsters">;
+    name: string;
+    description: string;
+}
+
+interface Item {
+    _id: Id<"items">;
+    name: string;
+    type: string;
+    description?: string;
+    effects: string;
+    usable?: boolean;
+    consumable?: boolean;
+}
+
+interface Campaign {
+    _id: Id<"campaigns">;
+    title: string;
+    description: string;
+    rules: string;
+    worldBible?: string;
+    aiPersona?: string;
+    terminology?: string;
+    bountyEnabled?: boolean;
+}
+
+interface CampaignData {
+    campaign: Campaign;
+    locations: Location[];
+    npcs: NPC[];
+    deadNpcs?: NPC[];
+    monsters: Monster[];
+    items: Item[];
+    quests: Quest[];
+    factions?: Faction[];
+    regions?: Region[];
+    bountyEnabled?: boolean;
+}
+
+interface PlayerState {
+    name: string;
+    class: string;
+    level: number;
+    hp: number;
+    maxHp: number;
+    inventory?: string[];
+    abilities?: string[];
+    reputation?: Record<string, number>;
+    stats?: {
+        strength?: number;
+        str?: number;
+        dexterity?: number;
+        dex?: number;
+        constitution?: number;
+        con?: number;
+        intelligence?: number;
+        int?: number;
+        wisdom?: number;
+        wis?: number;
+        charisma?: number;
+        cha?: number;
+    };
+}
+
+interface Bounty {
+    totalBounty: number;
+    dangerLevel: string;
+    activeBounties?: { regionName: string }[];
+}
+
+interface Rumor {
+    type: string;
+    content: string;
+    isRecent?: boolean;
+}
+
+interface CampFollower {
+    npc?: { name: string };
+    role: string;
+}
+
+interface Camp {
+    name: string;
+    locationName?: string;
+    followers?: CampFollower[];
+    resources?: { gold?: number; food?: number };
+}
+
+interface Shop {
+    name: string;
+    type: string;
+    description?: string;
+    itemCount: number;
+    isOpen?: boolean;
+    shopkeeperName?: string;
+}
+
+interface WorldState {
+    bounty?: Bounty;
+    isJailed?: boolean;
+    rumors?: Rumor[];
+    npcsAtLocation?: NPC[];
+    deadAtLocation?: NPC[];
+    camp?: Camp;
+    shopsAtLocation?: Shop[];
+}
+
+interface ChatMessage {
+    role: string;
+    content: string;
+}
 
 // Helper to generate context
-const generateWorldContext = (campaignData: any, playerState?: any, worldState?: any) => {
+const generateWorldContext = (campaignData: CampaignData, playerState?: PlayerState, worldState?: WorldState) => {
     const { 
       campaign, 
       locations, 
@@ -52,39 +211,39 @@ const generateWorldContext = (campaignData: any, playerState?: any, worldState?:
     RULES: ${campaign.rules}
     
     LOCATIONS:
-    ${locations.map((l: any) => `- ${l.name} (${l.type}): ${l.description}`).join('\n')}
-    
+    ${locations.map((l) => `- ${l.name} (${l.type}): ${l.description}`).join('\n')}
+
     NPCs (LIVING - USE THESE):
-    ${npcs.map((n: any) => {
-        const location = locations.find((l: any) => l._id === n.locationId);
-        const faction = factions?.find((f: any) => f._id === n.factionId);
+    ${npcs.map((n) => {
+        const location = locations.find((l) => l._id === n.locationId);
+        const faction = factions?.find((f) => f._id === n.factionId);
         return `- ${n.name} (${n.role}, ${n.attitude}): ${n.description} | Location: ${location?.name || 'Unknown'}${faction ? ` | Faction: ${faction.name}` : ''}${n.isRecruitable ? ' | [RECRUITABLE]' : ''}${n.isEssential ? ' | [ESSENTIAL - Cannot die]' : ''}`;
     }).join('\n')}
-    
+
     ${deadNpcs && deadNpcs.length > 0 ? `
     DEAD NPCs (DO NOT USE - FOR REFERENCE ONLY):
-    ${deadNpcs.map((n: any) => `- ${n.name} (${n.role}): Died from "${n.deathCause}" | Killed by: ${n.killedBy || 'Unknown'}`).join('\n')}
+    ${deadNpcs.map((n) => `- ${n.name} (${n.role}): Died from "${n.deathCause}" | Killed by: ${n.killedBy || 'Unknown'}`).join('\n')}
     IMPORTANT: These NPCs are DEAD. They cannot appear in scenes. Other NPCs may reference their deaths if they would realistically know.
     ` : ''}
 
     ${factions && factions.length > 0 ? `
     FACTIONS:
-    ${factions.map((f: any) => `- ${f.name}: ${f.description}${f.territory ? ` | Territory: ${f.territory}` : ''}`).join('\n')}
+    ${factions.map((f) => `- ${f.name}: ${f.description}${f.territory ? ` | Territory: ${f.territory}` : ''}`).join('\n')}
     ` : ''}
 
     ${regions && regions.length > 0 ? `
     REGIONS:
-    ${regions.map((r: any) => `- ${r.name}: ${r.description || 'No description'}${r.governingFactionId ? ` | Governed by faction` : ''}`).join('\n')}
+    ${regions.map((r) => `- ${r.name}: ${r.description || 'No description'}${r.governingFactionId ? ` | Governed by faction` : ''}`).join('\n')}
     ` : ''}
-    
+
     QUESTS (ACTIVE/AVAILABLE):
-    ${quests.map((q: any) => `- ${q.title}: ${q.description} (Giver: ${npcs.find((n: any) => n._id === q.npcId)?.name || 'Unknown'}, Status: ${q.status})`).join('\n')}
+    ${quests.map((q) => `- ${q.title}: ${q.description} (Giver: ${npcs.find((n) => n._id === q.npcId)?.name || 'Unknown'}, Status: ${q.status})`).join('\n')}
 
     MONSTERS (Known):
-    ${monsters.map((m: any) => `- ${m.name}: ${m.description}`).join('\n')}
-    
+    ${monsters.map((m) => `- ${m.name}: ${m.description}`).join('\n')}
+
     ITEMS (Key):
-    ${items.slice(0, 20).map((i: any) => `- ${i.name} (${i.type}): ${i.description || i.effects}${i.usable ? ' [USABLE]' : ''}${i.consumable ? ' [CONSUMABLE]' : ''}`).join('\n')}
+    ${items.slice(0, 20).map((i) => `- ${i.name} (${i.type}): ${i.description || i.effects}${i.usable ? ' [USABLE]' : ''}${i.consumable ? ' [CONSUMABLE]' : ''}`).join('\n')}
     `;
 
     if (playerState) {
@@ -112,7 +271,7 @@ const generateWorldContext = (campaignData: any, playerState?: any, worldState?:
     BOUNTY STATUS:
     - Total Bounty: ${worldState.bounty.totalBounty} gold
     - Danger Level: ${worldState.bounty.dangerLevel}
-    - Wanted in regions: ${worldState.bounty.activeBounties?.map((b: any) => b.regionName).join(', ') || 'None'}
+    - Wanted in regions: ${worldState.bounty.activeBounties?.map((b) => b.regionName).join(', ') || 'None'}
     IMPORTANT: If bounty is high, guards will be hostile. Bounty hunters may ambush the player. NPCs may refuse service or report to guards.
     `;
       }
@@ -129,7 +288,7 @@ const generateWorldContext = (campaignData: any, playerState?: any, worldState?:
       if (worldState.rumors && worldState.rumors.length > 0) {
         context += `
     LOCAL RUMORS (NPCs at this location know these):
-    ${worldState.rumors.map((r: any) => `- [${r.type.toUpperCase()}] ${r.content}${r.isRecent ? ' (Recent news!)' : ''}`).join('\n')}
+    ${worldState.rumors.map((r) => `- [${r.type.toUpperCase()}] ${r.content}${r.isRecent ? ' (Recent news!)' : ''}`).join('\n')}
     IMPORTANT: NPCs should organically mention these rumors when relevant. Don't info-dump them all at once.
     `;
       }
@@ -137,14 +296,14 @@ const generateWorldContext = (campaignData: any, playerState?: any, worldState?:
       if (worldState.npcsAtLocation && worldState.npcsAtLocation.length > 0) {
         context += `
     NPCs PRESENT AT CURRENT LOCATION:
-    ${worldState.npcsAtLocation.map((n: any) => `- ${n.name} (${n.role}) - ${n.attitude}`).join('\n')}
+    ${worldState.npcsAtLocation.map((n) => `- ${n.name} (${n.role}) - ${n.attitude}`).join('\n')}
     `;
       }
 
       if (worldState.deadAtLocation && worldState.deadAtLocation.length > 0) {
         context += `
     DEATHS AT THIS LOCATION (for atmosphere/reference):
-    ${worldState.deadAtLocation.map((n: any) => `- ${n.name} was ${n.deathCause} by ${n.killedBy}`).join('\n')}
+    ${worldState.deadAtLocation.map((n) => `- ${n.name} was ${n.deathCause} by ${n.killedBy}`).join('\n')}
     NPCs here may reference these deaths sadly or fearfully.
     `;
       }
@@ -153,7 +312,7 @@ const generateWorldContext = (campaignData: any, playerState?: any, worldState?:
         context += `
     PLAYER'S CAMP - "${worldState.camp.name}":
     - Location: ${worldState.camp.locationName || 'Unknown'}
-    - Followers: ${worldState.camp.followers?.map((f: any) => `${f.npc?.name} (${f.role})`).join(', ') || 'None'}
+    - Followers: ${worldState.camp.followers?.map((f) => `${f.npc?.name} (${f.role})`).join(', ') || 'None'}
     - Resources: Gold: ${worldState.camp.resources?.gold || 0}, Food: ${worldState.camp.resources?.food || 0}
     The player can return to their camp to rest, manage followers, or store items.
     `;
@@ -162,7 +321,7 @@ const generateWorldContext = (campaignData: any, playerState?: any, worldState?:
       if (worldState.shopsAtLocation && worldState.shopsAtLocation.length > 0) {
         context += `
     SHOPS AT CURRENT LOCATION:
-    ${worldState.shopsAtLocation.map((s: any) => `- ${s.name} (${s.type}): ${s.description || 'No description'} | Items: ${s.itemCount}${!s.isOpen ? ' [CLOSED]' : ''}${s.shopkeeperName ? ` | Run by: ${s.shopkeeperName}` : ''}`).join('\n')}
+    ${worldState.shopsAtLocation.map((s) => `- ${s.name} (${s.type}): ${s.description || 'No description'} | Items: ${s.itemCount}${!s.isOpen ? ' [CLOSED]' : ''}${s.shopkeeperName ? ` | Run by: ${s.shopkeeperName}` : ''}`).join('\n')}
     SHOP INTERACTION RULES:
     - Players can buy weapons, armor, potions, and other items from shops
     - Prices vary based on shop type and rarity
@@ -200,7 +359,7 @@ export const generateNarrative = action({
     }
 
     // Fetch campaign context
-    // Use explicit 'any' cast for api to avoid circular type inference issues
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- api cast avoids circular type inference
     const campaignData = await ctx.runQuery((api as any).forge.getCampaignDetails, {
       campaignId: args.campaignId 
     });
@@ -210,6 +369,7 @@ export const generateNarrative = action({
     }
 
     // Dynamic Context Retrieval (RAG)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- api cast avoids circular type inference
     const dynamicContext: string = await ctx.runAction((api as any).lib.context.retrieveRelevantContext, {
       campaignId: args.campaignId,
       query: args.prompt,
@@ -266,10 +426,11 @@ export const generateNarrative = action({
        const parsed = JSON.parse(cleanText);
        
        if (Array.isArray(parsed.choices)) {
-           parsed.choices = parsed.choices.map((c: any) => {
+           parsed.choices = parsed.choices.map((c: unknown) => {
                if (typeof c === 'string') return c;
                if (typeof c === 'object' && c !== null) {
-                   return c.action || c.text || c.label || JSON.stringify(c);
+                   const choice = c as Record<string, unknown>;
+                   return choice.action || choice.text || choice.label || JSON.stringify(c);
                }
                return String(c);
            });
@@ -297,8 +458,9 @@ export const chatStream = httpAction(async (ctx, request) => {
     return new Response("GEMINI_API_KEY not set", { status: 500, headers: corsHeaders });
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- api cast avoids circular type inference
   const campaignData = await ctx.runQuery((api as any).forge.getCampaignDetails, {
-    campaignId: campaignId 
+    campaignId: campaignId
   });
 
   if (!campaignData) {
@@ -308,6 +470,7 @@ export const chatStream = httpAction(async (ctx, request) => {
   // Dynamic Context Retrieval (RAG)
   // We need to run this as a query/action before streaming
   // Since this is an httpAction, we can call runAction
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- api cast avoids circular type inference
   const dynamicContext: string = await ctx.runAction((api as any).lib.context.retrieveRelevantContext, {
       campaignId: campaignId,
       query: prompt,
@@ -316,6 +479,7 @@ export const chatStream = httpAction(async (ctx, request) => {
   // Automatic Memory Summarization
   // Trigger every 10 turns (20 messages) to keep memories fresh
   if (history.length > 0 && history.length % 20 === 0) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- api cast avoids circular type inference
       await ctx.scheduler.runAfter(0, (api as any).lib.memory.summarizeSession, {
           campaignId: campaignId,
           chatHistory: history.slice(-20), // Summarize the last 20 messages
@@ -323,19 +487,20 @@ export const chatStream = httpAction(async (ctx, request) => {
   }
 
   // Fetch additional world state for enhanced AI context
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const worldState: any = {};
+  const worldState: WorldState = {};
   
   try {
     // Get bounty status if bounty system is enabled and player ID provided
     if (campaignData.bountyEnabled && playerId) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- api cast avoids circular type inference
       const bountyStatus = await ctx.runQuery((api as any).bounty.getBountyStatus, {
         campaignId: campaignId,
         playerId: playerId,
       });
       worldState.bounty = bountyStatus;
-      
+
       // Check jail status
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- api cast avoids circular type inference
       const jailStatus = await ctx.runQuery((api as any).bounty.checkJailStatus, {
         campaignId: campaignId,
         playerId: playerId,
@@ -345,6 +510,7 @@ export const chatStream = httpAction(async (ctx, request) => {
     
     // Get location-based context (NPCs present, rumors)
     if (currentLocationId) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- api cast avoids circular type inference
       const knowledgeContext = await ctx.runQuery((api as any).world.getNPCKnowledgeContext, {
         campaignId: campaignId,
         currentLocationId: currentLocationId,
@@ -355,6 +521,7 @@ export const chatStream = httpAction(async (ctx, request) => {
 
       // Get shops at current location
       try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- api cast avoids circular type inference
         const shopsAtLocation = await ctx.runQuery((api as any).shops.getShopsAtLocation, {
           campaignId: campaignId,
           locationId: currentLocationId,
@@ -367,6 +534,7 @@ export const chatStream = httpAction(async (ctx, request) => {
     
     // Get player camp if exists
     if (playerId) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- api cast avoids circular type inference
       const camp = await ctx.runQuery((api as any).camp.getCampDetails, {
         campaignId: campaignId,
         playerId: playerId,
@@ -511,7 +679,7 @@ ${worldState.isJailed ? '- The player is JAILED. Limit actions to jail-appropria
       role: "user",
       parts: [{ text: worldContext + "\n\nRELEVANT MEMORIES & LORE:\n" + dynamicContext }]
     },
-    ...history.map((msg: any) => ({
+    ...history.map((msg: ChatMessage) => ({
       role: msg.role === "user" ? "user" : "model",
       parts: [{ text: msg.content }],
     })),
@@ -562,8 +730,9 @@ export const generateQuest = action({
       throw new Error("GEMINI_API_KEY is not set");
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- api cast avoids circular type inference
     const campaignData = await ctx.runQuery((api as any).forge.getCampaignDetails, {
-      campaignId: args.campaignId 
+      campaignId: args.campaignId
     });
 
     if (!campaignData) {
@@ -622,6 +791,7 @@ export const generateQuest = action({
         const cleanText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
         const questData = JSON.parse(cleanText);
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- api cast avoids circular type inference
         await ctx.runMutation((api as any).forge.saveGeneratedQuest, {
             campaignId: args.campaignId,
             locationId: args.locationId,

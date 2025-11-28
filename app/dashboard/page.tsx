@@ -74,8 +74,8 @@ const ConstellationBg = ({ dark }: { dark: boolean }) => {
             {/* Base gradient */}
             <div className={`absolute inset-0 ${
                 dark
-                    ? 'bg-gradient-to-br from-[#0a0c14] via-[#0f1119] to-[#141825]'
-                    : 'bg-gradient-to-br from-[#faf9f7] via-[#f5f3ef] to-[#ebe7df]'
+                    ? 'bg-linear-to-br from-[#0a0c14] via-[#0f1119] to-[#141825]'
+                    : 'bg-linear-to-br from-[#faf9f7] via-[#f5f3ef] to-[#ebe7df]'
             }`} />
 
             {/* Ink texture overlay */}
@@ -369,7 +369,7 @@ export default function UserDashboard() {
                 <div className="max-w-7xl mx-auto px-6 pb-8">
                     <motion.div
                         className={`flex flex-wrap gap-4 md:gap-8 p-6 rounded-3xl ${
-                            dark ? 'bg-white/[0.02] border border-white/5' : 'bg-white/50 border border-black/5 shadow-sm'
+                            dark ? 'bg-white/2 border border-white/5' : 'bg-white/50 border border-black/5 shadow-sm'
                         }`}
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -541,7 +541,7 @@ export default function UserDashboard() {
                                                 <Link href="/forge/create/campaign" className="block h-full">
                                                     <div className={`h-full min-h-[320px] flex flex-col items-center justify-center gap-4 rounded-3xl border-2 border-dashed transition-all group ${
                                                         dark
-                                                            ? 'border-amber-500/20 hover:border-amber-500/40 bg-white/[0.01] hover:bg-amber-500/5'
+                                                            ? 'border-amber-500/20 hover:border-amber-500/40 bg-white/1 hover:bg-amber-500/5'
                                                             : 'border-amber-400/30 hover:border-amber-500/50 bg-amber-50/30 hover:bg-amber-50'
                                                     }`}>
                                                         <div className={`p-5 rounded-2xl transition-transform group-hover:scale-110 ${
@@ -634,7 +634,7 @@ const EmptyState = ({ icon, title, description, action, dark }: {
     dark: boolean;
 }) => (
     <div className={`text-center py-16 px-8 rounded-3xl border-2 border-dashed ${
-        dark ? 'border-white/10 bg-white/[0.01]' : 'border-black/10 bg-black/[0.01]'
+        dark ? 'border-white/10 bg-white/1' : 'border-black/10 bg-black/1'
     }`}>
         <div className={`inline-flex p-5 rounded-2xl mb-6 ${dark ? 'bg-white/5 text-gray-500' : 'bg-black/5 text-gray-400'}`}>
             {icon}
@@ -689,7 +689,7 @@ const HeroCard = ({ hero, dark }: { hero: HeroCharacter; dark: boolean }) => {
                         alt={hero.campaignTitle}
                         className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                    <div className="absolute inset-0 bg-linear-to-t from-black/80 via-black/20 to-transparent" />
 
                     {/* Campaign name */}
                     <div className="absolute bottom-3 left-4 right-16">
@@ -740,7 +740,7 @@ const HeroCard = ({ hero, dark }: { hero: HeroCharacter; dark: boolean }) => {
                         </div>
                         <div className={`h-2 rounded-full overflow-hidden ${dark ? 'bg-white/5' : 'bg-black/5'}`}>
                             <motion.div
-                                className="h-full bg-gradient-to-r from-amber-500 to-amber-400"
+                                className="h-full bg-linear-to-r from-amber-500 to-amber-400"
                                 initial={{ width: 0 }}
                                 animate={{ width: `${levelProgress}%` }}
                                 transition={{ duration: 1, ease: [0.22, 1, 0.36, 1] }}
@@ -752,7 +752,7 @@ const HeroCard = ({ hero, dark }: { hero: HeroCharacter; dark: boolean }) => {
                     {statEntries.length > 0 && (
                         <div className="grid grid-cols-2 gap-2 mb-4">
                             {statEntries.map(([key, value]) => (
-                                <div key={key} className={`px-3 py-2 rounded-xl ${dark ? 'bg-white/5' : 'bg-black/[0.02]'}`}>
+                                <div key={key} className={`px-3 py-2 rounded-xl ${dark ? 'bg-white/5' : 'bg-black/2'}`}>
                                     <p className={`text-[9px] uppercase tracking-wider ${dark ? 'text-gray-600' : 'text-gray-400'}`}>
                                         {key}
                                     </p>
@@ -793,13 +793,13 @@ const AdventureCard = ({ campaign, dark }: { campaign: Campaign; dark: boolean }
         <motion.div
             className={`flex items-center gap-4 p-4 rounded-2xl transition-all group ${
                 dark
-                    ? 'bg-white/[0.02] hover:bg-white/[0.05] ring-1 ring-white/5 hover:ring-amber-500/20'
+                    ? 'bg-white/2 hover:bg-white/5 ring-1 ring-white/5 hover:ring-amber-500/20'
                     : 'bg-white hover:shadow-md shadow-sm ring-1 ring-black/5 hover:ring-amber-400/20'
             }`}
             whileHover={{ x: 4 }}
         >
             {/* Character avatar */}
-            <div className={`w-14 h-14 rounded-xl overflow-hidden ring-2 flex-shrink-0 ${
+            <div className={`w-14 h-14 rounded-xl overflow-hidden ring-2 shrink-0 ${
                 dark ? 'ring-amber-500/20' : 'ring-amber-400/20'
             }`}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -826,7 +826,7 @@ const AdventureCard = ({ campaign, dark }: { campaign: Campaign; dark: boolean }
                 )}
             </div>
 
-            <ChevronRight size={18} className={`flex-shrink-0 transition-transform group-hover:translate-x-1 ${
+            <ChevronRight size={18} className={`shrink-0 transition-transform group-hover:translate-x-1 ${
                 dark ? 'text-gray-600 group-hover:text-amber-400' : 'text-gray-300 group-hover:text-amber-500'
             }`} />
         </motion.div>
@@ -844,14 +844,14 @@ const RealmCard = ({ campaign, dark }: { campaign: Campaign; dark: boolean }) =>
             whileHover={{ y: -4 }}
         >
             {/* Image */}
-            <div className="relative aspect-[16/10] overflow-hidden">
+            <div className="relative aspect-16/10 overflow-hidden">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                     src={campaign.imageUrl || FALLBACK_IMAGE}
                     alt={campaign.title}
                     className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+                <div className="absolute inset-0 bg-linear-to-t from-black/70 via-black/20 to-transparent" />
 
                 {/* XP badge */}
                 <div className="absolute top-4 left-4">

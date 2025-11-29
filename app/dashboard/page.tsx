@@ -9,10 +9,10 @@ import { useTheme } from '@/components/ThemeProvider';
 import Link from 'next/link';
 import {
     Shield, Map, User, Plus, Scroll,
-    Crown, ChevronRight, Bell,
+    Crown, ChevronRight,
     Settings, Compass, Zap,
     Backpack, Sword, Gamepad2, Hammer,
-    Sparkles, BookOpen, Moon, Sun
+    Sparkles, BookOpen
 } from 'lucide-react';
 
 const FALLBACK_IMAGE = '/assets/image.png';
@@ -191,7 +191,7 @@ const DivineLoader = ({ dark }: { dark: boolean }) => (
 // --- MAIN DASHBOARD ---
 export default function UserDashboard() {
     const { user, loading: authLoading } = useAuth();
-    const { theme, mounted, toggleTheme } = useTheme();
+    const { theme, mounted } = useTheme();
     const dark = mounted ? theme === 'dark' : false;
 
     const [activeTab, setActiveTab] = useState<'playing' | 'creating'>('playing');
@@ -231,70 +231,6 @@ export default function UserDashboard() {
 
             {/* === MAIN CONTENT === */}
             <div className="relative z-10 min-h-screen">
-
-                {/* --- TOP BAR --- */}
-                <motion.header
-                    className={`sticky top-0 z-40 backdrop-blur-xl border-b ${
-                        dark ? 'bg-[#0a0c14]/80 border-white/5' : 'bg-white/60 border-black/5'
-                    }`}
-                    initial={{ y: -100, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-                >
-                    <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-                        {/* Logo / Title */}
-                        <div className="flex items-center gap-4">
-                            <div className={`p-2.5 rounded-xl ${dark ? 'bg-amber-500/10' : 'bg-amber-100'}`}>
-                                <BookOpen className={dark ? 'text-amber-400' : 'text-amber-600'} size={22} />
-                            </div>
-                            <div>
-                                <h1 className="font-serif text-2xl font-bold tracking-tight">
-                                    Chronicle
-                                </h1>
-                                <p className={`text-[10px] uppercase tracking-[0.25em] ${dark ? 'text-amber-400/60' : 'text-amber-600/60'}`}>
-                                    Personal Archives
-                                </p>
-                            </div>
-                        </div>
-
-                        {/* Right actions */}
-                        <div className="flex items-center gap-3">
-                            {/* Theme toggle */}
-                            <button
-                                onClick={toggleTheme}
-                                className={`p-2.5 rounded-xl transition-all ${
-                                    dark
-                                        ? 'bg-white/5 hover:bg-white/10 text-amber-300'
-                                        : 'bg-black/5 hover:bg-black/10 text-amber-600'
-                                }`}
-                            >
-                                {dark ? <Sun size={18} /> : <Moon size={18} />}
-                            </button>
-
-                            {/* Notifications */}
-                            <button className={`relative p-2.5 rounded-xl transition-all ${
-                                dark ? 'bg-white/5 hover:bg-white/10' : 'bg-black/5 hover:bg-black/10'
-                            }`}>
-                                <Bell size={18} className={dark ? 'text-gray-400' : 'text-gray-600'} />
-                                <span className="absolute top-2 right-2 w-2 h-2 bg-rose-500 rounded-full" />
-                            </button>
-
-                            {/* Profile */}
-                            <Link href="/settings" className="flex items-center gap-3 ml-2">
-                                <div className={`relative w-10 h-10 rounded-xl overflow-hidden ring-2 ${
-                                    dark ? 'ring-amber-500/30' : 'ring-amber-400/40'
-                                }`}>
-                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img
-                                        src={user?.profilePictureUrl || `https://ui-avatars.com/api/?name=${user?.firstName}&background=d4af37&color=fff`}
-                                        alt="Profile"
-                                        className="w-full h-full object-cover"
-                                    />
-                                </div>
-                            </Link>
-                        </div>
-                    </div>
-                </motion.header>
 
                 {/* --- HERO SECTION --- */}
                 <div className="max-w-7xl mx-auto px-6 pt-10 pb-6">

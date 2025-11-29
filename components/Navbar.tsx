@@ -69,12 +69,14 @@ const Navbar = () => {
     const dark = mounted ? theme === 'dark' : false;
 
     return (
-        <nav className={`fixed top-0 w-full z-50 transition-all duration-300 px-8 py-2 ${
+        <nav className={`sticky top-0 w-full z-50 transition-all duration-300 px-8 py-2 ${
             scrolled
                 ? dark
                     ? 'backdrop-blur-md shadow-sm bg-genshin-dark/80'
                     : 'backdrop-blur-md shadow-sm bg-white/80'
-                : 'bg-transparent'
+                : dark
+                    ? 'bg-genshin-dark'
+                    : 'bg-white'
         }`}>
             <div className="max-w-7xl mx-auto flex justify-between items-center">
                 <div className="flex items-center">
@@ -105,7 +107,7 @@ const Navbar = () => {
                 ) : user ? (
                     <Link href="/dashboard">
                         <button className="btn-genshin bg-genshin-gold text-white px-6 py-2 rounded-full font-serif font-bold shadow-lg hover:bg-yellow-500 transition-colors border border-white/30">
-                            ENTER REALM
+                            DASHBOARD
                         </button>
                     </Link>
                 ) : (

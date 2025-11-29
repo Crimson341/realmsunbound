@@ -700,22 +700,45 @@ export const generateNarrative = action({
     try {
        const cleanText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
        const parsed = JSON.parse(cleanText);
-       
-       if (Array.isArray(parsed.choices)) {
-           parsed.choices = parsed.choices.map((c: unknown) => {
-               if (typeof c === 'string') return c;
-               if (typeof c === 'object' && c !== null) {
-                   const choice = c as Record<string, unknown>;
-                   return choice.action || choice.text || choice.label || JSON.stringify(c);
-               }
-               return String(c);
-           });
+
+       // Validate and sanitize numeric fields
+       if (typeof parsed.hp === 'number') {
+           parsed.hp = Math.max(0, Math.min(parsed.hp, 999)); // Clamp HP to reasonable bounds
        }
-       
+       if (typeof parsed.gold === 'number') {
+           parsed.gold = Math.max(0, Math.floor(parsed.gold)); // Gold must be non-negative integer
+       }
+       if (typeof parsed.energy === 'number') {
+           parsed.energy = Math.max(0, Math.min(parsed.energy, 999)); // Clamp energy
+       }
+       if (typeof parsed.xpGained === 'number') {
+           parsed.xpGained = Math.max(0, Math.min(parsed.xpGained, 10000)); // Cap XP gain
+       }
+
+       // Validate choices array
+       if (Array.isArray(parsed.choices)) {
+           parsed.choices = parsed.choices
+               .map((c: unknown) => {
+                   if (typeof c === 'string') return c;
+                   if (typeof c === 'object' && c !== null) {
+                       const choice = c as Record<string, unknown>;
+                       return choice.action || choice.text || choice.label || JSON.stringify(c);
+                   }
+                   return String(c);
+               })
+               .filter((c: string) => c && c.trim().length > 0)
+               .slice(0, 6); // Limit to 6 choices max
+       }
+
+       // Validate context
+       if (parsed.context && !['explore', 'combat', 'social', 'rest'].includes(parsed.context)) {
+           delete parsed.context; // Remove invalid context
+       }
+
        return JSON.stringify(parsed);
     } catch (e) {
-       console.error("Failed to parse AI response", e);
-       return JSON.stringify({ content: rawText, choices: [] });
+       console.error("[AI:ResponseParse] Failed to parse AI response:", e, "Raw:", rawText.substring(0, 200));
+       return JSON.stringify({ content: rawText, choices: [], parseError: true });
     }
   },
 });
@@ -803,8 +826,8 @@ export const chatStream = httpAction(async (ctx, request) => {
           locationId: currentLocationId,
         });
         worldState.shopsAtLocation = shopsAtLocation;
-      } catch {
-        // Shops query may fail if shops table doesn't exist yet
+      } catch (error) {
+        console.warn("[AI:WorldState] Shops query failed (may not be set up yet):", error);
       }
     }
     
@@ -862,8 +885,8 @@ export const chatStream = httpAction(async (ctx, request) => {
             })),
           };
         }
-      } catch {
-        // Conditions system may not be set up yet
+      } catch (error) {
+        console.warn("[AI:WorldState] Conditions system query failed (may not be set up yet):", error);
       }
 
       // Fetch optimized story context (summaries, events, anchors)
@@ -884,8 +907,8 @@ export const chatStream = httpAction(async (ctx, request) => {
               .map((m: { content: string; reason?: string }) => m.content.substring(0, 200)) || [],
           };
         }
-      } catch {
-        // Context optimization may not be set up yet
+      } catch (error) {
+        console.warn("[AI:WorldState] Context optimization query failed (may not be set up yet):", error);
       }
 
       // Trigger auto-summarization if history is getting long (every 50 messages)
@@ -897,14 +920,15 @@ export const chatStream = httpAction(async (ctx, request) => {
             playerId: playerId,
             maxMessagesToSummarize: 40,
           });
-        } catch {
-          // Summarization may fail silently
+          console.log("[AI:Summarization] Scheduled auto-summarization for campaign", campaignId);
+        } catch (error) {
+          console.warn("[AI:Summarization] Failed to schedule summarization:", error);
         }
       }
     }
   } catch (e) {
-    // Silently continue if any world state queries fail
-    console.error("Failed to fetch world state:", e);
+    // Log but continue - world state is optional context enhancement
+    console.error("[AI:WorldState] Failed to fetch world state:", e);
   }
 
   // Set current location for relevance filtering

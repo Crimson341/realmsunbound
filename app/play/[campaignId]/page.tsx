@@ -23,6 +23,8 @@ import {
     XPBar,
     LevelUpOverlay,
     CombatHUD,
+    CombatActionBar,
+    CombatAction,
     ScreenEffect,
     GameContext,
     CombatState,
@@ -376,6 +378,10 @@ export default function PlayPage() {
     const mapData = useQuery(api.map.getMapData, { campaignId });
     const travelToLocation = useMutation(api.map.travelToLocation);
 
+    // Player game state (persistent)
+    const playerGameState = useQuery(api.world.getPlayerGameState, { campaignId });
+    const updatePlayerGameState = useMutation(api.world.updatePlayerGameState);
+
     // Get player ID from character data
     const playerId = data?.character?.userId || "";
 
@@ -421,28 +427,76 @@ export default function PlayPage() {
         }
     }, [savedMessages, messagesInitialized]);
 
-    // --- GAME STATE ---
+    // --- GAME STATE (loaded from playerGameState) ---
+    const [gameStateInitialized, setGameStateInitialized] = useState(false);
     const [currentLocationId, setCurrentLocationId] = useState<string | null>(null);
     const [hp, setHp] = useState(20);
-    const [maxHp] = useState(20);
+    const [maxHp, setMaxHp] = useState(20);
     const [xp, setXp] = useState(0);
     const [xpToLevel, setXpToLevel] = useState(100);
     const [level, setLevel] = useState(1);
     const [gameContext, setGameContext] = useState<GameContext>('explore');
-    
+
     // --- WORLD SYSTEMS STATE ---
     const [bountyAmount, setBountyAmount] = useState(0);
     const [isJailed, setIsJailed] = useState(false);
     const [killedNpcs, setKilledNpcs] = useState<string[]>([]);
     const [gold, setGold] = useState(0);
-    
+
     // --- ENERGY/ABILITY STATE ---
     const [energy, setEnergy] = useState(100);
-    const [maxEnergy] = useState(100);
+    const [maxEnergy, setMaxEnergy] = useState(100);
+
+    // --- LOAD GAME STATE FROM DATABASE ---
+    useEffect(() => {
+        if (playerGameState && !gameStateInitialized) {
+            // Initialize all state from database
+            setHp(playerGameState.hp);
+            setMaxHp(playerGameState.maxHp);
+            setXp(playerGameState.xp);
+            setLevel(playerGameState.level);
+            setGold(playerGameState.gold ?? 0);
+            setEnergy(playerGameState.energy ?? 100);
+            setMaxEnergy(playerGameState.maxEnergy ?? 100);
+            setIsJailed(playerGameState.isJailed ?? false);
+            if (playerGameState.currentLocationId) {
+                setCurrentLocationId(playerGameState.currentLocationId);
+            }
+            // Calculate xpToLevel based on level (100 * 1.5^(level-1))
+            setXpToLevel(Math.floor(100 * Math.pow(1.5, playerGameState.level - 1)));
+            setGameStateInitialized(true);
+            console.log("[GameState] Loaded from DB:", playerGameState);
+        }
+    }, [playerGameState, gameStateInitialized]);
     
     // --- COMBAT STATE ---
     const [combatState, setCombatState] = useState<CombatState | null>(null);
-    
+
+    // --- STATE SAVING HELPER ---
+    // Saves player game state to database on specific events
+    const saveGameState = useCallback(async (updates: {
+        hp?: number;
+        maxHp?: number;
+        energy?: number;
+        maxEnergy?: number;
+        xp?: number;
+        level?: number;
+        gold?: number;
+        currentLocationId?: Id<"locations">;
+        activeCooldowns?: string;
+    }) => {
+        if (!gameStateInitialized) return; // Don't save until we've loaded initial state
+        try {
+            await updatePlayerGameState({
+                campaignId,
+                ...updates,
+            });
+            console.log("[GameState] Saved:", updates);
+        } catch (error) {
+            console.error("[GameState] Failed to save:", error);
+        }
+    }, [campaignId, updatePlayerGameState, gameStateInitialized]);
+
     // --- UI EFFECT STATE ---
     const [skillCheckData, setSkillCheckData] = useState<SkillCheckData | null>(null);
     const [rewardQueue, setRewardQueue] = useState<QueuedReward[]>([]);
@@ -479,15 +533,30 @@ export default function PlayPage() {
             const newXp = prev + amount;
             if (newXp >= xpToLevel) {
                 // Level up!
-                setLevel(l => l + 1);
-                setXpToLevel(t => Math.floor(t * 1.5));
+                const newLevel = level + 1;
+                const newXpToLevel = Math.floor(xpToLevel * 1.5);
+                const remainingXp = newXp - xpToLevel;
+
+                setLevel(newLevel);
+                setXpToLevel(newXpToLevel);
                 setShowLevelUp(true);
                 setScreenEffect('levelup');
-                return newXp - xpToLevel;
+
+                // Save level up state to DB
+                saveGameState({
+                    level: newLevel,
+                    xp: remainingXp,
+                });
+
+                return remainingXp;
+            }
+            // Save XP gain to DB (only if significant amount)
+            if (amount >= 10) {
+                saveGameState({ xp: newXp });
             }
             return newXp;
         });
-    }, [xpToLevel]);
+    }, [xpToLevel, level, saveGameState]);
 
     // --- REWARD QUEUE MANAGEMENT ---
     const addReward = useCallback((reward: RewardData) => {
@@ -501,9 +570,25 @@ export default function PlayPage() {
 
     // --- GAME DATA HANDLER ---
     const handleGameData = useCallback((gameData: any) => {
+        // Track state changes for batch saving
+        const stateUpdates: Parameters<typeof saveGameState>[0] = {};
+
         // Update HP
         if (typeof gameData.hp === 'number') {
             setHp(gameData.hp);
+            stateUpdates.hp = gameData.hp;
+        }
+
+        // Update Gold
+        if (typeof gameData.gold === 'number') {
+            setGold(gameData.gold);
+            stateUpdates.gold = gameData.gold;
+        }
+
+        // Update Energy
+        if (typeof gameData.energy === 'number') {
+            setEnergy(gameData.energy);
+            stateUpdates.energy = gameData.energy;
         }
 
         // Update context
@@ -642,14 +727,26 @@ export default function PlayPage() {
             }
         }
 
-        // End combat if enemy HP is 0
+        // End combat if enemy HP is 0 (victory)
         if (combatState && gameData.gameEvent?.combat?.enemyHP === 0) {
+            // Give a brief moment for the final blow narrative, then end combat
             setTimeout(() => {
                 setCombatState(null);
                 setGameContext('explore');
-            }, 1500);
+            }, 2000);
         }
-    }, [data, combatState, addReward, addXp]);
+
+        // End combat if player fled successfully
+        if (gameData.gameEvent?.combatEnded && gameData.gameEvent?.combatResult === 'fled') {
+            setCombatState(null);
+            setGameContext('explore');
+        }
+
+        // Save any state changes that occurred
+        if (Object.keys(stateUpdates).length > 0) {
+            saveGameState(stateUpdates);
+        }
+    }, [data, combatState, addReward, addXp, saveGameState]);
 
     // --- QUEST GENERATION ---
     const handleGenerateQuest = async () => {
@@ -766,6 +863,9 @@ export default function PlayPage() {
             // Update local state
             setCurrentLocationId(result.to._id);
             setIsMapOpen(false);
+
+            // Save location change to DB
+            saveGameState({ currentLocationId: result.to._id });
 
             // Send travel prompt to AI for narrative
             const fromLocation = data.locations?.find(l => l._id === currentLocationId);
@@ -1063,6 +1163,62 @@ Describe the journey briefly and their arrival at the new location. Set the scen
         }
     };
 
+    // --- COMBAT ACTION HANDLER ---
+    const handleCombatAction = useCallback((action: CombatAction) => {
+        if (!combatState || isLoading) return;
+
+        let actionPrompt = "";
+
+        switch (action.type) {
+            case 'attack':
+                actionPrompt = `[COMBAT_ACTION: ATTACK with ${action.data?.weaponName || "my weapon"}]
+I attack ${combatState.enemyName} with my ${action.data?.weaponName || "weapon"}!`;
+                break;
+            case 'defend':
+                actionPrompt = `[COMBAT_ACTION: DEFEND]
+I take a defensive stance, bracing for the enemy's attack!`;
+                break;
+            case 'ability':
+                actionPrompt = `[COMBAT_ACTION: ABILITY ${action.data?.abilityName}]
+I use ${action.data?.abilityName} against ${combatState.enemyName}!`;
+                break;
+            case 'item':
+                actionPrompt = `[COMBAT_ACTION: ITEM ${action.data?.itemName}]
+I quickly use my ${action.data?.itemName}!`;
+                break;
+            case 'flee':
+                actionPrompt = `[COMBAT_ACTION: FLEE]
+I attempt to disengage and flee from combat with ${combatState.enemyName}!`;
+                break;
+        }
+
+        // Send the combat action through the normal message handler
+        handleSendMessage(actionPrompt);
+    }, [combatState, isLoading, handleSendMessage]);
+
+    // --- GET EQUIPPED WEAPON ---
+    const equippedWeapon = useMemo(() => {
+        // Find equipped weapon from inventory
+        const weapon = data?.inventory?.find((item: any) =>
+            item.equippedSlot === 'weapon' || item.type?.toLowerCase().includes('weapon')
+        );
+        return weapon?.name || "fists";
+    }, [data?.inventory]);
+
+    // --- GET CONSUMABLES FOR COMBAT ---
+    const consumables = useMemo(() => {
+        return data?.inventory
+            ?.filter((item: any) => item.consumable || item.category === 'potion' || item.category === 'consumable')
+            .map((item: any) => ({ name: item.name, quantity: item.quantity || 1 })) || [];
+    }, [data?.inventory]);
+
+    // --- GET ABILITIES FOR COMBAT ---
+    const combatAbilities = useMemo(() => {
+        return abilities
+            ?.filter((a: any) => !a.isPassive && a.damage)
+            .map((a: any) => ({ name: a.name, energyCost: a.energyCost || 10 })) || [];
+    }, [abilities]);
+
     // --- LOADING STATE ---
     if (!data) {
         return (
@@ -1087,15 +1243,26 @@ Describe the journey briefly and their arrival at the new location. Set the scen
 
                 {/* Combat HUD */}
                 {combatState && (
-                    <CombatHUD
-                        playerName={data.character?.name || "Traveler"}
-                        playerHP={hp}
-                        playerMaxHP={maxHp}
-                        enemyName={combatState.enemyName}
-                        enemyHP={combatState.enemyHP}
-                        enemyMaxHP={combatState.enemyMaxHP}
-                        isPlayerTurn={combatState.isPlayerTurn}
-                    />
+                    <>
+                        <CombatHUD
+                            playerName={data.character?.name || "Traveler"}
+                            playerHP={hp}
+                            playerMaxHP={maxHp}
+                            enemyName={combatState.enemyName}
+                            enemyHP={combatState.enemyHP}
+                            enemyMaxHP={combatState.enemyMaxHP}
+                            isPlayerTurn={combatState.isPlayerTurn}
+                        />
+                        <CombatActionBar
+                            onAction={handleCombatAction}
+                            isPlayerTurn={combatState.isPlayerTurn}
+                            isLoading={isLoading}
+                            equippedWeapon={equippedWeapon}
+                            abilities={combatAbilities}
+                            consumables={consumables}
+                            playerEnergy={energy}
+                        />
+                    </>
                 )}
 
                 {/* Dice Roll Overlay */}
@@ -1450,28 +1617,35 @@ Describe the journey briefly and their arrival at the new location. Set the scen
                                     });
                                     
                                     if (result.success) {
-                                        // Update energy
-                                        setEnergy(result.newEnergy ?? energy);
-                                        
-                                        // Update HP if healed
-                                        if (result.newHp && result.newHp !== hp) {
-                                            setHp(result.newHp);
+                                        const newEnergy = result.newEnergy ?? energy;
+                                        const newHp = result.newHp ?? hp;
+
+                                        // Update local state
+                                        setEnergy(newEnergy);
+                                        if (newHp !== hp) {
+                                            setHp(newHp);
                                         }
-                                        
+
+                                        // Save to database
+                                        saveGameState({
+                                            energy: newEnergy,
+                                            ...(newHp !== hp && { hp: newHp }),
+                                        });
+
                                         // Show damage effect
                                         if (result.spell?.damage && result.spell.damage > 0) {
                                             setScreenEffect('critical');
                                             setTimeout(() => setScreenEffect(null), 300);
                                         }
-                                        
+
                                         // Show healing effect
                                         if (result.spell?.healing && result.spell.healing > 0) {
                                             setScreenEffect('heal');
                                             setTimeout(() => setScreenEffect(null), 300);
                                         }
-                                        
+
                                         // Send to AI for narrative
-                                        const abilityMessage = combatState 
+                                        const abilityMessage = combatState
                                             ? `I use ${abilityName} on ${combatState.enemyName || 'the enemy'}!`
                                             : `I use ${abilityName}!`;
                                         handleSendMessage(abilityMessage);

@@ -2,6 +2,101 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 
+// --- PLAYER GAME STATE ---
+// Persistent player state across sessions
+
+// Get player game state for a campaign
+export const getPlayerGameState = query({
+    args: {
+        campaignId: v.id("campaigns"),
+    },
+    handler: async (ctx, args) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) return null;
+
+        return await ctx.db
+            .query("playerGameState")
+            .withIndex("by_campaign_and_player", (q) =>
+                q.eq("campaignId", args.campaignId).eq("playerId", identity.tokenIdentifier)
+            )
+            .first();
+    },
+});
+
+// Update player game state (partial update)
+export const updatePlayerGameState = mutation({
+    args: {
+        campaignId: v.id("campaigns"),
+        hp: v.optional(v.number()),
+        maxHp: v.optional(v.number()),
+        energy: v.optional(v.number()),
+        maxEnergy: v.optional(v.number()),
+        xp: v.optional(v.number()),
+        level: v.optional(v.number()),
+        gold: v.optional(v.number()),
+        currentLocationId: v.optional(v.id("locations")),
+        isJailed: v.optional(v.boolean()),
+        jailEndTime: v.optional(v.number()),
+        jailRegionId: v.optional(v.id("regions")),
+        activeBuffs: v.optional(v.string()),
+        activeCooldowns: v.optional(v.string()),
+    },
+    handler: async (ctx, args) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) throw new Error("Unauthorized");
+
+        // Find existing state
+        const existing = await ctx.db
+            .query("playerGameState")
+            .withIndex("by_campaign_and_player", (q) =>
+                q.eq("campaignId", args.campaignId).eq("playerId", identity.tokenIdentifier)
+            )
+            .first();
+
+        if (!existing) {
+            // Create new state if doesn't exist (fallback)
+            return await ctx.db.insert("playerGameState", {
+                campaignId: args.campaignId,
+                playerId: identity.tokenIdentifier,
+                hp: args.hp ?? 20,
+                maxHp: args.maxHp ?? 20,
+                energy: args.energy ?? 100,
+                maxEnergy: args.maxEnergy ?? 100,
+                xp: args.xp ?? 0,
+                level: args.level ?? 1,
+                gold: args.gold ?? 0,
+                currentLocationId: args.currentLocationId,
+                isJailed: args.isJailed ?? false,
+                jailEndTime: args.jailEndTime,
+                jailRegionId: args.jailRegionId,
+                activeBuffs: args.activeBuffs ?? "[]",
+                activeCooldowns: args.activeCooldowns ?? "{}",
+                lastPlayed: Date.now(),
+            });
+        }
+
+        // Build update object with only provided fields
+        const updates: Record<string, unknown> = { lastPlayed: Date.now() };
+
+        if (args.hp !== undefined) updates.hp = args.hp;
+        if (args.maxHp !== undefined) updates.maxHp = args.maxHp;
+        if (args.energy !== undefined) updates.energy = args.energy;
+        if (args.maxEnergy !== undefined) updates.maxEnergy = args.maxEnergy;
+        if (args.xp !== undefined) updates.xp = args.xp;
+        if (args.level !== undefined) updates.level = args.level;
+        if (args.gold !== undefined) updates.gold = args.gold;
+        if (args.currentLocationId !== undefined) updates.currentLocationId = args.currentLocationId;
+        if (args.isJailed !== undefined) updates.isJailed = args.isJailed;
+        if (args.jailEndTime !== undefined) updates.jailEndTime = args.jailEndTime;
+        if (args.jailRegionId !== undefined) updates.jailRegionId = args.jailRegionId;
+        if (args.activeBuffs !== undefined) updates.activeBuffs = args.activeBuffs;
+        if (args.activeCooldowns !== undefined) updates.activeCooldowns = args.activeCooldowns;
+
+        await ctx.db.patch(existing._id, updates);
+        return existing._id;
+    },
+});
+
 // --- RUMOR SYSTEM ---
 // Rumors spread through the world based on proximity to their origin
 

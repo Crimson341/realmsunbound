@@ -674,6 +674,30 @@ export const ensureCharacterForCampaign = mutation({
             campaignId: args.campaignId,
         });
 
+        // Get starting location for the campaign (first location if available)
+        const startingLocation = await ctx.db
+            .query("locations")
+            .withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId))
+            .first();
+
+        // Create playerGameState for this character
+        await ctx.db.insert("playerGameState", {
+            campaignId: args.campaignId,
+            playerId: identity.tokenIdentifier,
+            currentLocationId: startingLocation?._id,
+            hp: 20,
+            maxHp: 20,
+            energy: 100,
+            maxEnergy: 100,
+            xp: 0,
+            level: 1,
+            gold: 0,
+            isJailed: false,
+            activeBuffs: "[]",
+            activeCooldowns: "{}",
+            lastPlayed: Date.now(),
+        });
+
         // Increment play count for the campaign
         await ctx.db.patch(args.campaignId, {
             playCount: (campaign.playCount || 0) + 1,

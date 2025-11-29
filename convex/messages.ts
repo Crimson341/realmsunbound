@@ -104,8 +104,8 @@ export const saveMessage = mutation({
                     messageContent: args.content,
                     messageId: messageId,
                 });
-            } catch {
-                // Silently fail if extraction action doesn't exist yet
+            } catch (error) {
+                console.warn("[Messages:StoryExtraction] Failed to extract story events (may not be set up yet):", error);
             }
         }
 

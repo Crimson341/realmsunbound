@@ -777,6 +777,228 @@ export const CombatHUD: React.FC<CombatHUDProps> = ({
 };
 
 // ============================================
+// COMBAT ACTION BAR
+// ============================================
+
+export interface CombatAction {
+    type: 'attack' | 'defend' | 'ability' | 'item' | 'flee';
+    data?: {
+        weaponName?: string;
+        abilityName?: string;
+        itemName?: string;
+    };
+}
+
+interface CombatActionBarProps {
+    onAction: (action: CombatAction) => void;
+    isPlayerTurn: boolean;
+    isLoading: boolean;
+    equippedWeapon?: string;
+    abilities?: Array<{ name: string; energyCost: number }>;
+    consumables?: Array<{ name: string; quantity: number }>;
+    playerEnergy: number;
+    onOpenAbilities?: () => void;
+    onOpenItems?: () => void;
+}
+
+export const CombatActionBar: React.FC<CombatActionBarProps> = ({
+    onAction,
+    isPlayerTurn,
+    isLoading,
+    equippedWeapon = "fists",
+    abilities = [],
+    consumables = [],
+    playerEnergy,
+    onOpenAbilities,
+    onOpenItems,
+}) => {
+    const [showAbilities, setShowAbilities] = useState(false);
+    const [showItems, setShowItems] = useState(false);
+
+    const handleAttack = () => {
+        onAction({ type: 'attack', data: { weaponName: equippedWeapon } });
+    };
+
+    const handleDefend = () => {
+        onAction({ type: 'defend' });
+    };
+
+    const handleAbility = (abilityName: string) => {
+        onAction({ type: 'ability', data: { abilityName } });
+        setShowAbilities(false);
+    };
+
+    const handleItem = (itemName: string) => {
+        onAction({ type: 'item', data: { itemName } });
+        setShowItems(false);
+    };
+
+    const handleFlee = () => {
+        onAction({ type: 'flee' });
+    };
+
+    const disabled = !isPlayerTurn || isLoading;
+
+    return (
+        <motion.div
+            initial={{ y: 100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 100, opacity: 0 }}
+            className="fixed bottom-24 left-1/2 -translate-x-1/2 z-40 w-full max-w-xl px-4"
+        >
+            <div className="bg-genshin-dark/95 backdrop-blur-md border border-amber-500/30 rounded-2xl p-4 shadow-2xl">
+                {/* Action Buttons */}
+                <div className="flex gap-2 justify-center flex-wrap">
+                    {/* Attack */}
+                    <motion.button
+                        whileHover={{ scale: disabled ? 1 : 1.05 }}
+                        whileTap={{ scale: disabled ? 1 : 0.95 }}
+                        onClick={handleAttack}
+                        disabled={disabled}
+                        className={`flex flex-col items-center gap-1 px-4 py-2 rounded-xl transition-all ${
+                            disabled
+                                ? 'bg-stone-800 text-stone-600 cursor-not-allowed'
+                                : 'bg-gradient-to-br from-red-600 to-red-700 text-white hover:from-red-500 hover:to-red-600 shadow-lg shadow-red-500/20'
+                        }`}
+                    >
+                        <Swords size={20} />
+                        <span className="text-xs font-bold">Attack</span>
+                    </motion.button>
+
+                    {/* Defend */}
+                    <motion.button
+                        whileHover={{ scale: disabled ? 1 : 1.05 }}
+                        whileTap={{ scale: disabled ? 1 : 0.95 }}
+                        onClick={handleDefend}
+                        disabled={disabled}
+                        className={`flex flex-col items-center gap-1 px-4 py-2 rounded-xl transition-all ${
+                            disabled
+                                ? 'bg-stone-800 text-stone-600 cursor-not-allowed'
+                                : 'bg-gradient-to-br from-blue-600 to-blue-700 text-white hover:from-blue-500 hover:to-blue-600 shadow-lg shadow-blue-500/20'
+                        }`}
+                    >
+                        <Shield size={20} />
+                        <span className="text-xs font-bold">Defend</span>
+                    </motion.button>
+
+                    {/* Abilities */}
+                    <div className="relative">
+                        <motion.button
+                            whileHover={{ scale: disabled ? 1 : 1.05 }}
+                            whileTap={{ scale: disabled ? 1 : 0.95 }}
+                            onClick={() => onOpenAbilities ? onOpenAbilities() : setShowAbilities(!showAbilities)}
+                            disabled={disabled || abilities.length === 0}
+                            className={`flex flex-col items-center gap-1 px-4 py-2 rounded-xl transition-all ${
+                                disabled || abilities.length === 0
+                                    ? 'bg-stone-800 text-stone-600 cursor-not-allowed'
+                                    : 'bg-gradient-to-br from-purple-600 to-purple-700 text-white hover:from-purple-500 hover:to-purple-600 shadow-lg shadow-purple-500/20'
+                            }`}
+                        >
+                            <Zap size={20} />
+                            <span className="text-xs font-bold">Ability</span>
+                        </motion.button>
+
+                        {/* Abilities Dropdown */}
+                        <AnimatePresence>
+                            {showAbilities && abilities.length > 0 && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: 10 }}
+                                    className="absolute bottom-full left-0 mb-2 bg-genshin-dark border border-purple-500/30 rounded-lg p-2 min-w-[150px] shadow-xl"
+                                >
+                                    {abilities.map((ability, i) => (
+                                        <button
+                                            key={i}
+                                            onClick={() => handleAbility(ability.name)}
+                                            disabled={playerEnergy < ability.energyCost}
+                                            className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
+                                                playerEnergy < ability.energyCost
+                                                    ? 'text-stone-500 cursor-not-allowed'
+                                                    : 'text-white hover:bg-purple-500/20'
+                                            }`}
+                                        >
+                                            <div className="font-medium">{ability.name}</div>
+                                            <div className="text-xs text-purple-400">{ability.energyCost} Energy</div>
+                                        </button>
+                                    ))}
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </div>
+
+                    {/* Items */}
+                    <div className="relative">
+                        <motion.button
+                            whileHover={{ scale: disabled ? 1 : 1.05 }}
+                            whileTap={{ scale: disabled ? 1 : 0.95 }}
+                            onClick={() => onOpenItems ? onOpenItems() : setShowItems(!showItems)}
+                            disabled={disabled || consumables.length === 0}
+                            className={`flex flex-col items-center gap-1 px-4 py-2 rounded-xl transition-all ${
+                                disabled || consumables.length === 0
+                                    ? 'bg-stone-800 text-stone-600 cursor-not-allowed'
+                                    : 'bg-gradient-to-br from-green-600 to-green-700 text-white hover:from-green-500 hover:to-green-600 shadow-lg shadow-green-500/20'
+                            }`}
+                        >
+                            <Backpack size={20} />
+                            <span className="text-xs font-bold">Item</span>
+                        </motion.button>
+
+                        {/* Items Dropdown */}
+                        <AnimatePresence>
+                            {showItems && consumables.length > 0 && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: 10 }}
+                                    className="absolute bottom-full left-0 mb-2 bg-genshin-dark border border-green-500/30 rounded-lg p-2 min-w-[150px] shadow-xl"
+                                >
+                                    {consumables.map((item, i) => (
+                                        <button
+                                            key={i}
+                                            onClick={() => handleItem(item.name)}
+                                            className="w-full text-left px-3 py-2 rounded-lg text-sm text-white hover:bg-green-500/20 transition-all"
+                                        >
+                                            <div className="font-medium">{item.name}</div>
+                                            <div className="text-xs text-green-400">x{item.quantity}</div>
+                                        </button>
+                                    ))}
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </div>
+
+                    {/* Flee */}
+                    <motion.button
+                        whileHover={{ scale: disabled ? 1 : 1.05 }}
+                        whileTap={{ scale: disabled ? 1 : 0.95 }}
+                        onClick={handleFlee}
+                        disabled={disabled}
+                        className={`flex flex-col items-center gap-1 px-4 py-2 rounded-xl transition-all ${
+                            disabled
+                                ? 'bg-stone-800 text-stone-600 cursor-not-allowed'
+                                : 'bg-gradient-to-br from-amber-600 to-amber-700 text-white hover:from-amber-500 hover:to-amber-600 shadow-lg shadow-amber-500/20'
+                        }`}
+                    >
+                        <Wind size={20} />
+                        <span className="text-xs font-bold">Flee</span>
+                    </motion.button>
+                </div>
+
+                {/* Turn Indicator */}
+                <div className="mt-3 text-center">
+                    <span className={`text-xs font-bold uppercase tracking-wider ${
+                        isPlayerTurn ? 'text-green-400' : 'text-red-400'
+                    }`}>
+                        {isPlayerTurn ? '⚔️ Your Turn - Choose an Action' : '🛡️ Enemy Turn - Please Wait...'}
+                    </span>
+                </div>
+            </div>
+        </motion.div>
+    );
+};
+
+// ============================================
 // SCREEN EFFECT
 // ============================================
 

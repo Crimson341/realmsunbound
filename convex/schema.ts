@@ -178,6 +178,13 @@ export default defineSchema({
     mapX: v.optional(v.number()),      // X position on map (0-1000 normalized)
     mapY: v.optional(v.number()),      // Y position on map (0-1000 normalized)
     mapIcon: v.optional(v.string()),   // Custom icon override
+    // --- 2D TILEMAP SYSTEM ---
+    tilemapData: v.optional(v.string()),     // JSON 2D array of tile IDs
+    tilemapWidth: v.optional(v.number()),    // Grid width
+    tilemapHeight: v.optional(v.number()),   // Grid height
+    collisionMask: v.optional(v.string()),   // JSON 2D array of 0/1 for walkable
+    spawnPoints: v.optional(v.string()),     // JSON: {player: {x,y}, npcs: [...]}
+    transitions: v.optional(v.string()),     // JSON: [{x,y,toLocationId,spawnPoint}]
   })
   .index("by_campaign", ["campaignId"])
   .vectorIndex("by_embedding", {
@@ -234,6 +241,12 @@ export default defineSchema({
     isRecruitable: v.optional(v.boolean()), // Can be recruited to player camp
     recruitCost: v.optional(v.number()), // Gold cost to recruit
     loyalty: v.optional(v.number()), // 0-100, affects if they'll leave/betray
+    // --- 2D GAME VISUAL SYSTEM ---
+    gridX: v.optional(v.number()),           // Position on tilemap X
+    gridY: v.optional(v.number()),           // Position on tilemap Y
+    spriteColor: v.optional(v.string()),     // Hex color for placeholder sprite
+    movementPattern: v.optional(v.string()), // "static" | "wander" | "patrol"
+    isHostile: v.optional(v.boolean()),      // Whether NPC attacks player on sight
   })
   .index("by_campaign", ["campaignId"])
   .index("by_faction", ["factionId"])

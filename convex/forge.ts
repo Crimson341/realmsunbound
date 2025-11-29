@@ -2415,3 +2415,2188 @@ export const updateCharacterStats = mutation({
         return { success: true };
     },
 });
+
+// === DRAGON BALL Z SEED ===
+// Comprehensive seed that tests ALL creator features including conditions, shops, abilities, and more
+
+export const seedDragonBall = mutation({
+    args: {},
+    handler: async (ctx) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) throw new Error("Unauthorized");
+        const userId = identity.tokenIdentifier;
+
+        // ╔════════════════════════════════════════════════════════════════╗
+        // ║                         CAMPAIGN                                ║
+        // ╚════════════════════════════════════════════════════════════════╝
+
+        const campaignId = await ctx.db.insert("campaigns", {
+            userId,
+            title: "Dragon Ball Z: Warriors of Earth",
+            description: "Experience the legendary saga of the Dragon Ball universe! Train to become the strongest warrior in the universe, collect the seven Dragon Balls, and protect Earth from powerful villains. Will you achieve the legendary Super Saiyan transformation?",
+            xpRate: 2.0,
+            rules: JSON.stringify({
+                combatStyle: "ki-based",
+                deathPenalty: "dragon_ball_revival",
+                levelCap: 999,
+                transformations: true,
+                powerLevelScaling: "exponential",
+            }),
+            genre: "anime",
+            isPublic: true,
+            isFeatured: true,
+            viewCount: 0,
+            playCount: 0,
+            tags: ["dragon-ball", "anime", "action", "martial-arts", "super-saiyan", "ki", "adventure"],
+            bountyEnabled: true,
+
+            // --- WORLD BIBLE ---
+            worldBible: `Welcome to the Dragon Ball Universe - a world where warriors harness Ki energy to achieve incredible feats of power!
+
+THE POWER SYSTEM:
+- Ki (気) is the life force energy that flows through all living beings
+- Power Level measures overall combat strength (average human: 5, Goku at start: 10, Frieza Final Form: 120,000,000)
+- Fighters can sense Ki to detect opponents and gauge power levels
+- Ki can be projected as blasts, barriers, and flight
+
+TRANSFORMATIONS:
+- Saiyans can transform under extreme emotional stress or training
+- Super Saiyan (SSJ) multiplies power by 50x (golden aura, spiky hair)
+- Super Saiyan 2 (SSJ2) = 100x base power (electricity crackling)
+- Super Saiyan 3 (SSJ3) = 400x base power (long hair, no eyebrows)
+- Super Saiyan God = Divine Ki, red aura
+- Super Saiyan Blue = SSJ + God Ki, blue aura
+- Ultra Instinct = automatic dodging, silver aura
+
+RACES:
+- Saiyans: Warrior race, zenkai boosts (get stronger after near-death)
+- Humans: Limited power but can master techniques
+- Namekians: Can regenerate, fuse, and create Dragon Balls
+- Frieza's Race: Born with immense power, multiple transformation forms
+- Androids: Infinite energy, cannot sense Ki
+
+THE DRAGON BALLS:
+- Seven magical orbs that summon Shenron the Eternal Dragon
+- Can grant almost any wish (within Shenron's power)
+- Turn to stone for one year after use
+- Created by Namekians
+
+MAJOR LOCATIONS:
+- Earth (main setting) - Protected by the Z-Fighters
+- Planet Namek - Home of the Namekians and their Dragon Balls
+- Other World - Where dead warriors train with King Kai
+- Beerus's Planet - Home of the God of Destruction
+- The Hyperbolic Time Chamber - 1 day outside = 1 year inside`,
+
+            // --- AI PERSONA ---
+            aiPersona: `You are the dramatic narrator of Dragon Ball Z! Speak with intense emotion and hype up every battle moment.
+
+Key narrative elements:
+- Power level comparisons are EVERYTHING ("His power level is OVER 9000!")
+- Transformations are epic moments that shake the very planet
+- Training montages should feel inspiring and show growth
+- Villains are intimidating but can be redeemed
+- Friendship and determination can overcome any odds
+- Death is not permanent (Dragon Balls exist!)
+- Combat involves charging attacks, beam struggles, and martial arts
+
+Use exclamations liberally! Describe auras, energy waves, and the ground shaking from power. Reference techniques by their Japanese names when dramatic (Kamehameha, Genki Dama, Kaioken).
+
+Embrace the over-the-top nature of Dragon Ball - everything is epic, power levels are insane, and the fate of the universe is always at stake!`,
+
+            // --- TERMINOLOGY ---
+            terminology: JSON.stringify({
+                spells: "Techniques",
+                mana: "Ki",
+                class: "Fighter Class",
+                level: "Power Level Tier",
+                guild: "Fighter Group",
+                magic: "Ki Manipulation",
+                health: "Vitality",
+                experience: "Battle Experience",
+            }),
+
+            // --- STAT CONFIG ---
+            statConfig: JSON.stringify([
+                { key: "power", label: "Power Level", description: "Overall combat strength" },
+                { key: "str", label: "Strength", description: "Physical attack power" },
+                { key: "spd", label: "Speed", description: "Movement and reaction time" },
+                { key: "ki", label: "Ki Control", description: "Energy manipulation mastery" },
+                { key: "def", label: "Defense", description: "Damage resistance" },
+                { key: "end", label: "Endurance", description: "Stamina and Ki reserves" },
+                { key: "sense", label: "Ki Sense", description: "Ability to detect power levels" },
+                { key: "technique", label: "Technique", description: "Martial arts mastery" },
+            ]),
+
+            // --- ABILITY SYSTEM CONFIG ---
+            abilitySystemConfig: JSON.stringify({
+                abilityTermSingular: "Technique",
+                abilityTermPlural: "Techniques",
+                energyTerm: "Ki",
+                categories: ["Ki Blast", "Physical", "Transformation", "Support", "Ultimate", "Forbidden"],
+                damageTypes: ["Ki", "Physical", "Divine", "Destruction", "Hakai"],
+                statusEffects: ["Stunned", "Weakened", "Paralyzed", "Enraged", "Exhausted", "Zenkai"],
+                rarityLevels: ["Basic", "Advanced", "Master", "Ultimate", "Legendary", "Divine"],
+            }),
+
+            theme: "anime",
+
+            // --- CHARACTER CREATION ---
+            availableClasses: JSON.stringify([
+                { name: "Saiyan Warrior", description: "Born fighter with zenkai boost potential. Can achieve Super Saiyan transformations.", bonusStats: { power: 5, str: 3 } },
+                { name: "Human Martial Artist", description: "Master of technique over raw power. Access to unique human techniques.", bonusStats: { technique: 5, ki: 3 } },
+                { name: "Namekian", description: "Regeneration abilities and potential to fuse. Can create Dragon Balls at high levels.", bonusStats: { def: 4, end: 4 } },
+                { name: "Frieza Race", description: "Born powerful with transformation forms. Naturally high power but slower growth.", bonusStats: { power: 8, spd: 2 } },
+                { name: "Android", description: "Infinite energy but cannot sense Ki. Cannot use transformation abilities.", bonusStats: { end: 10, ki: -2 } },
+            ]),
+            availableRaces: JSON.stringify([
+                { name: "Saiyan", description: "A proud warrior race. Gains zenkai boosts after recovering from near-death." },
+                { name: "Human", description: "Earthlings with untapped potential. Can master any technique with training." },
+                { name: "Namekian", description: "Green-skinned warriors from Planet Namek. Can regenerate and fuse." },
+                { name: "Frieza Race", description: "Ice demons with immense latent power and multiple transformation stages." },
+                { name: "Half-Saiyan", description: "Human-Saiyan hybrid. Potentially stronger than pure Saiyans." },
+            ]),
+            statAllocationMethod: "point_buy",
+            startingStatPoints: 30,
+            allowCustomNames: true,
+        });
+
+        // ╔════════════════════════════════════════════════════════════════╗
+        // ║                         FACTIONS                                ║
+        // ╚════════════════════════════════════════════════════════════════╝
+
+        const zFightersFaction = await ctx.db.insert("factions", {
+            campaignId,
+            name: "Z-Fighters",
+            description: "Earth's mightiest warriors! A group of powerful fighters who protect the planet from any threat. Led by Goku, they've saved Earth countless times.",
+            territory: "Earth",
+        });
+
+        const capsuleCorpFaction = await ctx.db.insert("factions", {
+            campaignId,
+            name: "Capsule Corporation",
+            description: "The world's leading technology company, founded by Dr. Brief. Provides equipment, vehicles, and support to the Z-Fighters. Home of Bulma and Vegeta.",
+            territory: "West City",
+        });
+
+        const friezaForceFaction = await ctx.db.insert("factions", {
+            campaignId,
+            name: "Frieza Force",
+            description: "The galactic army of the tyrant Frieza. Conquers and destroys planets for profit. Known for their scouters and ruthless soldiers.",
+            territory: "Various Conquered Planets",
+        });
+
+        const redRibbonFaction = await ctx.db.insert("factions", {
+            campaignId,
+            name: "Red Ribbon Army",
+            description: "A military organization that once sought world domination. Though destroyed by Goku, their android projects continue to pose threats.",
+            territory: "Various Hidden Bases",
+        });
+
+        const kamiGuardiansFaction = await ctx.db.insert("factions", {
+            campaignId,
+            name: "Earth's Guardians",
+            description: "The celestial protectors of Earth, led by Dende as Guardian. They maintain the Dragon Balls and watch over humanity from the Lookout.",
+            territory: "Kami's Lookout",
+        });
+
+        const universeGodsFaction = await ctx.db.insert("factions", {
+            campaignId,
+            name: "Gods of Universe 7",
+            description: "The divine hierarchy overseeing Universe 7. Includes Beerus the Destroyer, Whis the Angel, and the Supreme Kais.",
+            territory: "Beerus's Planet & Sacred World of the Kai",
+        });
+
+        // Update faction relationships
+        await ctx.db.patch(zFightersFaction, {
+            allies: [capsuleCorpFaction, kamiGuardiansFaction],
+            enemies: [friezaForceFaction, redRibbonFaction],
+        });
+
+        await ctx.db.patch(capsuleCorpFaction, {
+            allies: [zFightersFaction, kamiGuardiansFaction],
+        });
+
+        await ctx.db.patch(friezaForceFaction, {
+            enemies: [zFightersFaction],
+        });
+
+        // ╔════════════════════════════════════════════════════════════════╗
+        // ║                           ITEMS                                 ║
+        // ╚════════════════════════════════════════════════════════════════╝
+
+        // --- CONSUMABLES ---
+        const senzuBean = await ctx.db.insert("items", {
+            userId,
+            campaignId,
+            name: "Senzu Bean",
+            type: "Consumable",
+            category: "consumable",
+            rarity: "Legendary",
+            effects: "Fully restores HP, Ki, and cures all status effects. Fills you up for 10 days!",
+            description: "A magical bean grown by Korin at Korin Tower. Eating one fully restores all energy and heals any injury instantly.",
+            textColor: "#22c55e",
+            usable: true,
+            consumable: true,
+            quantity: 1,
+            useEffect: JSON.stringify({ type: "full_heal" }),
+            lore: "Korin grows these beans in a special garden atop his tower. It takes a long time for each bean to mature.",
+        });
+
+        const kiRecoveryDrink = await ctx.db.insert("items", {
+            userId,
+            campaignId,
+            name: "Energy Drink MAX",
+            type: "Consumable",
+            category: "consumable",
+            rarity: "Common",
+            effects: "Restores 30 Ki",
+            description: "A specially formulated drink that replenishes Ki energy. Popular among fighters during training.",
+            usable: true,
+            consumable: true,
+            quantity: 5,
+            useEffect: JSON.stringify({ type: "restore_mana", amount: 30 }),
+        });
+
+        const healingCapsule = await ctx.db.insert("items", {
+            userId,
+            campaignId,
+            name: "Medical Capsule",
+            type: "Consumable",
+            category: "consumable",
+            rarity: "Uncommon",
+            effects: "Heals 50 HP over time",
+            description: "A capsule containing advanced medical technology. Deploys a healing field around the user.",
+            textColor: "#22c55e",
+            usable: true,
+            consumable: true,
+            useEffect: JSON.stringify({ type: "heal", amount: 50 }),
+        });
+
+        const proteinBar = await ctx.db.insert("items", {
+            userId,
+            campaignId,
+            name: "Saiyan Protein Bar",
+            type: "Consumable",
+            category: "consumable",
+            rarity: "Common",
+            effects: "+5 Strength for 10 turns",
+            description: "A high-calorie protein bar designed for Saiyan appetites. One bar equals 10 normal meals.",
+            usable: true,
+            consumable: true,
+            useEffect: JSON.stringify({ type: "buff", stat: "strength", amount: 5, duration: 10 }),
+        });
+
+        // --- EQUIPMENT ---
+        const saiyanArmor = await ctx.db.insert("items", {
+            userId,
+            campaignId,
+            name: "Saiyan Battle Armor",
+            type: "Armor",
+            category: "armor",
+            rarity: "Rare",
+            effects: "+15 Defense. Stretches to accommodate transformations. Self-repairing.",
+            description: "The signature armor of Saiyan warriors. Incredibly durable yet flexible, designed to withstand intense combat.",
+            textColor: "#3b82f6",
+            lore: "Standard issue for Frieza Force elites. Vegeta wore this armor when he first came to Earth.",
+        });
+
+        const turtleSchoolGi = await ctx.db.insert("items", {
+            userId,
+            campaignId,
+            name: "Turtle School Gi",
+            type: "Armor",
+            category: "armor",
+            rarity: "Uncommon",
+            effects: "+8 Defense, +5 Speed. Iconic orange color.",
+            description: "The traditional uniform of Master Roshi's Turtle School. The kanji on the back represents the Turtle Hermit.",
+            textColor: "#f97316",
+            lore: "Goku has worn variations of this gi throughout his entire fighting career.",
+        });
+
+        const weightedClothing = await ctx.db.insert("items", {
+            userId,
+            campaignId,
+            name: "Weighted Training Clothes",
+            type: "Armor",
+            category: "armor",
+            rarity: "Uncommon",
+            effects: "-5 Speed while worn. Grants 2x training XP. Removing grants temporary +10 Speed.",
+            description: "Extremely heavy clothing used for training. Wearing them in battle is a handicap, but removes them for a burst of speed!",
+            textColor: "#6366f1",
+            lore: "Goku and Piccolo both trained with weighted clothing to multiply their strength gains.",
+        });
+
+        const potaraEarrings = await ctx.db.insert("items", {
+            userId,
+            campaignId,
+            name: "Potara Earrings",
+            type: "Accessory",
+            category: "accessory",
+            rarity: "Legendary",
+            effects: "When two beings each wear one earring, they fuse permanently (1 hour for mortals). Combined power is multiplicative.",
+            description: "Sacred earrings worn by Supreme Kais. Causes instant and permanent fusion between two individuals.",
+            textColor: "#f59e0b",
+            lore: "Elder Kai gave these to Goku to fuse with Gohan against Buu. The fusion of Goku and Vegeta created Vegito.",
+        });
+
+        const fusionEarpiece = await ctx.db.insert("items", {
+            userId,
+            campaignId,
+            name: "Fusion Dance Instructions",
+            type: "Scroll",
+            category: "scroll",
+            rarity: "Epic",
+            effects: "Teaches the Fusion Dance technique. Requires compatible power levels and matching poses.",
+            description: "Detailed instructions for performing the Metamoran Fusion Dance. The fusion lasts 30 minutes.",
+            textColor: "#a855f7",
+        });
+
+        // --- TOOLS & KEY ITEMS ---
+        const dragonRadar = await ctx.db.insert("items", {
+            userId,
+            campaignId,
+            name: "Dragon Radar",
+            type: "Tool",
+            category: "quest",
+            rarity: "Legendary",
+            effects: "Detects the location of all Dragon Balls within range. Essential for collecting the Dragon Balls.",
+            description: "Invented by Bulma, this device can detect the unique energy signature of Dragon Balls across the entire planet.",
+            textColor: "#f59e0b",
+            lore: "Bulma created this as a teenager, setting off the events of the entire Dragon Ball saga.",
+        });
+
+        const scouter = await ctx.db.insert("items", {
+            userId,
+            campaignId,
+            name: "Scouter",
+            type: "Tool",
+            category: "accessory",
+            rarity: "Rare",
+            effects: "Reads power levels up to 180,000. Explodes if reading exceeds limit. Communication device.",
+            description: "Frieza Force standard equipment. Displays power levels numerically but cannot detect suppressed Ki.",
+            textColor: "#3b82f6",
+            usable: true,
+            consumable: false,
+            useEffect: JSON.stringify({ type: "scan_power_level" }),
+        });
+
+        const timeMachine = await ctx.db.insert("items", {
+            userId,
+            campaignId,
+            name: "Time Machine",
+            type: "Vehicle",
+            category: "quest",
+            rarity: "Legendary",
+            effects: "Travel through time. Warning: Creates alternate timelines. Fuel is extremely rare.",
+            description: "Built by Future Bulma over 20 years. Can travel backwards or forwards in time.",
+            textColor: "#f59e0b",
+            lore: "Trunks used this to travel to the past and warn the Z-Fighters about the Androids.",
+        });
+
+        const flyingNimbus = await ctx.db.insert("items", {
+            userId,
+            campaignId,
+            name: "Flying Nimbus",
+            type: "Vehicle",
+            category: "accessory",
+            rarity: "Epic",
+            effects: "Summons a flying cloud. Can only be ridden by pure-hearted individuals. Speed: Mach 1.5.",
+            description: "A magical flying cloud given to Goku by Master Roshi. It responds to the call 'Kinto'un!'",
+            textColor: "#fbbf24",
+            usable: true,
+            useEffect: JSON.stringify({ type: "summon_vehicle" }),
+        });
+
+        const capsule = await ctx.db.insert("items", {
+            userId,
+            campaignId,
+            name: "Dyno-Cap House",
+            type: "Tool",
+            category: "consumable",
+            rarity: "Uncommon",
+            effects: "Deploys a fully-furnished house. Contains beds, kitchen, and bathroom. Can be re-capsuled.",
+            description: "A Capsule Corporation invention that stores an entire house in a small capsule. Press the button and throw!",
+            usable: true,
+            consumable: false,
+            useEffect: JSON.stringify({ type: "deploy_shelter" }),
+        });
+
+        // --- DRAGON BALLS ---
+        const oneStarBall = await ctx.db.insert("items", {
+            userId,
+            campaignId,
+            name: "One-Star Dragon Ball",
+            type: "Quest Item",
+            category: "quest",
+            rarity: "Legendary",
+            effects: "One of seven balls needed to summon Shenron. Cannot be destroyed.",
+            description: "An orange crystalline orb containing one red star. Slightly warm to the touch and glows faintly.",
+            textColor: "#f59e0b",
+            lore: "The Dragon Balls were created by the Namekian Dragon Clan. Collecting all seven summons the Eternal Dragon.",
+        });
+
+        const fourStarBall = await ctx.db.insert("items", {
+            userId,
+            campaignId,
+            name: "Four-Star Dragon Ball",
+            type: "Quest Item",
+            category: "quest",
+            rarity: "Legendary",
+            effects: "Goku's keepsake from Grandpa Gohan. One of seven balls needed to summon Shenron.",
+            description: "The Dragon Ball that once belonged to Goku's grandfather. It holds deep sentimental value.",
+            textColor: "#f59e0b",
+            lore: "Grandpa Gohan found baby Goku near this Dragon Ball. After Gohan's death, Goku kept it as a memento.",
+        });
+
+        // --- WEAPONS ---
+        const powerPole = await ctx.db.insert("items", {
+            userId,
+            campaignId,
+            name: "Power Pole (Nyoibo)",
+            type: "Weapon",
+            category: "weapon",
+            rarity: "Epic",
+            effects: "+15 Attack. Extends to any length on command. Connects Korin Tower to Kami's Lookout.",
+            description: "A magical red pole that extends and contracts at its user's will. Once belonged to Korin and Master Roshi.",
+            textColor: "#ef4444",
+            lore: "Originally one of the sacred treasures of Kami. Goku used it throughout his early adventures.",
+        });
+
+        const zSword = await ctx.db.insert("items", {
+            userId,
+            campaignId,
+            name: "Z-Sword",
+            type: "Weapon",
+            category: "weapon",
+            rarity: "Legendary",
+            effects: "+30 Attack. Extremely heavy (nearly unliftable). Breaking it frees Elder Kai.",
+            description: "The legendary sword sealed in the Sacred World of the Kai. Only the strongest can wield it.",
+            textColor: "#6366f1",
+            lore: "Gohan trained with and eventually broke this sword, freeing Elder Kai who had been sealed inside.",
+        });
+
+        // ╔════════════════════════════════════════════════════════════════╗
+        // ║                         LOCATIONS                               ║
+        // ╚════════════════════════════════════════════════════════════════╝
+
+        const capsuleCorp = await ctx.db.insert("locations", {
+            userId,
+            campaignId,
+            name: "Capsule Corporation",
+            type: "City",
+            description: "The headquarters of Capsule Corp in West City. Home to Bulma, Vegeta, and their family. Features advanced labs, training facilities, and the famous dome building.",
+            environment: "Futuristic dome building with advanced technology. Gardens, labs, and a gravity training room. Dinosaurs roam the grounds.",
+            neighbors: [],
+            mapX: 300,
+            mapY: 400,
+        });
+
+        const kameLookout = await ctx.db.insert("locations", {
+            userId,
+            campaignId,
+            name: "Kami's Lookout",
+            type: "Sacred Place",
+            description: "The floating palace high above Earth where the Guardian resides. Home to Dende, Mr. Popo, and the entrance to the Hyperbolic Time Chamber.",
+            environment: "A circular platform floating above the clouds. Palm trees, a grand temple, and perfectly maintained gardens. The air is thin but pure.",
+            neighbors: [],
+            mapX: 500,
+            mapY: 100,
+        });
+
+        const hyperbolicTimeChamber = await ctx.db.insert("locations", {
+            userId,
+            campaignId,
+            name: "Hyperbolic Time Chamber",
+            type: "Training Area",
+            description: "A dimension where one year passes inside for every day outside. The gravity is 10x Earth's and the atmosphere is sparse. Perfect for intense training.",
+            environment: "An endless white void with extreme heat, cold, and thin air. Only a small living quarters exists at the entrance. Time flows differently here.",
+            neighbors: [],
+            mapX: 550,
+            mapY: 150,
+        });
+
+        const korinTower = await ctx.db.insert("locations", {
+            userId,
+            campaignId,
+            name: "Korin Tower",
+            type: "Sacred Place",
+            description: "A massive tower reaching above the clouds where Korin the cat lives. The training ground between Earth and Kami's Lookout. Home of the Senzu Beans.",
+            environment: "The interior is a small room at the top of an impossibly tall tower. Senzu bean plants grow in pots. Korin's staff and jar are here.",
+            neighbors: [],
+            mapX: 500,
+            mapY: 200,
+        });
+
+        const kameHouse = await ctx.db.insert("locations", {
+            userId,
+            campaignId,
+            name: "Kame House",
+            type: "Home",
+            description: "Master Roshi's small pink house on a tiny island. The original training ground of the Turtle School and a gathering place for the Z-Fighters.",
+            environment: "A tiny tropical island with a single palm tree. The pink house has 'Kame' written on it. The ocean stretches endlessly in all directions.",
+            neighbors: [],
+            mapX: 200,
+            mapY: 600,
+        });
+
+        const kingKaiPlanet = await ctx.db.insert("locations", {
+            userId,
+            campaignId,
+            name: "King Kai's Planet",
+            type: "Other World",
+            description: "A tiny planet at the end of Snake Way in Other World. Home to King Kai, Bubbles, and Gregory. The gravity is 10x Earth's.",
+            environment: "A small green planetoid with a single road, a small house, and a car. Bubbles the monkey and Gregory the cricket live here. King Kai tells bad jokes.",
+            neighbors: [],
+            mapX: 800,
+            mapY: 100,
+        });
+
+        const worldTournament = await ctx.db.insert("locations", {
+            userId,
+            campaignId,
+            name: "World Martial Arts Tournament",
+            type: "Arena",
+            description: "The legendary arena on Papaya Island where the world's strongest fighters compete. Many historic battles have taken place here.",
+            environment: "A raised stone platform surrounded by crowds. The tournament building hosts elimination rounds. Palm trees and ocean surround the island.",
+            neighbors: [],
+            mapX: 400,
+            mapY: 700,
+        });
+
+        const cellGamesArena = await ctx.db.insert("locations", {
+            userId,
+            campaignId,
+            name: "Cell Games Arena",
+            type: "Arena",
+            description: "The arena Cell constructed for his tournament. Now a memorial site for the battle that saved Earth from the bio-android.",
+            environment: "A flat ring in a desert wasteland. The ground is still scarred from the battle. A small memorial stands nearby.",
+            neighbors: [],
+            mapX: 600,
+            mapY: 500,
+        });
+
+        const namek = await ctx.db.insert("locations", {
+            userId,
+            campaignId,
+            name: "Planet Namek",
+            type: "Planet",
+            description: "The home world of the Namekians. A planet with three suns that never sets, covered in blue-green grass and strange rock formations. Home to the original Dragon Balls.",
+            environment: "Eternal day from three suns. Blue-green grass, tall rock spires, and Namekian villages. The sky is green and the water is blue.",
+            neighbors: [],
+            mapX: 900,
+            mapY: 300,
+        });
+
+        const friezaShip = await ctx.db.insert("locations", {
+            userId,
+            campaignId,
+            name: "Frieza's Spaceship",
+            type: "Spaceship",
+            description: "The massive flagship of the Frieza Force. A flying saucer design that houses thousands of soldiers and advanced medical pods.",
+            environment: "Sleek white and purple corridors. Medical chambers, training rooms, and Frieza's throne room. Soldiers patrol constantly.",
+            neighbors: [],
+            mapX: 850,
+            mapY: 400,
+        });
+
+        const beerusPlanet = await ctx.db.insert("locations", {
+            userId,
+            campaignId,
+            name: "Beerus's Planet",
+            type: "Divine Realm",
+            description: "The home of Beerus, the God of Destruction of Universe 7. A surreal dimension with an inverted pyramid palace.",
+            environment: "An alien landscape with floating rocks and strange trees. The palace is an ornate pyramid floating upside-down. Whis tends the gardens.",
+            neighbors: [],
+            mapX: 100,
+            mapY: 100,
+        });
+
+        const redRibbonBase = await ctx.db.insert("locations", {
+            userId,
+            campaignId,
+            name: "Red Ribbon Army Secret Lab",
+            type: "Dungeon",
+            description: "A hidden laboratory where Dr. Gero created the Androids. Contains cryogenic pods, computer banks, and secret chambers.",
+            environment: "Underground facility carved into a mountain. Flickering lights, abandoned pods, and the remains of Android blueprints. Eerie and cold.",
+            neighbors: [],
+            mapX: 700,
+            mapY: 600,
+        });
+
+        const orangeStarCity = await ctx.db.insert("locations", {
+            userId,
+            campaignId,
+            name: "Orange Star City",
+            type: "City",
+            description: "A major city where Orange Star High School is located. Gohan attended school here and became the Great Saiyaman.",
+            environment: "A bustling modern city with tall buildings, schools, and shopping districts. Satan City statue stands in the center.",
+            neighbors: [],
+            mapX: 400,
+            mapY: 400,
+        });
+
+        const mountPaozu = await ctx.db.insert("locations", {
+            userId,
+            campaignId,
+            name: "Mount Paozu",
+            type: "Wilderness",
+            description: "The mountain region where Goku grew up with Grandpa Gohan. A peaceful forest area home to dinosaurs and wild animals.",
+            environment: "Dense forests, waterfalls, and small clearings. Goku's childhood home sits in a valley. Dinosaurs and giant fish are common.",
+            neighbors: [],
+            mapX: 250,
+            mapY: 300,
+        });
+
+        // Update location neighbors
+        await ctx.db.patch(capsuleCorp, { neighbors: [orangeStarCity, mountPaozu] });
+        await ctx.db.patch(kameLookout, { neighbors: [korinTower, hyperbolicTimeChamber] });
+        await ctx.db.patch(hyperbolicTimeChamber, { neighbors: [kameLookout] });
+        await ctx.db.patch(korinTower, { neighbors: [kameLookout, mountPaozu] });
+        await ctx.db.patch(kameHouse, { neighbors: [worldTournament, orangeStarCity] });
+        await ctx.db.patch(worldTournament, { neighbors: [kameHouse, cellGamesArena] });
+        await ctx.db.patch(cellGamesArena, { neighbors: [worldTournament, redRibbonBase] });
+        await ctx.db.patch(namek, { neighbors: [friezaShip] });
+        await ctx.db.patch(friezaShip, { neighbors: [namek, beerusPlanet] });
+        await ctx.db.patch(orangeStarCity, { neighbors: [capsuleCorp, kameHouse, mountPaozu] });
+        await ctx.db.patch(mountPaozu, { neighbors: [capsuleCorp, korinTower, orangeStarCity] });
+        await ctx.db.patch(redRibbonBase, { neighbors: [cellGamesArena] });
+
+        // ╔════════════════════════════════════════════════════════════════╗
+        // ║                          REGIONS                                ║
+        // ╚════════════════════════════════════════════════════════════════╝
+
+        const earthRegion = await ctx.db.insert("regions", {
+            campaignId,
+            name: "Earth",
+            description: "The home planet of humanity and the primary battleground for the Z-Fighters.",
+            locationIds: [capsuleCorp, kameHouse, worldTournament, cellGamesArena, orangeStarCity, mountPaozu, redRibbonBase],
+            governingFactionId: zFightersFaction,
+        });
+
+        const sacredRealm = await ctx.db.insert("regions", {
+            campaignId,
+            name: "Sacred Realm",
+            description: "The divine locations above Earth, watched over by Kami's successors.",
+            locationIds: [kameLookout, korinTower, hyperbolicTimeChamber],
+            governingFactionId: kamiGuardiansFaction,
+        });
+
+        const outerSpace = await ctx.db.insert("regions", {
+            campaignId,
+            name: "Outer Space",
+            description: "The various planets and locations beyond Earth.",
+            locationIds: [namek, friezaShip, beerusPlanet, kingKaiPlanet],
+        });
+
+        // ╔════════════════════════════════════════════════════════════════╗
+        // ║                           NPCS                                  ║
+        // ╚════════════════════════════════════════════════════════════════╝
+
+        // --- Z-FIGHTERS ---
+        const goku = await ctx.db.insert("npcs", {
+            userId,
+            campaignId,
+            name: "Goku",
+            role: "Saiyan Warrior",
+            attitude: "Friendly",
+            description: "Earth's greatest hero and a Saiyan raised on Earth! Always seeking stronger opponents and loves to fight. Pure-hearted and a bit naive, but becomes serious when friends are threatened.",
+            locationId: mountPaozu,
+            factionId: zFightersFaction,
+            health: 500,
+            maxHealth: 500,
+            damage: 100,
+            armorClass: 20,
+            isEssential: true,
+            willTrade: false,
+            inventoryItems: [turtleSchoolGi, fourStarBall, flyingNimbus, powerPole],
+            gold: 0, // Goku doesn't care about money
+        });
+
+        const vegeta = await ctx.db.insert("npcs", {
+            userId,
+            campaignId,
+            name: "Vegeta",
+            role: "Saiyan Prince",
+            attitude: "Proud",
+            description: "The Prince of all Saiyans! Once a ruthless warrior, now a defender of Earth (though he'd never admit it). Obsessed with surpassing Goku. Lives at Capsule Corp with Bulma.",
+            locationId: capsuleCorp,
+            factionId: zFightersFaction,
+            health: 480,
+            maxHealth: 480,
+            damage: 95,
+            armorClass: 19,
+            isEssential: true,
+            willTrade: false,
+            inventoryItems: [saiyanArmor],
+            gold: 0, // Too proud to deal with money
+        });
+
+        const gohan = await ctx.db.insert("npcs", {
+            userId,
+            campaignId,
+            name: "Gohan",
+            role: "Scholar/Fighter",
+            attitude: "Kind",
+            description: "Goku's eldest son with incredible hidden potential. Prefers studying to fighting but becomes the strongest when his loved ones are in danger. Married to Videl.",
+            locationId: orangeStarCity,
+            factionId: zFightersFaction,
+            health: 400,
+            maxHealth: 400,
+            damage: 80,
+            armorClass: 18,
+            isEssential: false,
+            willTrade: false,
+            isRecruitable: true,
+            recruitCost: 0, // He'll join to help
+            gold: 500,
+        });
+
+        const piccolo = await ctx.db.insert("npcs", {
+            userId,
+            campaignId,
+            name: "Piccolo",
+            role: "Namekian Warrior",
+            attitude: "Stoic",
+            description: "A Namekian warrior and Gohan's mentor. Once an enemy, now one of Earth's greatest defenders. Serious and tactical, he's the voice of reason among the Z-Fighters.",
+            locationId: kameLookout,
+            factionId: zFightersFaction,
+            health: 350,
+            maxHealth: 350,
+            damage: 70,
+            armorClass: 17,
+            isEssential: false,
+            willTrade: false,
+            inventoryItems: [weightedClothing],
+            isRecruitable: true,
+            recruitCost: 0,
+        });
+
+        const krillin = await ctx.db.insert("npcs", {
+            userId,
+            campaignId,
+            name: "Krillin",
+            role: "Human Martial Artist",
+            attitude: "Brave",
+            description: "Goku's best friend and the strongest human on Earth! Despite facing enemies far beyond his power level, he never backs down. Married to Android 18.",
+            locationId: kameHouse,
+            factionId: zFightersFaction,
+            health: 150,
+            maxHealth: 150,
+            damage: 40,
+            armorClass: 15,
+            isEssential: false,
+            willTrade: true,
+            tradeInventory: [kiRecoveryDrink, healingCapsule],
+            tradePriceModifier: 0.8,
+            isRecruitable: true,
+            recruitCost: 0,
+            gold: 1000,
+        });
+
+        // --- MENTORS & ALLIES ---
+        const masterRoshi = await ctx.db.insert("npcs", {
+            userId,
+            campaignId,
+            name: "Master Roshi",
+            role: "Martial Arts Master",
+            attitude: "Perverted but Wise",
+            description: "The Turtle Hermit, over 300 years old! Inventor of the Kamehameha and teacher of Goku and Krillin. Spends most days reading 'magazines' but is secretly incredibly powerful.",
+            locationId: kameHouse,
+            factionId: zFightersFaction,
+            health: 180,
+            maxHealth: 180,
+            damage: 50,
+            armorClass: 16,
+            isEssential: true,
+            willTrade: true,
+            tradeInventory: [turtleSchoolGi, proteinBar, kiRecoveryDrink],
+            tradePriceModifier: 1.0,
+            gold: 2000,
+        });
+
+        const korin = await ctx.db.insert("npcs", {
+            userId,
+            campaignId,
+            name: "Korin",
+            role: "Hermit Cat",
+            attitude: "Wise",
+            description: "An 800-year-old martial arts master in the form of a white cat. Guards the Sacred Water and grows Senzu Beans. Speaks with ancient wisdom.",
+            locationId: korinTower,
+            factionId: kamiGuardiansFaction,
+            health: 50,
+            maxHealth: 50,
+            damage: 10,
+            armorClass: 12,
+            isEssential: true,
+            willTrade: true,
+            tradeInventory: [senzuBean],
+            tradePriceModifier: 2.0, // Senzu beans are precious
+            gold: 0,
+        });
+
+        const dende = await ctx.db.insert("npcs", {
+            userId,
+            campaignId,
+            name: "Dende",
+            role: "Earth's Guardian",
+            attitude: "Gentle",
+            description: "A young Namekian who became Earth's Guardian after Kami fused with Piccolo. Can heal any injury with his powers. Maintains the Earth's Dragon Balls.",
+            locationId: kameLookout,
+            factionId: kamiGuardiansFaction,
+            health: 80,
+            maxHealth: 80,
+            damage: 5,
+            armorClass: 10,
+            isEssential: true,
+            willTrade: false,
+        });
+
+        const bulma = await ctx.db.insert("npcs", {
+            userId,
+            campaignId,
+            name: "Bulma",
+            role: "Scientist/Engineer",
+            attitude: "Bossy but Caring",
+            description: "Genius inventor and CEO of Capsule Corporation. Goku's oldest friend. Created the Dragon Radar and countless inventions. Married to Vegeta.",
+            locationId: capsuleCorp,
+            factionId: capsuleCorpFaction,
+            health: 20,
+            maxHealth: 20,
+            damage: 1,
+            armorClass: 8,
+            isEssential: true,
+            willTrade: true,
+            tradeInventory: [dragonRadar, scouter, capsule, healingCapsule],
+            tradePriceModifier: 1.2,
+            gold: 50000, // She's rich!
+        });
+
+        const whis = await ctx.db.insert("npcs", {
+            userId,
+            campaignId,
+            name: "Whis",
+            role: "Angel Attendant",
+            attitude: "Cheerful",
+            description: "The angelic attendant and martial arts teacher of Beerus. Incredibly powerful - can reverse time and defeat anyone with a single tap. Loves Earth's food.",
+            locationId: beerusPlanet,
+            factionId: universeGodsFaction,
+            health: 9999,
+            maxHealth: 9999,
+            damage: 9999,
+            armorClass: 30,
+            isEssential: true,
+            willTrade: false,
+        });
+
+        const kingKai = await ctx.db.insert("npcs", {
+            userId,
+            campaignId,
+            name: "King Kai",
+            role: "Martial Arts Teacher",
+            attitude: "Comedic",
+            description: "The ruler of the North Galaxy and teacher of the Kaio-ken and Spirit Bomb techniques. Loves bad puns and teaches through unusual methods.",
+            locationId: kingKaiPlanet,
+            factionId: kamiGuardiansFaction,
+            health: 100,
+            maxHealth: 100,
+            damage: 30,
+            armorClass: 14,
+            isEssential: true,
+            willTrade: false,
+        });
+
+        // --- VILLAINS ---
+        const frieza = await ctx.db.insert("npcs", {
+            userId,
+            campaignId,
+            name: "Frieza",
+            role: "Galactic Emperor",
+            attitude: "Hostile",
+            description: "The tyrannical emperor of the universe! Responsible for destroying Planet Vegeta and countless other worlds. Has multiple transformation forms, each more powerful than the last.",
+            locationId: friezaShip,
+            factionId: friezaForceFaction,
+            health: 600,
+            maxHealth: 600,
+            damage: 120,
+            armorClass: 22,
+            isEssential: true, // Key villain
+            willTrade: false,
+            inventoryItems: [scouter],
+            gold: 1000000,
+        });
+
+        const cell = await ctx.db.insert("npcs", {
+            userId,
+            campaignId,
+            name: "Cell",
+            role: "Bio-Android",
+            attitude: "Hostile",
+            description: "The ultimate creation of Dr. Gero! A bio-android containing the cells of the strongest fighters. Seeks perfection through absorption and loves to test his power.",
+            locationId: cellGamesArena,
+            factionId: redRibbonFaction,
+            health: 550,
+            maxHealth: 550,
+            damage: 110,
+            armorClass: 21,
+            isEssential: true,
+            willTrade: false,
+        });
+
+        const beerus = await ctx.db.insert("npcs", {
+            userId,
+            campaignId,
+            name: "Beerus",
+            role: "God of Destruction",
+            attitude: "Neutral",
+            description: "The God of Destruction of Universe 7! Immensely powerful but mostly just wants to eat and sleep. Can destroy planets with a sneeze. Has a cat-like appearance.",
+            locationId: beerusPlanet,
+            factionId: universeGodsFaction,
+            health: 8000,
+            maxHealth: 8000,
+            damage: 1000,
+            armorClass: 28,
+            isEssential: true,
+            willTrade: false,
+        });
+
+        // --- MERCHANTS ---
+        const fortuneTeller = await ctx.db.insert("npcs", {
+            userId,
+            campaignId,
+            name: "Fortuneteller Baba",
+            role: "Fortune Teller",
+            attitude: "Greedy",
+            description: "Master Roshi's older sister and a powerful witch. Can locate anything for a price, or you can win a tournament against her fighters for free.",
+            locationId: orangeStarCity,
+            factionId: undefined,
+            health: 30,
+            maxHealth: 30,
+            damage: 5,
+            armorClass: 10,
+            isEssential: false,
+            willTrade: true,
+            tradeInventory: [potaraEarrings, fusionEarpiece],
+            tradePriceModifier: 3.0, // She's expensive!
+            gold: 10000,
+        });
+
+        const mrSatan = await ctx.db.insert("npcs", {
+            userId,
+            campaignId,
+            name: "Mr. Satan (Hercule)",
+            role: "World Champion",
+            attitude: "Boastful",
+            description: "The 'World Champion' who took credit for defeating Cell! Actually just a normal (if skilled) martial artist. Extremely wealthy and famous. Father of Videl.",
+            locationId: worldTournament,
+            factionId: zFightersFaction,
+            health: 50,
+            maxHealth: 50,
+            damage: 8,
+            armorClass: 12,
+            isEssential: false,
+            willTrade: true,
+            tradeInventory: [proteinBar, kiRecoveryDrink],
+            tradePriceModifier: 1.5,
+            gold: 100000,
+            isRecruitable: true,
+            recruitCost: 10000, // He's expensive to hire
+        });
+
+        // ╔════════════════════════════════════════════════════════════════╗
+        // ║                         MONSTERS                                ║
+        // ╚════════════════════════════════════════════════════════════════╝
+
+        await ctx.db.insert("monsters", {
+            userId,
+            campaignId,
+            name: "Frieza Force Soldier",
+            description: "A common soldier in Frieza's army. Equipped with a scouter and blaster. Power level: Around 1,000.",
+            health: 30,
+            damage: 10,
+            locationId: friezaShip,
+            dropItemIds: [scouter, kiRecoveryDrink],
+        });
+
+        await ctx.db.insert("monsters", {
+            userId,
+            campaignId,
+            name: "Saibaman",
+            description: "Green humanoid creatures grown from seeds. Power level equivalent to Raditz (1,200). Can self-destruct as a last resort!",
+            health: 50,
+            damage: 20,
+            locationId: cellGamesArena,
+            dropItemIds: [proteinBar],
+        });
+
+        await ctx.db.insert("monsters", {
+            userId,
+            campaignId,
+            name: "Cell Jr.",
+            description: "Small blue offspring spawned by Perfect Cell. Each has power comparable to a Super Saiyan! Extremely dangerous in groups.",
+            health: 150,
+            damage: 60,
+            locationId: cellGamesArena,
+            dropItemIds: [healingCapsule, kiRecoveryDrink],
+        });
+
+        await ctx.db.insert("monsters", {
+            userId,
+            campaignId,
+            name: "Red Ribbon Android",
+            description: "An older model android from Dr. Gero's lab. Limited AI but still dangerous. Powered by an energy reactor.",
+            health: 80,
+            damage: 25,
+            locationId: redRibbonBase,
+            dropItemIds: [healingCapsule],
+        });
+
+        await ctx.db.insert("monsters", {
+            userId,
+            campaignId,
+            name: "Dinosaur",
+            description: "The dinosaurs of Earth somehow survived! This carnivorous one sees you as lunch. Common in wilderness areas.",
+            health: 40,
+            damage: 12,
+            locationId: mountPaozu,
+            dropItemIds: [proteinBar, proteinBar],
+        });
+
+        await ctx.db.insert("monsters", {
+            userId,
+            campaignId,
+            name: "Dodoria",
+            description: "One of Frieza's elite soldiers. A fat pink alien with immense strength. Power level: 22,000. Brutal and ruthless.",
+            health: 200,
+            damage: 45,
+            locationId: namek,
+            dropItemIds: [saiyanArmor, scouter],
+        });
+
+        await ctx.db.insert("monsters", {
+            userId,
+            campaignId,
+            name: "Zarbon (Transformed)",
+            description: "Frieza's handsome elite warrior in his ugly transformed state. Power level: 30,000+. A fearsome beast!",
+            health: 250,
+            damage: 55,
+            locationId: namek,
+            dropItemIds: [saiyanArmor, kiRecoveryDrink, healingCapsule],
+        });
+
+        await ctx.db.insert("monsters", {
+            userId,
+            campaignId,
+            name: "Ginyu Force Member",
+            description: "A member of the elite Ginyu Force! They pose dramatically before fighting. Each has unique special abilities.",
+            health: 180,
+            damage: 50,
+            locationId: friezaShip,
+            dropItemIds: [saiyanArmor, scouter, kiRecoveryDrink],
+        });
+
+        // ╔════════════════════════════════════════════════════════════════╗
+        // ║                          QUESTS                                 ║
+        // ╚════════════════════════════════════════════════════════════════╝
+
+        const collectDragonBallsQuest = await ctx.db.insert("quests", {
+            userId,
+            campaignId,
+            title: "The Dragon Ball Hunt",
+            description: "Gather all seven Dragon Balls before anyone else! Use the Dragon Radar to track them down across the world. But beware - you're not the only one searching...",
+            status: "active",
+            source: "creator",
+            rewardItemIds: [senzuBean, senzuBean, senzuBean],
+            rewards: "Summon Shenron and make ONE wish!",
+        });
+
+        const trainWithRoshi = await ctx.db.insert("quests", {
+            userId,
+            campaignId,
+            title: "Turtle School Training",
+            description: "Master Roshi has agreed to train you! Complete his rigorous training program: deliver milk across the island, plow fields with your bare hands, and survive his... unique teaching methods.",
+            status: "active",
+            locationId: kameHouse,
+            npcId: masterRoshi,
+            source: "creator",
+            rewardItemIds: [turtleSchoolGi],
+            rewards: "Learn the Kamehameha technique!",
+        });
+
+        const hyperbolicTraining = await ctx.db.insert("quests", {
+            userId,
+            campaignId,
+            title: "A Year in a Day",
+            description: "Enter the Hyperbolic Time Chamber and spend one year training inside (only one day passes outside). Can you handle the extreme conditions and emerge stronger?",
+            status: "active",
+            locationId: hyperbolicTimeChamber,
+            source: "creator",
+            rewards: "+100 to all stats, unlock transformation potential",
+        });
+
+        const worldTournamentQuest = await ctx.db.insert("quests", {
+            userId,
+            campaignId,
+            title: "World Martial Arts Tournament",
+            description: "The World Martial Arts Tournament is beginning! Register and fight your way through the preliminary rounds to reach the finals. The champion wins 10 million Zeni!",
+            status: "active",
+            locationId: worldTournament,
+            source: "creator",
+            rewards: "10,000,000 Zeni and the title of World Champion",
+        });
+
+        const stopFrieza = await ctx.db.insert("quests", {
+            userId,
+            campaignId,
+            title: "Frieza Saga: The Tyrant Approaches",
+            description: "Frieza has arrived on Planet Namek seeking the Dragon Balls for immortality! Race against time to collect the balls first and stop the galactic emperor before he becomes unstoppable.",
+            status: "active",
+            locationId: namek,
+            source: "creator",
+            rewardItemIds: [saiyanArmor],
+            rewards: "Potential to unlock Super Saiyan transformation through extreme emotion",
+        });
+
+        const cellGamesQuest = await ctx.db.insert("quests", {
+            userId,
+            campaignId,
+            title: "The Cell Games",
+            description: "Cell has announced a tournament to determine Earth's fate! You have 10 days to prepare. Train hard, gather allies, and face the perfect being in single combat. The fate of Earth is at stake!",
+            status: "active",
+            locationId: cellGamesArena,
+            source: "creator",
+            rewardItemIds: [senzuBean],
+            rewards: "Save the Earth! Recognition as a true hero (that Mr. Satan will take credit for).",
+        });
+
+        const meetBeerus = await ctx.db.insert("quests", {
+            userId,
+            campaignId,
+            title: "Battle of Gods",
+            description: "The God of Destruction Beerus has awakened! He's searching for the 'Super Saiyan God' from his prophetic dream. Prevent him from destroying Earth by finding a way to entertain him!",
+            status: "active",
+            locationId: beerusPlanet,
+            source: "creator",
+            rewards: "Learn about God Ki and potential divine training with Whis",
+        });
+
+        const findSenzuBeans = await ctx.db.insert("quests", {
+            userId,
+            campaignId,
+            title: "Senzu Bean Supply Run",
+            description: "Korin is running low on Senzu Beans! Help him gather the rare ingredients needed to grow more. Travel across Earth to find Sacred Water, Ultra Divine Water, and rare herbs.",
+            status: "active",
+            locationId: korinTower,
+            npcId: korin,
+            source: "creator",
+            rewardItemIds: [senzuBean, senzuBean],
+        });
+
+        // ╔════════════════════════════════════════════════════════════════╗
+        // ║                           LORE                                  ║
+        // ╚════════════════════════════════════════════════════════════════╝
+
+        await ctx.db.insert("lore", {
+            userId,
+            campaignId,
+            title: "The Saiyan Race",
+            content: `The Saiyans were a warrior race from Planet Vegeta, known for their love of battle and incredible fighting potential. Key traits:
+
+- All Saiyans are born with a tail that allows them to transform into Great Apes (Oozaru) under a full moon
+- They experience Zenkai boosts - growing dramatically stronger after recovering from near-death
+- Their hair never changes from birth (except through transformations)
+- Super Saiyan is a legendary transformation achieved through intense emotional trigger
+- The Saiyan royal family had the highest power levels
+- Frieza destroyed Planet Vegeta fearing the Super Saiyan legend
+
+Notable Saiyans: Goku (Kakarot), Vegeta, Gohan, Goten, Trunks, Bardock, Raditz, Nappa, Broly`,
+            category: "Faction",
+        });
+
+        await ctx.db.insert("lore", {
+            userId,
+            campaignId,
+            title: "The Dragon Balls",
+            content: `The Dragon Balls are magical orbs that, when gathered, can summon the Eternal Dragon to grant wishes:
+
+EARTH'S DRAGON BALLS (Created by Kami/Dende):
+- 7 orange balls with red stars (1-7)
+- Summon Shenron
+- Can grant 2 wishes (Dende's upgrade)
+- Turn to stone for 1 year after use
+- Scatter across Earth after wishes
+
+NAMEKIAN DRAGON BALLS:
+- Larger, summon Porunga
+- 3 wishes per summoning
+- Can revive the same person multiple times
+- Require wishes spoken in Namekian
+
+SUPER DRAGON BALLS:
+- Planet-sized balls scattered across Universes 6 and 7
+- Summon Super Shenron
+- Can grant any wish without limitation
+- Require divine language to activate`,
+            category: "Magic",
+        });
+
+        await ctx.db.insert("lore", {
+            userId,
+            campaignId,
+            title: "Ki and Power Levels",
+            content: `Ki (気) is the life force energy that flows through all living beings:
+
+BASICS:
+- Every living being has Ki
+- Can be trained and increased through martial arts
+- Allows flight, energy projection, and superhuman feats
+- Can be sensed by trained warriors (except for androids and gods)
+
+POWER LEVELS (approximate):
+- Average Human: 5
+- Farmer with Shotgun: 5
+- Mr. Satan: 10
+- Master Roshi (suppressed): 139
+- Goku (start of Z): 334
+- Raditz: 1,500
+- Nappa: 4,000
+- Vegeta (Saiyan Saga): 18,000
+- Frieza (Final Form): 120,000,000
+- Super Saiyan Goku: 150,000,000
+- Perfect Cell: 900,000,000+
+
+Power levels become less reliable after the Frieza Saga due to God Ki and other factors.`,
+            category: "Magic",
+        });
+
+        await ctx.db.insert("lore", {
+            userId,
+            campaignId,
+            title: "Transformations",
+            content: `SAIYAN TRANSFORMATIONS:
+- Great Ape (Oozaru): 10x power, requires tail and full moon
+- Super Saiyan: 50x power, golden hair and aura, green eyes
+- Super Saiyan 2: 100x power, electric sparks, spikier hair
+- Super Saiyan 3: 400x power, long hair, no eyebrows, massive drain
+- Super Saiyan God: Divine ki, red hair and aura, calm power
+- Super Saiyan Blue: SSJ + God Ki, blue hair, ultimate Saiyan form
+- Ultra Instinct: Automatic dodging, silver/white aura, godly technique
+
+FRIEZA RACE:
+- Multiple suppression forms (1st, 2nd, 3rd, Final)
+- Golden Frieza: 100x Final Form
+- Black Frieza: Beyond Golden
+
+OTHER:
+- Namekian Fusion: Permanent power combination
+- Potential Unleashed: All hidden power accessed
+- Buff Form: Muscle mass increase (usually a trap)`,
+            category: "Magic",
+        });
+
+        await ctx.db.insert("lore", {
+            userId,
+            campaignId,
+            title: "The Frieza Force",
+            content: `Emperor Frieza's galactic army that conquered and sold planets:
+
+STRUCTURE:
+- Frieza at the top (with Cold as his father)
+- Elite warriors (Zarbon, Dodoria)
+- Ginyu Force (special forces)
+- Appule, Cui, and other commanders
+- Countless foot soldiers across the galaxy
+
+NOTABLE ACTIONS:
+- Destroyed Planet Vegeta and the Saiyan race
+- Conquered Planet Namek for the Dragon Balls
+- Controlled the Saiyans as soldiers before their destruction
+- Sold conquered planets to the highest bidder
+
+The Frieza Force used scouters to measure power levels and relied on technology and numbers over individual training.`,
+            category: "Faction",
+        });
+
+        await ctx.db.insert("lore", {
+            userId,
+            campaignId,
+            title: "The Red Ribbon Army & Androids",
+            content: `The Red Ribbon Army was a paramilitary organization destroyed by young Goku:
+
+HISTORY:
+- Sought the Dragon Balls for world domination
+- Goku single-handedly destroyed them as a child
+- Dr. Gero survived and swore revenge
+
+DR. GERO'S ANDROIDS:
+- Android 8: Gentle giant, refused to fight
+- Android 16: Nature-loving, programmed to kill Goku
+- Android 17: Rebellious teen, eventually became a ranger
+- Android 18: Married Krillin, has a daughter
+- Android 19 & 20 (Gero): Energy absorption models
+- Cell: Bio-android with cells of strongest fighters
+
+The Androids proved that artificial beings could surpass natural warriors.`,
+            category: "Faction",
+        });
+
+        await ctx.db.insert("lore", {
+            userId,
+            campaignId,
+            title: "Other World and the Afterlife",
+            content: `When beings die in the Dragon Ball universe:
+
+THE PROCESS:
+1. Soul travels to Other World
+2. Judged by King Yemma (the massive red ogre)
+3. Sent to Heaven or Hell (HFIL in dub)
+
+SPECIAL CASES:
+- Great warriors may keep their bodies
+- Can train on King Kai's planet at end of Snake Way
+- Snake Way is 1 million kilometers long!
+- Hell is actually pretty nice (more like annoying purgatory)
+
+LOCATIONS:
+- King Kai's Planet: Small planet, 10x gravity
+- Grand Kai's Planet: Martial arts tournament venue
+- Sacred World of the Kai: Home of Supreme Kais
+
+The Z-Fighters have died and been revived multiple times through Dragon Balls.`,
+            category: "History",
+        });
+
+        await ctx.db.insert("lore", {
+            userId,
+            campaignId,
+            title: "The Tournament of Power",
+            content: `The ultimate multiversal battle royale:
+
+PREMISE:
+- Zen-Oh (King of Everything) wanted entertainment
+- 8 universes compete, losers get erased
+- 10 fighters per universe, 48-minute battle royale
+- Ring-out elimination only (no killing)
+
+UNIVERSE 7'S TEAM:
+Goku, Vegeta, Gohan, Piccolo, Frieza, Android 17, Android 18, Krillin, Master Roshi, Tien
+
+RESULT:
+- Android 17 won by being the last fighter standing
+- Wished for all erased universes to return
+- Zen-Oh was pleased by the "good wish"
+- Frieza was revived as thanks for his help
+
+The Tournament demonstrated that teamwork and strategy could overcome raw power.`,
+            category: "History",
+        });
+
+        // ╔════════════════════════════════════════════════════════════════╗
+        // ║                          RUMORS                                 ║
+        // ╚════════════════════════════════════════════════════════════════╝
+
+        await ctx.db.insert("rumors", {
+            campaignId,
+            content: "They say Frieza has returned from Hell... again. And this time, he's been training.",
+            type: "major_event",
+            originLocationId: capsuleCorp,
+            spreadRadius: 3,
+            maxSpreadRadius: 5,
+            timestamp: Date.now(),
+            isActive: true,
+        });
+
+        await ctx.db.insert("rumors", {
+            campaignId,
+            content: "A fighter with golden hair was spotted near Mount Paozu. Could the Super Saiyan legend be real?",
+            type: "major_event",
+            originLocationId: mountPaozu,
+            spreadRadius: 2,
+            maxSpreadRadius: 4,
+            timestamp: Date.now(),
+            isActive: true,
+        });
+
+        await ctx.db.insert("rumors", {
+            campaignId,
+            content: "Mr. Satan claims he's the one who really defeated Cell. But some witnesses tell a different story...",
+            type: "quest_complete",
+            originLocationId: worldTournament,
+            spreadRadius: 5,
+            maxSpreadRadius: 5,
+            timestamp: Date.now(),
+            isActive: true,
+        });
+
+        // ╔════════════════════════════════════════════════════════════════╗
+        // ║                   TECHNIQUES/ABILITIES                          ║
+        // ╚════════════════════════════════════════════════════════════════╝
+
+        // --- BASIC TECHNIQUES ---
+        await ctx.db.insert("spells", {
+            userId,
+            campaignId,
+            name: "Flight",
+            description: "Use Ki to levitate and fly through the air at high speeds. A fundamental skill for any serious fighter.",
+            category: "Support",
+            requiredLevel: 1,
+            energyCost: 5,
+            isPassive: false,
+            iconEmoji: "🕊️",
+            tags: ["movement", "basic"],
+            rarity: "Basic",
+        });
+
+        await ctx.db.insert("spells", {
+            userId,
+            campaignId,
+            name: "Ki Sense",
+            description: "Feel the Ki of other beings to detect their location and estimate their power level. Cannot sense androids or gods.",
+            category: "Support",
+            requiredLevel: 2,
+            energyCost: 0,
+            isPassive: true,
+            iconEmoji: "👁️",
+            tags: ["detection", "passive"],
+            rarity: "Basic",
+        });
+
+        await ctx.db.insert("spells", {
+            userId,
+            campaignId,
+            name: "Ki Blast",
+            description: "Fire a basic ball of Ki energy at an opponent. The bread and butter of Ki combat.",
+            category: "Ki Blast",
+            requiredLevel: 1,
+            energyCost: 10,
+            damage: 15,
+            damageType: "Ki",
+            targetType: "single",
+            range: "long",
+            iconEmoji: "💥",
+            tags: ["offensive", "ranged", "basic"],
+            rarity: "Basic",
+        });
+
+        await ctx.db.insert("spells", {
+            userId,
+            campaignId,
+            name: "Ki Barrier",
+            description: "Create a protective dome of Ki energy around yourself. Blocks incoming attacks but drains Ki continuously.",
+            category: "Support",
+            requiredLevel: 5,
+            energyCost: 30,
+            buffEffect: JSON.stringify({ stat: "defense", amount: 20, duration: 3 }),
+            iconEmoji: "🛡️",
+            tags: ["defensive", "barrier"],
+            rarity: "Advanced",
+        });
+
+        // --- SIGNATURE TECHNIQUES ---
+        await ctx.db.insert("spells", {
+            userId,
+            campaignId,
+            name: "Kamehameha",
+            description: "The signature technique of the Turtle School! A powerful beam of concentrated Ki. Requires the famous stance and chant.",
+            category: "Ki Blast",
+            requiredLevel: 10,
+            energyCost: 50,
+            damage: 80,
+            damageType: "Ki",
+            damageScaling: JSON.stringify({ stat: "ki", ratio: 1.5 }),
+            targetType: "single",
+            range: "long",
+            castTime: "1 turn",
+            iconEmoji: "🌊",
+            tags: ["offensive", "beam", "signature"],
+            rarity: "Master",
+            lore: "Invented by Master Roshi over 50 years of training. Goku learned it by watching it once.",
+            creator: "Master Roshi",
+        });
+
+        await ctx.db.insert("spells", {
+            userId,
+            campaignId,
+            name: "Galick Gun",
+            description: "Vegeta's signature attack! A purple energy wave fired from both hands. Rivals the Kamehameha in power.",
+            category: "Ki Blast",
+            requiredLevel: 10,
+            energyCost: 50,
+            damage: 85,
+            damageType: "Ki",
+            damageScaling: JSON.stringify({ stat: "power", ratio: 1.4 }),
+            targetType: "single",
+            range: "long",
+            castTime: "1 turn",
+            iconEmoji: "💜",
+            tags: ["offensive", "beam", "signature"],
+            rarity: "Master",
+            creator: "Vegeta",
+        });
+
+        await ctx.db.insert("spells", {
+            userId,
+            campaignId,
+            name: "Special Beam Cannon",
+            description: "Piccolo's deadly drilling beam! Concentrates all energy into a spiraling penetrating attack. Ignores a portion of defense.",
+            category: "Ki Blast",
+            requiredLevel: 12,
+            energyCost: 70,
+            damage: 100,
+            damageType: "Ki",
+            targetType: "single",
+            range: "long",
+            castTime: "2 turns",
+            iconEmoji: "🔩",
+            tags: ["offensive", "beam", "piercing"],
+            rarity: "Master",
+            lore: "Piccolo developed this to kill Goku but first used it to defeat Raditz.",
+            creator: "Piccolo",
+        });
+
+        await ctx.db.insert("spells", {
+            userId,
+            campaignId,
+            name: "Destructo Disc",
+            description: "Krillin's signature attack! A razor-sharp disc of Ki that can cut through almost anything. Difficult to control.",
+            category: "Ki Blast",
+            requiredLevel: 8,
+            energyCost: 40,
+            damage: 90,
+            damageType: "Ki",
+            targetType: "single",
+            range: "medium",
+            iconEmoji: "💿",
+            tags: ["offensive", "cutting", "signature"],
+            rarity: "Advanced",
+            lore: "Can cut through opponents much stronger than the user. Even cut Frieza's tail!",
+            creator: "Krillin",
+        });
+
+        await ctx.db.insert("spells", {
+            userId,
+            campaignId,
+            name: "Final Flash",
+            description: "Vegeta's ultimate attack! A massive beam of golden energy that requires full power charging. Devastatingly powerful.",
+            category: "Ultimate",
+            requiredLevel: 25,
+            energyCost: 100,
+            damage: 200,
+            damageType: "Ki",
+            damageScaling: JSON.stringify({ stat: "power", ratio: 2.0 }),
+            targetType: "single",
+            range: "long",
+            areaSize: "medium",
+            castTime: "2 turns",
+            interruptible: true,
+            iconEmoji: "⚡",
+            tags: ["offensive", "beam", "ultimate"],
+            rarity: "Ultimate",
+            lore: "Vegeta used this against Perfect Cell. The charge time is its biggest weakness.",
+            creator: "Vegeta",
+        });
+
+        // --- SPIRIT BOMB ---
+        await ctx.db.insert("spells", {
+            userId,
+            campaignId,
+            name: "Spirit Bomb (Genki Dama)",
+            description: "Gather energy from all living things to form a massive sphere of pure life force! Only usable by those with a pure heart. Devastating against evil.",
+            category: "Ultimate",
+            requiredLevel: 30,
+            requiredStats: JSON.stringify({ technique: 20, ki: 25 }),
+            energyCost: 0, // Uses borrowed energy
+            damage: 500,
+            damageType: "Divine",
+            targetType: "single",
+            range: "unlimited",
+            areaSize: "massive",
+            castTime: "5 turns",
+            interruptible: true,
+            iconEmoji: "🌍",
+            tags: ["ultimate", "good-only", "borrowed-power"],
+            rarity: "Legendary",
+            lore: "Taught by King Kai. Used to defeat Frieza, Kid Buu, and in the Tournament of Power.",
+            creator: "King Kai",
+            notes: "Deals 2x damage to evil beings. User must be pure of heart.",
+        });
+
+        // --- KAIO-KEN ---
+        await ctx.db.insert("spells", {
+            userId,
+            campaignId,
+            name: "Kaio-Ken",
+            description: "A technique that multiplies all abilities but damages the body! Can be stacked (x2, x3, x10, x20) for greater power and greater risk.",
+            category: "Transformation",
+            requiredLevel: 15,
+            healthCost: 20,
+            energyCost: 40,
+            buffEffect: JSON.stringify({ stat: "all", amount: 50, duration: 3 }),
+            debuffEffect: JSON.stringify({ stat: "health", amount: -10, duration: 3 }),
+            iconEmoji: "🔴",
+            tags: ["transformation", "power-up", "risky"],
+            rarity: "Master",
+            lore: "Taught by King Kai. Goku combined it with Super Saiyan Blue for Kaio-Ken Blue!",
+            creator: "King Kai",
+            notes: "Higher multipliers = more power but more damage to user.",
+        });
+
+        // --- TRANSFORMATIONS ---
+        await ctx.db.insert("spells", {
+            userId,
+            campaignId,
+            name: "Super Saiyan",
+            description: "THE legendary transformation! Multiplies power by 50x. Golden hair, green eyes, and a fierce golden aura. Achieved through intense rage.",
+            category: "Transformation",
+            requiredLevel: 20,
+            requiredStats: JSON.stringify({ power: 30 }),
+            energyCost: 60,
+            buffEffect: JSON.stringify({ stat: "all", amount: 100, duration: 10 }),
+            iconEmoji: "💛",
+            tags: ["transformation", "saiyan-only", "legendary"],
+            rarity: "Legendary",
+            lore: "The legend says a Super Saiyan appears once every 1000 years. Goku first achieved it against Frieza.",
+            notes: "Saiyan race only. Initial trigger requires extreme emotional distress.",
+        });
+
+        await ctx.db.insert("spells", {
+            userId,
+            campaignId,
+            name: "Super Saiyan 2",
+            description: "The ascended Super Saiyan form! 100x base power. Electricity crackles around the aura, and the hair becomes spikier.",
+            category: "Transformation",
+            requiredLevel: 35,
+            requiredAbilities: JSON.stringify(["Super Saiyan"]),
+            energyCost: 100,
+            buffEffect: JSON.stringify({ stat: "all", amount: 200, duration: 8 }),
+            iconEmoji: "⚡",
+            tags: ["transformation", "saiyan-only", "ascended"],
+            rarity: "Legendary",
+            lore: "Gohan first achieved this form in rage after Cell killed Android 16.",
+        });
+
+        await ctx.db.insert("spells", {
+            userId,
+            campaignId,
+            name: "Super Saiyan 3",
+            description: "The ultimate Super Saiyan form through training! 400x power. Extremely long hair, no eyebrows, massive energy drain.",
+            category: "Transformation",
+            requiredLevel: 50,
+            requiredAbilities: JSON.stringify(["Super Saiyan 2"]),
+            energyCost: 200,
+            buffEffect: JSON.stringify({ stat: "all", amount: 400, duration: 5 }),
+            debuffEffect: JSON.stringify({ stat: "endurance", amount: -30, duration: 5 }),
+            iconEmoji: "💫",
+            tags: ["transformation", "saiyan-only", "ultimate"],
+            rarity: "Divine",
+            lore: "Goku achieved this through training in Other World. The energy drain is so severe it significantly shortens time on Earth.",
+            notes: "Continuous Ki drain. Not recommended for extended battles.",
+        });
+
+        await ctx.db.insert("spells", {
+            userId,
+            campaignId,
+            name: "Super Saiyan God",
+            description: "Divine transformation achieved through ritual! Red hair and aura, calm demeanor. Grants God Ki which cannot be sensed by mortals.",
+            category: "Transformation",
+            requiredLevel: 70,
+            energyCost: 150,
+            buffEffect: JSON.stringify({ stat: "all", amount: 500, duration: 10 }),
+            iconEmoji: "❤️",
+            tags: ["transformation", "saiyan-only", "divine", "god-ki"],
+            rarity: "Divine",
+            lore: "Achieved through a ritual with 5 righteous Saiyans pouring energy into a 6th. Goku first achieved this to fight Beerus.",
+            notes: "Grants God Ki. Can be sensed only by those with divine ki.",
+        });
+
+        await ctx.db.insert("spells", {
+            userId,
+            campaignId,
+            name: "Super Saiyan Blue",
+            description: "The combination of Super Saiyan with God Ki! Blue hair and aura. Perfect Ki control allows for precise power management.",
+            category: "Transformation",
+            requiredLevel: 80,
+            requiredAbilities: JSON.stringify(["Super Saiyan", "Super Saiyan God"]),
+            energyCost: 180,
+            buffEffect: JSON.stringify({ stat: "all", amount: 600, duration: 10 }),
+            iconEmoji: "💙",
+            tags: ["transformation", "saiyan-only", "divine", "god-ki"],
+            rarity: "Divine",
+            lore: "Achieved by Goku and Vegeta through training with Whis. Also known as Super Saiyan God Super Saiyan.",
+        });
+
+        await ctx.db.insert("spells", {
+            userId,
+            campaignId,
+            name: "Ultra Instinct -Sign-",
+            description: "The beginning of the divine technique! The body moves on its own to dodge attacks. Silver eyes and a heatwave-like aura.",
+            category: "Transformation",
+            requiredLevel: 90,
+            energyCost: 250,
+            buffEffect: JSON.stringify({ stat: "speed", amount: 1000, duration: 5 }),
+            statusEffect: "auto_dodge",
+            statusDuration: 5,
+            iconEmoji: "⚪",
+            tags: ["transformation", "divine", "technique", "angel-technique"],
+            rarity: "Divine",
+            lore: "A technique of the angels. The user's body reacts without thinking. Even Beerus hasn't mastered it.",
+            notes: "Incomplete form. Dodge rate significantly increased but attack power unchanged.",
+        });
+
+        await ctx.db.insert("spells", {
+            userId,
+            campaignId,
+            name: "Mastered Ultra Instinct",
+            description: "THE ultimate form! Silver hair, silver eyes, complete body autonomy. Both offense and defense are perfected. The power of the angels!",
+            category: "Transformation",
+            requiredLevel: 99,
+            requiredAbilities: JSON.stringify(["Ultra Instinct -Sign-"]),
+            energyCost: 400,
+            buffEffect: JSON.stringify({ stat: "all", amount: 2000, duration: 3 }),
+            iconEmoji: "🤍",
+            tags: ["transformation", "divine", "ultimate", "angel-technique"],
+            rarity: "Divine",
+            lore: "The complete Ultra Instinct. Goku achieved this in the Tournament of Power against Jiren.",
+            notes: "Extremely difficult to maintain. Most powerful mortal transformation.",
+        });
+
+        // --- PHYSICAL TECHNIQUES ---
+        await ctx.db.insert("spells", {
+            userId,
+            campaignId,
+            name: "Instant Transmission",
+            description: "Teleport instantly to any Ki signature you can sense! Lock onto someone's energy and appear right next to them.",
+            category: "Support",
+            requiredLevel: 25,
+            energyCost: 20,
+            range: "unlimited",
+            iconEmoji: "✨",
+            tags: ["movement", "teleportation", "utility"],
+            rarity: "Master",
+            lore: "Goku learned this from the Yardrats after escaping Namek. Requires sensing the destination Ki.",
+            creator: "Yardrat Race",
+        });
+
+        await ctx.db.insert("spells", {
+            userId,
+            campaignId,
+            name: "Solar Flare",
+            description: "Emit an blinding flash of light! Temporarily blinds all enemies looking at you. A great escape or setup technique.",
+            category: "Support",
+            requiredLevel: 5,
+            energyCost: 15,
+            statusEffect: "Blind",
+            statusDuration: 2,
+            targetType: "all_enemies",
+            iconEmoji: "☀️",
+            tags: ["utility", "blind", "escape"],
+            rarity: "Advanced",
+            lore: "Signature move of Tien Shinhan, but widely adopted by many fighters.",
+            creator: "Tien Shinhan",
+        });
+
+        await ctx.db.insert("spells", {
+            userId,
+            campaignId,
+            name: "Fusion Dance",
+            description: "Perform the Metamoran Fusion Dance with a partner of similar power level! Creates a fused warrior for 30 minutes with combined power.",
+            category: "Support",
+            requiredLevel: 20,
+            requiredItems: JSON.stringify(["Fusion Dance Instructions"]),
+            energyCost: 100,
+            buffEffect: JSON.stringify({ stat: "all", amount: 300, duration: 30 }),
+            iconEmoji: "💃",
+            tags: ["fusion", "partner", "time-limited"],
+            rarity: "Legendary",
+            lore: "Taught to Goku by the Metamorans. Must be performed perfectly or results in a failed fusion!",
+            notes: "Requires partner with similar power level. Both must perform dance perfectly.",
+        });
+
+        await ctx.db.insert("spells", {
+            userId,
+            campaignId,
+            name: "Hakai",
+            description: "The power to destroy anything! The signature technique of Gods of Destruction. Erases the target from existence completely.",
+            category: "Forbidden",
+            requiredLevel: 95,
+            energyCost: 300,
+            damage: 9999,
+            damageType: "Hakai",
+            targetType: "single",
+            range: "short",
+            iconEmoji: "💀",
+            tags: ["destruction", "god-only", "erase"],
+            rarity: "Divine",
+            isForbidden: true,
+            lore: "Only Gods of Destruction should wield this power. Erases targets completely - no afterlife, no resurrection.",
+            notes: "Cannot be used on immortal beings or those stronger than the user.",
+        });
+
+        // ╔════════════════════════════════════════════════════════════════╗
+        // ║                          SHOPS                                  ║
+        // ╚════════════════════════════════════════════════════════════════╝
+
+        // Capsule Corp Shop
+        await ctx.db.insert("shops", {
+            campaignId,
+            locationId: capsuleCorp,
+            name: "Capsule Corp Technology Store",
+            description: "The latest inventions from Capsule Corporation! Capsules, scouters, vehicles, and more. Run by the Brief family.",
+            type: "general",
+            shopkeeperId: bulma,
+            inventory: [
+                { itemId: scouter, stock: 10, basePrice: 5000 },
+                { itemId: capsule, stock: 20, basePrice: 1000 },
+                { itemId: healingCapsule, stock: 15, basePrice: 500 },
+                { itemId: dragonRadar, stock: 1, basePrice: 100000 },
+            ],
+            basePriceModifier: 1.0,
+            buybackModifier: 0.4,
+            isOpen: true,
+        });
+
+        // Korin's Senzu Shop
+        await ctx.db.insert("shops", {
+            campaignId,
+            locationId: korinTower,
+            name: "Korin's Senzu Garden",
+            description: "The only source of Senzu Beans in the world! Korin grows them himself. Limited supply - these beans take time to grow.",
+            type: "potion",
+            shopkeeperId: korin,
+            inventory: [
+                { itemId: senzuBean, stock: 5, basePrice: 10000, restockRate: 1 },
+                { itemId: kiRecoveryDrink, stock: 10, basePrice: 200 },
+            ],
+            basePriceModifier: 2.0, // Senzu are precious
+            buybackModifier: 0.2, // Korin doesn't really buy things
+            dynamicPricing: {
+                supplyDemandFactor: true,
+            },
+            isOpen: true,
+        });
+
+        // Roshi's Turtle Shop
+        await ctx.db.insert("shops", {
+            campaignId,
+            locationId: kameHouse,
+            name: "Turtle School Supplies",
+            description: "Training gear and recovery items for aspiring martial artists. Master Roshi runs this shop between magazine readings.",
+            type: "general",
+            shopkeeperId: masterRoshi,
+            inventory: [
+                { itemId: turtleSchoolGi, stock: 5, basePrice: 3000 },
+                { itemId: weightedClothing, stock: 3, basePrice: 5000 },
+                { itemId: proteinBar, stock: 20, basePrice: 100 },
+                { itemId: kiRecoveryDrink, stock: 15, basePrice: 150 },
+            ],
+            basePriceModifier: 0.8, // Roshi gives discounts to students
+            buybackModifier: 0.5,
+            dynamicPricing: {
+                reputationFactor: true,
+            },
+            isOpen: true,
+        });
+
+        // Frieza Force Supply Depot
+        await ctx.db.insert("shops", {
+            campaignId,
+            locationId: friezaShip,
+            name: "Frieza Force Quartermaster",
+            description: "Military supplies for Frieza's soldiers. Standard issue equipment and medical supplies. Don't ask questions.",
+            type: "armor",
+            inventory: [
+                { itemId: saiyanArmor, stock: 10, basePrice: 8000 },
+                { itemId: scouter, stock: 20, basePrice: 3000 },
+                { itemId: healingCapsule, stock: 30, basePrice: 400 },
+            ],
+            basePriceModifier: 1.5, // Military markup
+            buybackModifier: 0.3,
+            isOpen: true,
+        });
+
+        // World Tournament Prize Shop
+        await ctx.db.insert("shops", {
+            campaignId,
+            locationId: worldTournament,
+            name: "Tournament Prize Shop",
+            description: "Exclusive items available only to tournament participants! Spend your prize money on rare martial arts equipment.",
+            type: "general",
+            inventory: [
+                { itemId: powerPole, stock: 1, basePrice: 50000 },
+                { itemId: potaraEarrings, stock: 1, basePrice: 500000 },
+                { itemId: flyingNimbus, stock: 2, basePrice: 30000 },
+                { itemId: proteinBar, stock: 50, basePrice: 50 },
+            ],
+            basePriceModifier: 1.2,
+            buybackModifier: 0.6,
+            isOpen: true,
+        });
+
+        // ╔════════════════════════════════════════════════════════════════╗
+        // ║                        CONDITIONS                               ║
+        // ╚════════════════════════════════════════════════════════════════╝
+
+        // Power Level Gate - Hyperbolic Time Chamber
+        await ctx.db.insert("conditions", {
+            campaignId,
+            name: "Hyperbolic Time Chamber Entry Check",
+            description: "Only those with sufficient power level or permission from Dende may enter the Time Chamber.",
+            trigger: "on_enter_location",
+            triggerContext: hyperbolicTimeChamber.toString(),
+            rules: JSON.stringify({
+                or: [
+                    { gte: ["player.level", 20] },
+                    { has_flag: "dende_permission" },
+                    { has_flag: "time_chamber_key" },
+                ],
+            }),
+            thenActions: JSON.stringify([
+                { type: "allow_entry" },
+                { type: "display_message", message: "The door to the Hyperbolic Time Chamber opens before you..." },
+            ]),
+            elseActions: JSON.stringify([
+                { type: "block_entry", message: "Mr. Popo blocks your path. 'You're not ready for this training. Come back when you're stronger.'" },
+            ]),
+            priority: 10,
+            isActive: true,
+            createdAt: Date.now(),
+        });
+
+        // Beerus Planet - God Ki Check
+        await ctx.db.insert("conditions", {
+            campaignId,
+            name: "Divine Realm Access",
+            description: "Only those with God Ki or divine invitation may travel to Beerus's planet.",
+            trigger: "on_enter_location",
+            triggerContext: beerusPlanet.toString(),
+            rules: JSON.stringify({
+                or: [
+                    { has_ability: "Super Saiyan God" },
+                    { has_ability: "Super Saiyan Blue" },
+                    { has_flag: "whis_invitation" },
+                    { gte: ["player.level", 70] },
+                ],
+            }),
+            thenActions: JSON.stringify([
+                { type: "allow_entry" },
+                { type: "display_message", message: "Whis's staff glows and transports you to Lord Beerus's planet!" },
+            ]),
+            elseActions: JSON.stringify([
+                { type: "block_entry", message: "You lack the divine Ki necessary to reach this realm. Perhaps training with the gods could help..." },
+            ]),
+            priority: 10,
+            isActive: true,
+            createdAt: Date.now(),
+        });
+
+        // Super Saiyan Unlock Condition
+        await ctx.db.insert("conditions", {
+            campaignId,
+            name: "Super Saiyan Awakening",
+            description: "When a Saiyan experiences extreme rage after a friend dies, they may unlock Super Saiyan.",
+            trigger: "on_npc_interact",
+            rules: JSON.stringify({
+                and: [
+                    { eq: ["player.race", "Saiyan"] },
+                    { gte: ["player.level", 15] },
+                    { has_flag: "witnessed_friend_death" },
+                    { not: { has_ability: "Super Saiyan" } },
+                ],
+            }),
+            thenActions: JSON.stringify([
+                { type: "grant_ability", ability: "Super Saiyan" },
+                { type: "display_message", message: "YOUR RAGE EXPLODES! Golden energy erupts around you as your hair stands on end and turns gold. YOU'VE BECOME A SUPER SAIYAN!" },
+                { type: "set_flag", key: "achieved_super_saiyan", value: true },
+            ]),
+            priority: 100,
+            isActive: true,
+            executeOnce: true,
+            createdAt: Date.now(),
+        });
+
+        // Senzu Bean Limit
+        await ctx.db.insert("conditions", {
+            campaignId,
+            name: "Senzu Bean Rationing",
+            description: "Korin only allows a limited number of Senzu Beans per visit.",
+            trigger: "on_item_use",
+            rules: JSON.stringify({
+                and: [
+                    { eq: ["item.name", "Senzu Bean"] },
+                    { gte: ["player.senzu_used_today", 3] },
+                ],
+            }),
+            thenActions: JSON.stringify([
+                { type: "block_action", message: "You've already used too many Senzu Beans today! Your body needs time to process them." },
+            ]),
+            priority: 5,
+            isActive: true,
+            createdAt: Date.now(),
+        });
+
+        // Z-Fighter Reputation Bonus
+        await ctx.db.insert("conditions", {
+            campaignId,
+            name: "Z-Fighter Ally Discount",
+            description: "Those with good reputation with the Z-Fighters get discounts at friendly shops.",
+            trigger: "on_npc_interact",
+            rules: JSON.stringify({
+                and: [
+                    { gte: ["player.reputation.Z-Fighters", 50] },
+                    { eq: ["interaction.type", "trade"] },
+                ],
+            }),
+            thenActions: JSON.stringify([
+                { type: "modify_prices", modifier: 0.8 },
+                { type: "display_message", message: "As a friend of the Z-Fighters, you receive a 20% discount!" },
+            ]),
+            priority: 3,
+            isActive: true,
+            createdAt: Date.now(),
+        });
+
+        // Combat Power Check
+        await ctx.db.insert("conditions", {
+            campaignId,
+            name: "Power Level Warning",
+            description: "Warn players when entering areas with enemies far above their level.",
+            trigger: "on_enter_location",
+            rules: JSON.stringify({
+                and: [
+                    { lt: ["player.level", 50] },
+                    {
+                        or: [
+                            { eq: ["location.name", "Frieza's Spaceship"] },
+                            { eq: ["location.name", "Cell Games Arena"] },
+                        ],
+                    },
+                ],
+            }),
+            thenActions: JSON.stringify([
+                { type: "display_message", message: "WARNING: You sense overwhelming power in this area! The enemies here are far beyond your current strength. Proceed with extreme caution!" },
+                { type: "set_flag", key: "entered_danger_zone", value: true },
+            ]),
+            priority: 1,
+            isActive: true,
+            createdAt: Date.now(),
+        });
+
+        // Tournament Registration
+        await ctx.db.insert("conditions", {
+            campaignId,
+            name: "World Tournament Registration",
+            description: "Players must register before participating in the tournament.",
+            trigger: "on_enter_location",
+            triggerContext: worldTournament.toString(),
+            rules: JSON.stringify({
+                and: [
+                    { not: { has_flag: "tournament_registered" } },
+                    { gte: ["player.level", 5] },
+                ],
+            }),
+            thenActions: JSON.stringify([
+                { type: "display_message", message: "Welcome to the World Martial Arts Tournament! Would you like to register as a competitor?" },
+                { type: "offer_choice", options: ["Register (100 Zeni)", "Just Spectating"] },
+            ]),
+            priority: 5,
+            isActive: true,
+            createdAt: Date.now(),
+        });
+
+        // Zenkai Boost (Saiyan near-death power up)
+        await ctx.db.insert("conditions", {
+            campaignId,
+            name: "Saiyan Zenkai Boost",
+            description: "Saiyans grow dramatically stronger after recovering from near-death experiences.",
+            trigger: "on_combat_start",
+            rules: JSON.stringify({
+                and: [
+                    { eq: ["player.race", "Saiyan"] },
+                    { has_flag: "near_death_recovery" },
+                ],
+            }),
+            thenActions: JSON.stringify([
+                { type: "apply_buff", stat: "power", amount: 25, duration: -1 },
+                { type: "display_message", message: "Your Saiyan blood surges! The near-death experience has made you significantly stronger!" },
+                { type: "remove_flag", key: "near_death_recovery" },
+                { type: "set_flag", key: "zenkai_count", value: "+1" },
+            ]),
+            priority: 50,
+            isActive: true,
+            createdAt: Date.now(),
+        });
+
+        // Dragon Ball Collection Check
+        await ctx.db.insert("conditions", {
+            campaignId,
+            name: "Dragon Ball Gathering Complete",
+            description: "When all seven Dragon Balls are collected, Shenron can be summoned!",
+            trigger: "on_item_use",
+            rules: JSON.stringify({
+                and: [
+                    { has_item: "One-Star Dragon Ball" },
+                    { has_item: "Two-Star Dragon Ball" },
+                    { has_item: "Three-Star Dragon Ball" },
+                    { has_item: "Four-Star Dragon Ball" },
+                    { has_item: "Five-Star Dragon Ball" },
+                    { has_item: "Six-Star Dragon Ball" },
+                    { has_item: "Seven-Star Dragon Ball" },
+                ],
+            }),
+            thenActions: JSON.stringify([
+                { type: "display_message", message: "The Dragon Balls glow intensely and float into the air! The sky darkens as lightning crackles across the heavens... SHENRON APPEARS!" },
+                { type: "trigger_event", event: "summon_shenron" },
+                { type: "set_flag", key: "shenron_summoned", value: true },
+            ]),
+            priority: 100,
+            isActive: true,
+            executeOnce: false,
+            createdAt: Date.now(),
+        });
+
+        // Frieza Force Hostile Check
+        await ctx.db.insert("conditions", {
+            campaignId,
+            name: "Frieza Force Hostility",
+            description: "Members of the Frieza Force attack Z-Fighter allies on sight.",
+            trigger: "on_enter_location",
+            rules: JSON.stringify({
+                and: [
+                    { gte: ["player.reputation.Z-Fighters", 20] },
+                    { eq: ["location.name", "Frieza's Spaceship"] },
+                ],
+            }),
+            thenActions: JSON.stringify([
+                { type: "trigger_combat", enemy_type: "Frieza Force Soldier", count: 3 },
+                { type: "display_message", message: "INTRUDER ALERT! Frieza's soldiers recognize you as an enemy and attack!" },
+            ]),
+            priority: 20,
+            isActive: true,
+            cooldownSeconds: 300,
+            createdAt: Date.now(),
+        });
+
+        // ╔════════════════════════════════════════════════════════════════╗
+        // ║                      RETURN SUCCESS                             ║
+        // ╚════════════════════════════════════════════════════════════════╝
+
+        return {
+            success: true,
+            campaignId,
+            message: "Dragon Ball Z realm created! The fate of the universe awaits! 🐉",
+            stats: {
+                factions: 6,
+                items: 20,
+                locations: 14,
+                regions: 3,
+                npcs: 17,
+                monsters: 8,
+                quests: 8,
+                lore: 8,
+                abilities: 25,
+                shops: 5,
+                conditions: 11,
+            },
+        };
+    },
+});

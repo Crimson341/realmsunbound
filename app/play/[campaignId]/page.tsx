@@ -739,7 +739,11 @@ export default function PlayPage() {
             },
             handleGameData,
             (err) => {
-                console.error(err);
+                console.error("AI Error:", err);
+                setMessages(prev => [...prev, {
+                    role: 'model',
+                    content: "The townsfolk seem confused by your question... Try asking again."
+                }]);
                 setIsLoading(false);
             }
         );
@@ -827,7 +831,11 @@ Describe the journey briefly and their arrival at the new location. Set the scen
                     }
                 },
                 (err) => {
-                    console.error(err);
+                    console.error("AI Error:", err);
+                    setMessages(prev => [...prev, {
+                        role: 'model',
+                        content: "Your journey was interrupted by a strange disturbance... Try traveling again."
+                    }]);
                     setIsLoading(false);
                 }
             );
@@ -928,7 +936,14 @@ Describe the journey briefly and their arrival at the new location. Set the scen
                     aiChoices = gameData.choices;
                 }
             },
-            (err) => console.error(err)
+            (err) => {
+                console.error("AI Error:", err);
+                setMessages(prev => [...prev, {
+                    role: 'model',
+                    content: "The magic fizzles... Something went wrong connecting to the realm. Please try again."
+                }]);
+                setIsLoading(false);
+            }
         );
 
         // Save initial AI response to DB
@@ -1017,7 +1032,11 @@ Describe the journey briefly and their arrival at the new location. Set the scen
                 }
             },
             (err) => {
-                console.error(err);
+                console.error("AI Error:", err);
+                setMessages(prev => [...prev, {
+                    role: 'model',
+                    content: "The realm grows silent... Something went wrong. Please try your action again."
+                }]);
                 setIsLoading(false);
             }
         );

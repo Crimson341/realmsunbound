@@ -235,6 +235,119 @@ export interface Position {
   y: number;
 }
 
+// ============================================
+// SPRITE & ANIMATION DEFINITIONS
+// ============================================
+
+/** Animation states that sprites can have */
+export type AnimationState =
+  | 'idle'
+  | 'walk_down' | 'walk_up' | 'walk_left' | 'walk_right'
+  | 'attack_down' | 'attack_up' | 'attack_left' | 'attack_right'
+  | 'hurt'
+  | 'death'
+  | 'cast'
+  | 'custom';
+
+/** Direction an entity is facing */
+export type FacingDirection = 'up' | 'down' | 'left' | 'right';
+
+/** Definition for a single animation within a sprite sheet */
+export interface SpriteAnimation {
+  /** Name of the animation (e.g., 'idle', 'walk_down') */
+  name: AnimationState;
+  /** Starting row in the sprite sheet (0-indexed) */
+  row: number;
+  /** Starting column in the sprite sheet (0-indexed) */
+  startFrame: number;
+  /** Number of frames in this animation */
+  frameCount: number;
+  /** Frames per second for this animation */
+  fps: number;
+  /** Whether this animation loops */
+  loop: boolean;
+}
+
+/** Sprite sheet configuration */
+export interface SpriteSheetConfig {
+  /** Width of each frame in pixels */
+  frameWidth: number;
+  /** Height of each frame in pixels */
+  frameHeight: number;
+  /** Total columns in the sprite sheet */
+  columns: number;
+  /** Total rows in the sprite sheet */
+  rows: number;
+  /** Animations defined in this sprite sheet */
+  animations: SpriteAnimation[];
+  /** Default animation to play when idle */
+  defaultAnimation: AnimationState;
+  /** Anchor point for the sprite (0-1 range, default 0.5, 0.5 = center) */
+  anchorX?: number;
+  anchorY?: number;
+  /** Scale multiplier for rendering (default 1.0) */
+  scale?: number;
+}
+
+/** Sprite data attached to an entity */
+export interface EntitySpriteData {
+  /** URL or storage ID for the sprite sheet image */
+  spriteSheetUrl: string;
+  /** Configuration for parsing the sprite sheet */
+  config: SpriteSheetConfig;
+  /** Optional tint color to apply to the sprite */
+  tintColor?: string;
+}
+
+/** Preset sprite configurations for common formats */
+export const SPRITE_PRESETS = {
+  /** Standard RPG Maker VX/Ace format: 3 frames per direction, 4 directions */
+  RPG_MAKER_VX: {
+    frameWidth: 32,
+    frameHeight: 32,
+    columns: 3,
+    rows: 4,
+    animations: [
+      { name: 'walk_down' as AnimationState, row: 0, startFrame: 0, frameCount: 3, fps: 8, loop: true },
+      { name: 'walk_left' as AnimationState, row: 1, startFrame: 0, frameCount: 3, fps: 8, loop: true },
+      { name: 'walk_right' as AnimationState, row: 2, startFrame: 0, frameCount: 3, fps: 8, loop: true },
+      { name: 'walk_up' as AnimationState, row: 3, startFrame: 0, frameCount: 3, fps: 8, loop: true },
+      { name: 'idle' as AnimationState, row: 0, startFrame: 1, frameCount: 1, fps: 1, loop: true },
+    ],
+    defaultAnimation: 'idle' as AnimationState,
+  },
+  /** LPC (Liberated Pixel Cup) format: 8 frames per direction, common in OpenGameArt */
+  LPC_STANDARD: {
+    frameWidth: 64,
+    frameHeight: 64,
+    columns: 9,
+    rows: 4,
+    animations: [
+      { name: 'walk_up' as AnimationState, row: 0, startFrame: 1, frameCount: 8, fps: 10, loop: true },
+      { name: 'walk_left' as AnimationState, row: 1, startFrame: 1, frameCount: 8, fps: 10, loop: true },
+      { name: 'walk_down' as AnimationState, row: 2, startFrame: 1, frameCount: 8, fps: 10, loop: true },
+      { name: 'walk_right' as AnimationState, row: 3, startFrame: 1, frameCount: 8, fps: 10, loop: true },
+      { name: 'idle' as AnimationState, row: 2, startFrame: 0, frameCount: 1, fps: 1, loop: true },
+    ],
+    defaultAnimation: 'idle' as AnimationState,
+  },
+  /** Simple 4-direction with idle: 4 frames walk + 1 idle per direction */
+  SIMPLE_4DIR: {
+    frameWidth: 32,
+    frameHeight: 32,
+    columns: 4,
+    rows: 4,
+    animations: [
+      { name: 'idle' as AnimationState, row: 0, startFrame: 0, frameCount: 1, fps: 1, loop: true },
+      { name: 'walk_down' as AnimationState, row: 0, startFrame: 0, frameCount: 4, fps: 8, loop: true },
+      { name: 'walk_up' as AnimationState, row: 1, startFrame: 0, frameCount: 4, fps: 8, loop: true },
+      { name: 'walk_left' as AnimationState, row: 2, startFrame: 0, frameCount: 4, fps: 8, loop: true },
+      { name: 'walk_right' as AnimationState, row: 3, startFrame: 0, frameCount: 4, fps: 8, loop: true },
+    ],
+    defaultAnimation: 'idle' as AnimationState,
+  },
+} as const;
+
 export interface RoomEntity {
   id: string;
   type: number;
@@ -246,6 +359,8 @@ export interface RoomEntity {
   maxHp?: number;
   ac?: number; // Armor class for combat
   color?: string; // Custom hex color for the entity circle (e.g., "#ff5500")
+  sprite?: EntitySpriteData; // Custom sprite sheet with animations
+  facing?: FacingDirection; // Direction entity is facing
 }
 
 export interface RoomObject {

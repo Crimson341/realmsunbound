@@ -13,7 +13,9 @@ import {
   isLightSource,
   getLightRadius,
   getLightColor,
+  FacingDirection,
 } from './types';
+import { SpriteManager, AnimatedSpriteInstance } from './SpriteManager';
 
 export interface HoverInfo {
   type: 'entity' | 'object' | 'tile';
@@ -53,6 +55,9 @@ interface RenderedEntity {
   eyeOffset: number; // For eye animation
   blinkTimer: number;
   isBlinking: boolean;
+  hasCustomSprite: boolean; // Whether this entity uses a custom sprite sheet
+  facing: FacingDirection; // Current facing direction
+  spriteInstance?: AnimatedSpriteInstance; // Reference to animated sprite if using custom sprite
 }
 
 interface RenderedObject {
@@ -98,6 +103,9 @@ export class AIGameEngine {
   private visibleTiles: Set<string> = new Set();
   private tileLightLevels: Map<string, number> = new Map(); // 0.0 (dark) to 1.0 (bright)
   private lightSources: Array<{ x: number; y: number; radius: number; color: number }> = [];
+
+  // Sprite management
+  private spriteManager: SpriteManager = new SpriteManager();
 
   // Animation
   private damageNumbers: DamageNumber[] = [];
@@ -389,6 +397,15 @@ export class AIGameEngine {
       player.targetY = path[0].y;
       player.moving = true;
       player.speed = 8; // Normal speed
+
+      // Start walk animation for sprite entities
+      if (player.hasCustomSprite) {
+        const dx = path[0].x - player.data.x;
+        const dy = path[0].y - player.data.y;
+        const facing = SpriteManager.getFacingFromDelta(dx, dy);
+        player.facing = facing;
+        this.spriteManager.playWalkAnimation(player.data.id, facing);
+      }
     }
   }
 
@@ -398,12 +415,18 @@ export class AIGameEngine {
     const dt = ticker.deltaMS;
     this.animTime += dt;
 
+    // Update sprite animations
+    this.spriteManager.update(dt);
+
     // Update entity movements and animations
     for (const entity of this.entities.values()) {
       if (entity.moving && entity.path.length > 0) {
         this.updateEntityMovement(entity, dt);
       }
-      this.updateEntityAnimation(entity, dt);
+      // Only run circle-based animations for non-sprite entities
+      if (!entity.hasCustomSprite) {
+        this.updateEntityAnimation(entity, dt);
+      }
     }
 
     // Update object animations (glowing lights, etc.)
@@ -427,6 +450,13 @@ export class AIGameEngine {
     const dy = targetPixelY - entity.sprite.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
+    // Update facing direction based on movement
+    const newFacing = SpriteManager.getFacingFromDelta(dx, dy);
+    if (newFacing !== entity.facing && entity.hasCustomSprite) {
+      entity.facing = newFacing;
+      this.spriteManager.playWalkAnimation(entity.data.id, newFacing);
+    }
+
     if (dist < speed) {
       entity.sprite.x = targetPixelX;
       entity.sprite.y = targetPixelY;
@@ -441,6 +471,11 @@ export class AIGameEngine {
         entity.moving = false;
         entity.path = [];
         entity.pathIndex = 0;
+
+        // Switch back to idle animation when movement stops
+        if (entity.hasCustomSprite) {
+          this.spriteManager.playIdleAnimation(entity.data.id);
+        }
 
         if (entity.data.id === 'player') {
           this.playerPosition = { x: entity.data.x, y: entity.data.y };
@@ -606,9 +641,13 @@ export class AIGameEngine {
     }
     this.objects.clear();
 
-    for (const entity of this.entities.values()) {
+    for (const [entityId, entity] of this.entities.entries()) {
       this.entityLayer.removeChild(entity.sprite);
       entity.sprite.destroy();
+      // Clean up sprite manager instance if this entity had a custom sprite
+      if (entity.hasCustomSprite) {
+        this.spriteManager.removeSprite(entityId);
+      }
     }
     this.entities.clear();
 
@@ -1122,12 +1161,118 @@ export class AIGameEngine {
   }
 
   // ============================================
-  // ENTITY RENDERING (Circles with eyes!)
+  // ENTITY RENDERING (Sprites or Circles with eyes!)
   // ============================================
 
-  private renderEntity(entity: RoomEntity): void {
+  private async renderEntity(entity: RoomEntity): Promise<void> {
     const container = new Container();
     const size = this.config.tileSize;
+    const initialFacing: FacingDirection = entity.facing || 'down';
+    let hasCustomSprite = false;
+    let spriteInstance: AnimatedSpriteInstance | undefined;
+
+    // Check if entity has a custom sprite
+    if (entity.sprite) {
+      try {
+        // Create animated sprite
+        spriteInstance = await this.spriteManager.createSprite(
+          entity.id,
+          entity.sprite,
+          initialFacing
+        );
+
+        // Scale sprite to fit tile size (with some padding)
+        const targetSize = size * 0.9;
+        const spriteWidth = entity.sprite.config.frameWidth * (entity.sprite.config.scale || 1);
+        const spriteHeight = entity.sprite.config.frameHeight * (entity.sprite.config.scale || 1);
+        const scale = Math.min(targetSize / spriteWidth, targetSize / spriteHeight);
+
+        spriteInstance.sprite.scale.set(scale);
+
+        // Add shadow under sprite
+        const shadow = new Graphics();
+        const shadowRadius = size * 0.35;
+        shadow.ellipse(0, size * 0.3, shadowRadius, shadowRadius * 0.4);
+        shadow.fill({ color: 0x000000, alpha: 0.3 });
+        container.addChild(shadow);
+
+        // Add the sprite container
+        container.addChild(spriteInstance.container);
+
+        hasCustomSprite = true;
+      } catch (error) {
+        console.warn(`Failed to load sprite for entity ${entity.id}:`, error);
+        // Fall through to circle rendering
+      }
+    }
+
+    // Fallback to circle rendering if no sprite or sprite failed to load
+    if (!hasCustomSprite) {
+      this.renderCircleEntity(container, entity, size);
+    }
+
+    // HP bar for hostiles (works for both sprite and circle entities)
+    if (entity.hostile && entity.hp !== undefined && entity.maxHp !== undefined) {
+      const hpBar = new Graphics();
+      const barWidth = size * 0.8;
+      const hpPercent = entity.hp / entity.maxHp;
+      const radius = size * 0.4;
+
+      // Background
+      hpBar.roundRect(-barWidth / 2, -radius - 10, barWidth, 6, 2);
+      hpBar.fill(0x333333);
+
+      // HP fill
+      hpBar.roundRect(-barWidth / 2 + 1, -radius - 9, (barWidth - 2) * hpPercent, 4, 1);
+      hpBar.fill(hpPercent > 0.3 ? 0x44ff44 : 0xff4444);
+
+      container.addChild(hpBar);
+    }
+
+    // Name label for non-hostile entities
+    if (!entity.hostile && entity.name) {
+      const nameText = new Text({
+        text: entity.name,
+        style: new TextStyle({
+          fontSize: 10,
+          fill: 0xffffff,
+          fontWeight: 'bold',
+          stroke: { color: 0x000000, width: 2 },
+        }),
+      });
+      nameText.anchor.set(0.5, 0);
+      nameText.y = size * 0.4 + 5;
+      container.addChild(nameText);
+    }
+
+    container.x = entity.x * size + size / 2;
+    container.y = entity.y * size + size / 2;
+    container.eventMode = 'static';
+    container.cursor = 'pointer';
+
+    this.entityLayer.addChild(container);
+    this.entities.set(entity.id, {
+      data: entity,
+      sprite: container,
+      targetX: entity.x,
+      targetY: entity.y,
+      moving: false,
+      path: [],
+      pathIndex: 0,
+      speed: 6,
+      eyeOffset: 0,
+      blinkTimer: 2000 + Math.random() * 3000,
+      isBlinking: false,
+      hasCustomSprite,
+      facing: initialFacing,
+      spriteInstance,
+    });
+  }
+
+  /**
+   * Render the classic circle-with-eyes entity
+   */
+  private renderCircleEntity(container: Container, entity: RoomEntity, size: number): void {
     // Use custom color if provided, otherwise fall back to type-based color
     const color = entity.color
       ? parseInt(entity.color.replace('#', ''), 16)
@@ -1184,59 +1329,6 @@ export class AIGameEngine {
     eyes.fill({ color: 0xffffff, alpha: 0.8 });
 
     container.addChild(eyes);
-
-    // HP bar for hostiles
-    if (entity.hostile && entity.hp !== undefined && entity.maxHp !== undefined) {
-      const hpBar = new Graphics();
-      const barWidth = size * 0.8;
-      const hpPercent = entity.hp / entity.maxHp;
-
-      // Background
-      hpBar.roundRect(-barWidth / 2, -radius - 10, barWidth, 6, 2);
-      hpBar.fill(0x333333);
-
-      // HP fill
-      hpBar.roundRect(-barWidth / 2 + 1, -radius - 9, (barWidth - 2) * hpPercent, 4, 1);
-      hpBar.fill(hpPercent > 0.3 ? 0x44ff44 : 0xff4444);
-
-      container.addChild(hpBar);
-    }
-
-    // Name label for non-hostile entities
-    if (!entity.hostile && entity.name) {
-      const nameText = new Text({
-        text: entity.name,
-        style: new TextStyle({
-          fontSize: 10,
-          fill: 0xffffff,
-          fontWeight: 'bold',
-          stroke: { color: 0x000000, width: 2 },
-        }),
-      });
-      nameText.anchor.set(0.5, 0);
-      nameText.y = radius + 5;
-      container.addChild(nameText);
-    }
-
-    container.x = entity.x * size + size / 2;
-    container.y = entity.y * size + size / 2;
-    container.eventMode = 'static';
-    container.cursor = 'pointer';
-
-    this.entityLayer.addChild(container);
-    this.entities.set(entity.id, {
-      data: entity,
-      sprite: container,
-      targetX: entity.x,
-      targetY: entity.y,
-      moving: false,
-      path: [],
-      pathIndex: 0,
-      speed: 6,
-      eyeOffset: 0,
-      blinkTimer: 2000 + Math.random() * 3000,
-      isBlinking: false,
-    });
   }
 
   private spawnPlayer(x: number, y: number): void {
@@ -1269,6 +1361,15 @@ export class AIGameEngine {
     entity.targetY = path[0].y;
     entity.moving = true;
     entity.speed = speedMultiplier;
+
+    // Start walk animation for sprite entities
+    if (entity.hasCustomSprite) {
+      const dx = path[0].x - entity.data.x;
+      const dy = path[0].y - entity.data.y;
+      const facing = SpriteManager.getFacingFromDelta(dx, dy);
+      entity.facing = facing;
+      this.spriteManager.playWalkAnimation(entityId, facing);
+    }
   }
 
   // ============================================
@@ -1343,6 +1444,10 @@ export class AIGameEngine {
       if (entity.sprite.alpha <= 0) {
         this.entityLayer.removeChild(entity.sprite);
         entity.sprite.destroy();
+        // Clean up sprite manager instance if this entity had a custom sprite
+        if (entity.hasCustomSprite) {
+          this.spriteManager.removeSprite(entityId);
+        }
         this.entities.delete(entityId);
       } else {
         requestAnimationFrame(fadeOut);
@@ -1641,6 +1746,10 @@ export class AIGameEngine {
 
   destroy(): void {
     this.isDestroyed = true;
+
+    // Clean up all sprite instances
+    this.spriteManager.destroy();
+
     if (this.isInitialized && this.app.stage) {
       this.app.destroy(true);
     }

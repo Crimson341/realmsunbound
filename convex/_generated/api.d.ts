@@ -28,6 +28,7 @@ import type * as mapGenerator from "../mapGenerator.js";
 import type * as messages from "../messages.js";
 import type * as npcs from "../npcs.js";
 import type * as shops from "../shops.js";
+import type * as sprites from "../sprites.js";
 import type * as world from "../world.js";
 
 import type {
@@ -57,6 +58,7 @@ declare const fullApi: ApiFromModules<{
   messages: typeof messages;
   npcs: typeof npcs;
   shops: typeof shops;
+  sprites: typeof sprites;
   world: typeof world;
 }>;
 

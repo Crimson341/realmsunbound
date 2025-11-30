@@ -102,6 +102,9 @@ export default defineSchema({
     stats: v.string(), // JSON string
     imageId: v.optional(v.id("_storage")),
     background: v.optional(v.string()), // Character backstory
+    // --- SPRITE SYSTEM ---
+    spriteSheetId: v.optional(v.id("spriteSheets")), // Custom animated sprite for gameplay
+    spriteTint: v.optional(v.string()),              // Hex color tint to apply to sprite
   }).index("by_user", ["userId"]).index("by_campaign", ["campaignId"]),
 
   items: defineTable({
@@ -264,7 +267,9 @@ export default defineSchema({
     // --- 2D GAME VISUAL SYSTEM ---
     gridX: v.optional(v.number()),           // Position on tilemap X
     gridY: v.optional(v.number()),           // Position on tilemap Y
-    spriteColor: v.optional(v.string()),     // Hex color for placeholder sprite
+    spriteColor: v.optional(v.string()),     // Hex color for placeholder sprite (fallback)
+    spriteSheetId: v.optional(v.id("spriteSheets")), // Custom animated sprite
+    spriteTint: v.optional(v.string()),      // Hex color tint to apply to sprite
     movementPattern: v.optional(v.string()), // "static" | "wander" | "patrol"
     isHostile: v.optional(v.boolean()),      // Whether NPC attacks player on sight
   })
@@ -755,6 +760,44 @@ export default defineSchema({
   })
   .index("by_campaign_player", ["campaignId", "playerId"])
   .index("by_faction", ["factionId"]),
+
+  // --- SPRITE SYSTEM ---
+
+  // Sprite Sheets - custom animated sprites for entities
+  spriteSheets: defineTable({
+    campaignId: v.id("campaigns"),
+    userId: v.string(),
+
+    // Core Identity
+    name: v.string(),                           // "Hero Knight", "Fire Goblin"
+    description: v.optional(v.string()),        // Description of the sprite
+    imageId: v.id("_storage"),                  // The actual sprite sheet image
+
+    // Sprite Sheet Configuration
+    frameWidth: v.number(),                     // Width of each frame in pixels
+    frameHeight: v.number(),                    // Height of each frame in pixels
+    columns: v.number(),                        // Total columns in the sprite sheet
+    rows: v.number(),                           // Total rows in the sprite sheet
+
+    // Animations - JSON array of animation definitions
+    // Example: [{"name": "idle", "row": 0, "startFrame": 0, "frameCount": 4, "fps": 8, "loop": true}]
+    animations: v.string(),
+
+    // Default Settings
+    defaultAnimation: v.string(),               // Animation to play by default (e.g., "idle")
+    anchorX: v.optional(v.number()),            // Anchor X (0-1, default 0.5)
+    anchorY: v.optional(v.number()),            // Anchor Y (0-1, default 0.5)
+    scale: v.optional(v.number()),              // Scale multiplier (default 1.0)
+
+    // Preset type (for quick setup)
+    presetType: v.optional(v.string()),         // "RPG_MAKER_VX", "LPC_STANDARD", "SIMPLE_4DIR", "custom"
+
+    // Metadata
+    createdAt: v.number(),
+    updatedAt: v.optional(v.number()),
+  })
+  .index("by_campaign", ["campaignId"])
+  .index("by_user", ["userId"]),
 
   // --- PROCEDURAL MAP GENERATION SYSTEM ---
 

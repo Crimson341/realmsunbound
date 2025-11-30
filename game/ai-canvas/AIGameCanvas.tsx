@@ -22,6 +22,7 @@ export interface AIGameCanvasHandle {
   loadRoom: (room: RoomData) => void;
   getPlayerPosition: () => { x: number; y: number };
   getCurrentRoom: () => RoomData | null;
+  getEntity: (entityId: string) => RoomEntity | undefined;
   loadDemoRoom: () => void;
   movePlayer: (dx: number, dy: number) => void;
 }
@@ -109,6 +110,9 @@ export const AIGameCanvas = forwardRef<AIGameCanvasHandle, AIGameCanvasProps>(
         },
         getCurrentRoom: () => {
           return engineRef.current?.room ?? null;
+        },
+        getEntity: (entityId: string) => {
+          return engineRef.current?.room?.entities.find(e => e.id === entityId);
         },
         loadDemoRoom: () => {
           console.log('[AIGameCanvas] Loading demo room');

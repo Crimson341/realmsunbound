@@ -979,13 +979,31 @@ PLAYER STATS (for dice roll modifiers):
 IMPORTANT: Respond in this EXACT format:
 
 <narrative>
-[Write vivid, immersive narrative text here. Describe what happens, what the player sees, hears, and feels. Be dramatic and engaging. If a dice roll occurred, describe the outcome dramatically - a fumble, a lucky break, a clutch success, etc.]
+[Write vivid, immersive DESCRIPTIVE text here. This is for environmental descriptions, action narration, and scene-setting. NO dialogue here - just describe what happens, what the player sees, hears, and feels. Be dramatic and engaging.]
 </narrative>
+
+<dialogue>
+{
+  "lines": [
+    { "speaker": "NPC Name", "text": "What the NPC says in quotes", "emotion": "neutral" },
+    { "speaker": null, "text": "Narration between dialogue lines", "emotion": null }
+  ],
+  "activeNpc": "NPC Name if in conversation"
+}
+</dialogue>
 
 <data>
 {
-  "choices": ["Action 1", "Action 2", "Action 3"],
+  "choices": [
+    { "id": "c1", "text": "Simple action choice" },
+    { "id": "c2", "text": "Ask about the quest", "skillCheck": { "skill": "Persuasion", "dc": 15 } },
+    { "id": "c3", "text": "Attack the merchant", "consequence": "This will turn the town hostile" }
+  ],
   "context": "explore|combat|social|rest",
+  "notifications": [
+    { "type": "quest", "title": "Quest Updated", "message": "New objective received" },
+    { "type": "discovery", "title": "Found: Ancient Sword", "message": "Added to inventory" }
+  ],
   "gameEvent": {
     "type": "exploration|combat|social|skillCheck|reward|npcDeath|crime|recruitment|questProgress|questComplete",
     "combat": { "enemyName": "Enemy Name", "enemyHP": 20, "enemyMaxHP": 20, "isPlayerTurn": true },
@@ -1087,6 +1105,39 @@ SPECIAL RULES:
 - If the player kills a named NPC, ALWAYS include an npcDeath event so it's tracked
 ${bountyEnabled ? '- Criminal actions (murder, theft, assault) should trigger a crime event with appropriate bounty' : ''}
 ${worldState.isJailed ? '- The player is JAILED. Limit actions to jail-appropriate choices: wait, attempt escape, bribe, serve time' : ''}
+
+★★★ DIALOGUE SYSTEM RULES ★★★
+The game uses an RPG-style dialogue box, NOT a chat interface. Structure your responses accordingly:
+
+1. NARRATIVE vs DIALOGUE SEPARATION:
+   - <narrative> = Environmental descriptions, action results, scene-setting. NO quoted speech here.
+   - <dialogue> = All NPC speech and conversation-related narration
+
+2. DIALOGUE FORMAT:
+   - Use "lines" array for all speech and conversation narration
+   - Each line needs: speaker (NPC name or null for narration), text, emotion
+   - Emotions: "neutral", "happy", "angry", "sad", "surprised", "thinking"
+   - Set "activeNpc" when in an active conversation
+
+3. CHOICE FORMAT:
+   - Each choice needs an "id" (c1, c2, etc.) and "text"
+   - Add "skillCheck" object for choices requiring rolls: { "skill": "Persuasion", "dc": 15 }
+   - Add "consequence" string to warn of dangerous choices: "This will anger the guards"
+   - NEVER just use string arrays for choices - ALWAYS use the object format
+
+4. NOTIFICATIONS:
+   - Use "notifications" array for game events the player should see
+   - Types: "quest" (quest updates), "discovery" (found items/locations), "achievement", "warning"
+   - Each needs: type, title, message
+
+5. WHEN TO USE DIALOGUE:
+   - When NPCs speak, put their words in dialogue.lines
+   - For reactions like "The merchant frowns" - use dialogue with emotion
+   - For location arrivals, use narrative only (no dialogue unless NPC speaks)
+
+6. EMPTY DIALOGUE:
+   - If no one speaks, use: { "lines": [], "activeNpc": null }
+   - This is fine for exploration without conversation
 
 ★★★ QUEST & STORY GUIDANCE - MOST IMPORTANT ★★★
 Your PRIMARY job is to guide players through the story and help them complete quests. DO NOT just react - ACTIVELY GUIDE:
@@ -1592,6 +1643,31 @@ export const mapStream = httpAction(async (ctx, request) => {
   let currentLocation: LocationWithMap | null = null;
   let terrain = LOCATION_TERRAIN_MAP.default;
 
+  // Quest context for map generation
+  interface QuestObjective {
+    id: string;
+    description: string;
+    type: string;
+    target?: string;
+    targetCount?: number;
+    currentCount?: number;
+    isCompleted: boolean;
+    isOptional?: boolean;
+    hint?: string;
+  }
+  interface ActiveQuest {
+    _id: string;
+    title: string;
+    description: string;
+    locationId?: string;
+    npcId?: string;
+    objectives?: QuestObjective[];
+    difficulty?: string;
+    hint?: string;
+  }
+  let activeQuests: ActiveQuest[] = [];
+  let questContext = "";
+
   try {
     // Fetch full campaign data
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1647,7 +1723,61 @@ export const mapStream = httpAction(async (ctx, request) => {
           .slice(0, 8); // Top 8 nearest locations
       }
 
-      // Build world context for the AI
+      // Build quest context from active quests FIRST (before worldContext uses it)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      activeQuests = (campaignData.activeQuests || []) as ActiveQuest[];
+      const allNpcsForQuests = campaignData.npcs as NPCWithGrid[];
+
+      if (activeQuests.length > 0) {
+        questContext = `
+=== ACTIVE QUESTS - USE FOR MAP GENERATION ===
+The player has ${activeQuests.length} active quest(s). Generate maps that help guide them toward objectives!
+
+${activeQuests.map((quest: ActiveQuest) => {
+  // Find quest giver NPC
+  const questGiver = quest.npcId ? allNpcsForQuests.find(n => n._id.toString() === quest.npcId?.toString()) : null;
+  // Find quest location
+  const questLocation = quest.locationId ? locationsData.find(l => l._id.toString() === quest.locationId?.toString()) : null;
+  // Check if this quest is relevant to current location
+  const isAtQuestLocation = questLocation && currentLocation && questLocation._id.toString() === currentLocation._id.toString();
+
+  // Get incomplete objectives
+  const incompleteObjectives = (quest.objectives || []).filter(obj => !obj.isCompleted);
+
+  return `
+QUEST: "${quest.title}" ${quest.difficulty ? `[${quest.difficulty.toUpperCase()}]` : ''}
+${quest.description}
+${questGiver ? `Quest Giver: ${questGiver.name} (${questGiver.role})` : ''}
+${questLocation ? `Quest Location: ${questLocation.name}${isAtQuestLocation ? ' [PLAYER IS HERE!]' : ''}` : ''}
+
+${incompleteObjectives.length > 0 ? `OBJECTIVES TO COMPLETE:
+${incompleteObjectives.map(obj => {
+  const progress = obj.targetCount ? ` (${obj.currentCount || 0}/${obj.targetCount})` : '';
+  return `  ${obj.isOptional ? '[OPTIONAL] ' : ''}○ ${obj.description}${progress}
+    Type: ${obj.type}${obj.target ? `, Target: ${obj.target}` : ''}
+    ${obj.hint ? `Hint: ${obj.hint}` : ''}`;
+}).join('\n')}` : 'All objectives complete - return to quest giver!'}
+`;
+}).join('\n')}
+
+=== QUEST-AWARE MAP GENERATION RULES ===
+1. If player is at a QUEST LOCATION, include quest-relevant elements:
+   - Place QUEST TARGETS (NPCs to talk to, enemies to defeat, items to collect)
+   - Add environmental hints pointing toward objectives
+   - Include SIGNPOST(234) with quest hints
+
+2. For KILL quests: Place the target enemy type in the map
+3. For COLLECT quests: Place CHEST_CLOSED(200) or the item visually on the map
+4. For TALK quests: Ensure the target NPC is placed prominently
+5. For EXPLORE quests: Add discoverable areas, hidden paths, or points of interest
+
+6. Add QUEST MARKERS:
+   - Use SIGNPOST(234) with labels like "Quest: ${activeQuests[0]?.title || 'Unknown'}"
+   - Place quest-related objects near quest targets
+`;
+      }
+
+      // NOW build world context (which includes questContext)
       worldContext = `
 WORLD BIBLE: ${campaignData.campaign.worldBible || campaignData.campaign.description || "A vast fantasy world"}
 
@@ -1673,7 +1803,9 @@ ${npcsAtLocation.map((npc: NPCWithGrid) => {
   const entityType = getEntityTypeForNPC(npc.role, npc.isHostile || npc.attitude === "Hostile");
   return `- ${npc.name} (${npc.role}, ${npc.attitude}): Entity type ${entityType}${npc.gridX !== undefined ? ` at (${npc.gridX},${npc.gridY})` : ''} - ${npc.description?.substring(0, 50) || ''}...`;
 }).join('\n')}
-` : ''}`;
+` : ''}
+
+${questContext}`;
     }
   } catch (e) {
     console.error("[MapStream] Failed to fetch campaign data:", e);

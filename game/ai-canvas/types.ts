@@ -244,6 +244,7 @@ export interface RoomEntity {
   hostile: boolean;
   hp?: number;
   maxHp?: number;
+  ac?: number; // Armor class for combat
   color?: string; // Custom hex color for the entity circle (e.g., "#ff5500")
 }
 

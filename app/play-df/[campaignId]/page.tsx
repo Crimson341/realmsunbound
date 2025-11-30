@@ -33,10 +33,39 @@ import {
     RewardData,
     Rarity,
     ScreenEffectType,
+    // New Player State UI
+    PlayerHUD,
+    PlayerState,
+    CharacterInfo,
+    InventoryItem,
+    PlayerStats,
+    // Dialogue System
+    DialogueManager,
+    NotificationQueue,
+    DialogueLine,
+    DialogueChoice,
+    DialogueState,
+    NotificationType,
+    // Full Combat System
+    FullCombatOverlay,
+    FullCombatState,
+    CombatRoll,
+    CombatLogEntry,
+    CombatAbility,
 } from '../../../components/GameUI';
 import { AIGameCanvas, AIGameCanvasHandle, parseAIGameEvents, createEventProcessor } from '../../../game/ai-canvas/AIGameCanvas';
 import { HoverInfo } from '../../../game/ai-canvas/AIGameEngine';
 import { AIGameEvent, RoomEntity, RoomObject } from '../../../game/ai-canvas/types';
+import {
+    initializeCombat as initCombatEngine,
+    processPlayerAttack,
+    processPlayerDefend,
+    processPlayerFlee,
+    processEnemyTurn,
+    getStatModifier,
+    CombatState as EngineCombatState,
+    DiceType,
+} from '../../../game/combat/CombatEngine';
 
 // --- TYPES ---
 
@@ -165,6 +194,25 @@ const detectsMovementIntent = (message: string): boolean => {
     return movementPatterns.some(pattern => pattern.test(message));
 };
 
+// Helper to detect attack intent and extract target
+const detectsAttackIntent = (message: string): { isAttack: boolean; targetName?: string } => {
+    const attackPatterns = [
+        /\bI attack (?:the )?(.+)/i,
+        /\bI strike (?:at )?(?:the )?(.+)/i,
+        /\bI hit (?:the )?(.+)/i,
+        /\bI swing (?:at )?(?:the )?(.+)/i,
+        /\bI fight (?:the )?(.+)/i,
+        /\battack (?:the )?(.+)/i,
+    ];
+    for (const pattern of attackPatterns) {
+        const match = message.match(pattern);
+        if (match) {
+            return { isAttack: true, targetName: match[1]?.trim() };
+        }
+    }
+    return { isAttack: false };
+};
+
 // --- STREAMING HELPER WITH MAP EVENTS ---
 
 const streamNarrative = async (
@@ -172,6 +220,7 @@ const streamNarrative = async (
     onContent: (delta: string) => void,
     onData: (data: any) => void,
     onMapEvents: (events: AIGameEvent[]) => void,
+    onDialogue: (dialogue: { lines: Array<{ speaker?: string; text: string; emotion?: string }>; activeNpc?: string }) => void,
     onError: (err: any) => void
 ) => {
     const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL!;
@@ -203,8 +252,10 @@ const streamNarrative = async (
         let inNarrative = false;
         let inData = false;
         let inMapEvents = false;
+        let inDialogue = false;
         let dataString = "";
         let mapEventsString = "";
+        let dialogueString = "";
 
         while (true) {
             const { done, value } = await reader.read();
@@ -228,16 +279,18 @@ const streamNarrative = async (
             }
 
             while (internalTextBuffer.length > 0) {
-                if (!inNarrative && !inData && !inMapEvents) {
+                if (!inNarrative && !inData && !inMapEvents && !inDialogue) {
                     const navStart = internalTextBuffer.indexOf("<narrative>");
                     const dataStart = internalTextBuffer.indexOf("<data>");
                     const mapStart = internalTextBuffer.indexOf("<mapEvents>");
+                    const dialogueStart = internalTextBuffer.indexOf("<dialogue>");
 
                     // Find the earliest tag
                     const positions = [
                         { pos: navStart, type: 'narrative' },
                         { pos: dataStart, type: 'data' },
-                        { pos: mapStart, type: 'map' }
+                        { pos: mapStart, type: 'map' },
+                        { pos: dialogueStart, type: 'dialogue' }
                     ].filter(p => p.pos !== -1).sort((a, b) => a.pos - b.pos);
 
                     if (positions.length > 0) {
@@ -251,6 +304,9 @@ const streamNarrative = async (
                         } else if (first.type === 'map') {
                             inMapEvents = true;
                             internalTextBuffer = internalTextBuffer.substring(mapStart + 11);
+                        } else if (first.type === 'dialogue') {
+                            inDialogue = true;
+                            internalTextBuffer = internalTextBuffer.substring(dialogueStart + 10);
                         }
                     } else {
                         break;
@@ -311,6 +367,25 @@ const streamNarrative = async (
                         internalTextBuffer = "";
                         break;
                     }
+                } else if (inDialogue) {
+                    const dialogueEnd = internalTextBuffer.indexOf("</dialogue>");
+                    if (dialogueEnd !== -1) {
+                        dialogueString += internalTextBuffer.substring(0, dialogueEnd);
+                        try {
+                            const cleanJson = dialogueString.replace(/```json/g, '').replace(/```/g, '').trim();
+                            const dialogueData = JSON.parse(cleanJson);
+                            onDialogue(dialogueData);
+                        } catch (e) {
+                            console.error("Dialogue Parse Error:", e, "Raw:", dialogueString);
+                        }
+                        inDialogue = false;
+                        dialogueString = "";
+                        internalTextBuffer = internalTextBuffer.substring(dialogueEnd + 11);
+                    } else {
+                        dialogueString += internalTextBuffer;
+                        internalTextBuffer = "";
+                        break;
+                    }
                 }
             }
         }
@@ -333,7 +408,6 @@ export default function PlayDFPage() {
 
     // --- AI GAME CANVAS REF ---
     const canvasRef = useRef<AIGameCanvasHandle>(null);
-    const [isMapExpanded, setIsMapExpanded] = useState(false);
 
     // --- PLAYER ID for queries ---
     const playerIdForAbilities = data?.character?.userId || "";
@@ -367,6 +441,12 @@ export default function PlayDFPage() {
 
     const playerId = data?.character?.userId || "";
 
+    // Player inventory
+    const playerInventory = useQuery(
+        api.inventory.getPlayerInventory,
+        playerId ? { campaignId, playerId } : "skip"
+    );
+
     // Load existing messages
     const savedMessages = useQuery(
         api.messages.getMessages,
@@ -383,7 +463,12 @@ export default function PlayDFPage() {
     const [mapGenerationStep, setMapGenerationStep] = useState("");
     const [isCharacterSheetOpen, setCharacterSheetOpen] = useState(false);
     const [selectedQuest, setSelectedQuest] = useState<any>(null);
-    const scrollRef = useRef<HTMLDivElement>(null);
+    const [showPlayerHUD, setShowPlayerHUD] = useState(false);
+
+    // --- DIALOGUE SYSTEM STATE ---
+    const [dialogueState, setDialogueState] = useState<DialogueState | null>(null);
+    const [activeNpc, setActiveNpc] = useState<string | null>(null);
+    const [notifications, setNotifications] = useState<Array<{ id: string; type: NotificationType; title: string; message?: string }>>([]);
 
     // --- LOAD MESSAGES FROM DB ---
     useEffect(() => {
@@ -432,9 +517,6 @@ export default function PlayDFPage() {
         }
     }, [playerGameState, gameStateInitialized]);
 
-    // --- COMBAT STATE ---
-    const [combatState, setCombatState] = useState<CombatState | null>(null);
-
     // --- HOVER & CONTEXT MENU STATE ---
     const [hoverInfo, setHoverInfo] = useState<HoverInfo | null>(null);
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -465,11 +547,364 @@ export default function PlayDFPage() {
     const [screenEffect, setScreenEffect] = useState<ScreenEffectType | null>(null);
     const [showLevelUp, setShowLevelUp] = useState(false);
 
+    // --- FULL COMBAT STATE (Algorithmic - No AI) ---
+    const [combatState, setCombatState] = useState<FullCombatState | null>(null);
+    const [engineState, setEngineState] = useState<EngineCombatState | null>(null);
+    const [isProcessingCombat, setIsProcessingCombat] = useState(false);
+    const [activeDiceRoll, setActiveDiceRoll] = useState<CombatRoll | null>(null);
+
+    // Convert engine state to UI state for display
+    const syncCombatUIState = useCallback((engine: EngineCombatState, abilities: CombatAbility[]) => {
+        const uiState: FullCombatState = {
+            isActive: engine.isActive,
+            turn: engine.turn,
+            isPlayerTurn: engine.isPlayerTurn,
+            initiative: { player: 10, enemy: 5 },
+            player: {
+                name: engine.player.name,
+                hp: engine.player.hp,
+                maxHp: engine.player.maxHp,
+                mp: engine.player.mp,
+                maxMp: engine.player.maxMp,
+                ac: engine.player.ac,
+                stats: {
+                    str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10, // Will be updated below
+                },
+                abilities,
+                equippedWeapon: 'Weapon',
+                statusEffects: engine.player.statusEffects?.map(e => ({
+                    name: e.name,
+                    duration: e.duration,
+                    type: 'buff' as const,
+                })) || [],
+            },
+            enemy: {
+                name: engine.enemy.name,
+                hp: engine.enemy.hp,
+                maxHp: engine.enemy.maxHp,
+                ac: engine.enemy.ac,
+                statusEffects: [],
+            },
+            combatLog: engine.log.map(entry => ({
+                id: entry.id,
+                type: entry.type === 'crit' ? 'damage' : entry.type as any,
+                actor: entry.actor,
+                actorName: entry.actor === 'player' ? engine.player.name : entry.actor === 'enemy' ? engine.enemy.name : undefined,
+                text: entry.text,
+                roll: entry.roll ? {
+                    id: `roll_${entry.timestamp}`,
+                    type: 'attack' as const,
+                    roller: entry.actor as 'player' | 'enemy',
+                    diceType: 'd20' as const,
+                    baseRoll: entry.roll.rolls[0],
+                    modifier: 0,
+                    total: entry.roll.total,
+                    isNatural20: entry.roll.isNat20,
+                    isNatural1: entry.roll.isNat1,
+                    timestamp: entry.timestamp,
+                } : undefined,
+                damage: entry.damage,
+                timestamp: entry.timestamp,
+            })),
+            // currentRoll is managed separately via activeDiceRoll state
+            currentRoll: undefined,
+        };
+        return uiState;
+    }, []);
+
+    // Initialize combat - ALGORITHMIC (no AI)
+    const initiateCombat = useCallback((enemyData: {
+        name: string;
+        hp: number;
+        maxHp: number;
+        ac: number;
+        type?: string;
+    }) => {
+        // Clear dialogue when combat starts
+        setDialogueState(null);
+        setCurrentChoices([]);
+        setGameContext('combat');
+
+        // Build player abilities from spells/abilities
+        const playerAbilities: CombatAbility[] = (data?.spells || []).slice(0, 6).map((spell: any, i: number) => ({
+            id: `ability_${i}`,
+            name: spell.name,
+            description: spell.description,
+            type: spell.type === 'attack' ? 'attack' : 'spell' as const,
+            energyCost: spell.manaCost || spell.energyCost || 0,
+            damage: spell.damage || undefined,
+            icon: spell.type === 'attack' ? '⚔️' : '✨',
+        }));
+
+        // Get player stats (stored as JSON string)
+        const character = data?.character;
+        let parsedStats = { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 };
+        try {
+            if (character?.stats) {
+                const parsed = JSON.parse(character.stats);
+                parsedStats = {
+                    strength: parsed.strength || parsed.STR || 10,
+                    dexterity: parsed.dexterity || parsed.DEX || 10,
+                    constitution: parsed.constitution || parsed.CON || 10,
+                    intelligence: parsed.intelligence || parsed.INT || 10,
+                    wisdom: parsed.wisdom || parsed.WIS || 10,
+                    charisma: parsed.charisma || parsed.CHA || 10,
+                };
+            }
+        } catch { /* use defaults */ }
+
+        const stats = {
+            str: parsedStats.strength,
+            dex: parsedStats.dexterity,
+            con: parsedStats.constitution,
+            int: parsedStats.intelligence,
+            wis: parsedStats.wisdom,
+            cha: parsedStats.charisma,
+        };
+
+        // Calculate AC (10 + DEX mod + armor bonuses from equipped items)
+        const dexMod = getStatModifier(stats.dex);
+        const armorItem = (playerInventory || []).find((i: any) => i.equippedSlot === 'armor') as any;
+        const armorBonus = armorItem?.armorBonus || armorItem?.defense || 0;
+        const playerAC = 10 + dexMod + armorBonus;
+
+        // Find equipped weapon and determine damage dice
+        const weapon = (playerInventory || []).find((i: any) => i.equippedSlot === 'weapon') as any;
+        const weaponDamage: DiceType = weapon?.damageDice || 'd6';
+
+        // Get mana from game state if available
+        const playerMana = playerGameState?.energy || 20;
+        const playerMaxMana = playerGameState?.maxEnergy || 20;
+
+        // Initialize the combat engine
+        const engine = initCombatEngine(
+            {
+                name: character?.name || 'Hero',
+                hp,
+                maxHp,
+                mp: playerMana,
+                maxMp: playerMaxMana,
+                stats,
+                ac: playerAC,
+                weaponDamage,
+                weaponDamageCount: 1,
+                equippedWeapon: weapon?.name || 'Fists',
+            },
+            {
+                name: enemyData.name,
+                hp: enemyData.hp,
+                maxHp: enemyData.maxHp,
+                ac: enemyData.ac,
+                attackBonus: Math.floor(enemyData.hp / 10) + 2, // Scale with HP
+                damageBonus: Math.floor(enemyData.hp / 15) + 1,
+                damageDice: 'd6',
+                behavior: 'balanced',
+            }
+        );
+
+        setEngineState(engine);
+        setCombatState(syncCombatUIState(engine, playerAbilities));
+    }, [data, hp, maxHp, playerInventory, playerGameState, syncCombatUIState]);
+
+    // Ref to hold handleCombatEnd (defined later) - avoids circular dependency
+    const handleCombatEndRef = useRef<((outcome: 'victory' | 'defeat' | 'fled', finalPlayerHp: number) => void) | null>(null);
+
+    // Helper to create a CombatRoll from engine roll data
+    const createCombatRoll = useCallback((
+        roll: { rolls: number[]; total: number; isNat20?: boolean; isNat1?: boolean },
+        roller: 'player' | 'enemy',
+        hit: boolean,
+        modifier: number = 0,
+        targetAC?: number
+    ): CombatRoll => ({
+        id: `roll_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        type: 'attack',
+        roller,
+        diceType: 'd20',
+        baseRoll: roll.rolls[0],
+        modifier,
+        total: roll.total + modifier,
+        isNatural20: roll.isNat20,
+        isNatural1: roll.isNat1,
+        target: targetAC,
+        success: hit,
+        timestamp: Date.now(),
+    }), []);
+
+    // Process enemy turn after delay
+    const processEnemyTurnWithDelay = useCallback((currentEngine: EngineCombatState, abilities: CombatAbility[]) => {
+        setIsProcessingCombat(true);
+
+        // Short delay before enemy attacks
+        setTimeout(() => {
+            const { newState, action, narration } = processEnemyTurn(currentEngine);
+            console.log('[Combat] Enemy turn:', action.type, narration);
+
+            // If enemy attacked, show their dice roll
+            if (action.type === 'attack' && newState.lastRoll) {
+                const enemyDiceRoll = createCombatRoll(
+                    newState.lastRoll,
+                    'enemy',
+                    newState.player.hp < currentEngine.player.hp, // Hit if player took damage
+                    currentEngine.enemy.attackBonus,
+                    currentEngine.player.ac
+                );
+                setActiveDiceRoll(enemyDiceRoll);
+
+                // After dice animation, update state
+                setTimeout(() => {
+                    setActiveDiceRoll(null);
+                    setEngineState(newState);
+                    setCombatState(syncCombatUIState(newState, abilities));
+                    setIsProcessingCombat(false);
+
+                    // Check for combat end
+                    if (newState.outcome) {
+                        handleCombatEndRef.current?.(newState.outcome, newState.player.hp);
+                    }
+                }, 2000); // Wait for dice animation
+            } else {
+                // Non-attack action (defend, flee) - no dice animation needed
+                setEngineState(newState);
+                setCombatState(syncCombatUIState(newState, abilities));
+                setIsProcessingCombat(false);
+
+                // Check for combat end
+                if (newState.outcome) {
+                    handleCombatEndRef.current?.(newState.outcome, newState.player.hp);
+                }
+            }
+        }, 800); // Short delay before enemy acts
+    }, [syncCombatUIState, createCombatRoll]);
+
+    // Handle combat actions - ALGORITHMIC (no AI calls!)
+    const handleCombatAction = useCallback((action: CombatAction) => {
+        if (!engineState || !engineState.isPlayerTurn || isProcessingCombat) return;
+
+        const abilities: CombatAbility[] = combatState?.player.abilities || [];
+        setIsProcessingCombat(true);
+
+        switch (action.type) {
+            case 'attack': {
+                const { newState, result, narration } = processPlayerAttack(engineState);
+                console.log('[Combat] Player attack:', narration, result);
+
+                // Show dice roll animation for player attack
+                const diceRoll = createCombatRoll(
+                    result.attackRoll,
+                    'player',
+                    result.hit,
+                    engineState.player.attackBonus,
+                    engineState.enemy.ac
+                );
+                setActiveDiceRoll(diceRoll);
+
+                // After dice animation completes, update state
+                setTimeout(() => {
+                    setActiveDiceRoll(null);
+                    setEngineState(newState);
+                    setCombatState(syncCombatUIState(newState, abilities));
+                    setIsProcessingCombat(false);
+
+                    // Check for combat end
+                    if (newState.outcome) {
+                        handleCombatEndRef.current?.(newState.outcome, newState.player.hp);
+                        return;
+                    }
+
+                    // If not player's turn anymore, process enemy turn after delay
+                    if (!newState.isPlayerTurn) {
+                        setTimeout(() => {
+                            processEnemyTurnWithDelay(newState, abilities);
+                        }, 500);
+                    }
+                }, 2000); // Wait for dice animation
+                break;
+            }
+            case 'defend': {
+                const { newState, narration } = processPlayerDefend(engineState);
+                console.log('[Combat] Player defend:', narration);
+                setEngineState(newState);
+                setCombatState(syncCombatUIState(newState, abilities));
+                setIsProcessingCombat(false);
+
+                // Process enemy turn after defend
+                if (!newState.isPlayerTurn) {
+                    setTimeout(() => {
+                        processEnemyTurnWithDelay(newState, abilities);
+                    }, 500);
+                }
+                break;
+            }
+            case 'flee': {
+                const { newState, result, narration } = processPlayerFlee(engineState);
+                console.log('[Combat] Player flee:', narration, result);
+
+                // Show dice roll for flee attempt
+                const diceRoll = createCombatRoll(
+                    result.roll,
+                    'player',
+                    result.success,
+                    0,
+                    result.dc
+                );
+                setActiveDiceRoll(diceRoll);
+
+                setTimeout(() => {
+                    setActiveDiceRoll(null);
+                    setEngineState(newState);
+                    setCombatState(syncCombatUIState(newState, abilities));
+                    setIsProcessingCombat(false);
+
+                    if (newState.outcome) {
+                        handleCombatEndRef.current?.(newState.outcome, newState.player.hp);
+                        return;
+                    }
+
+                    // If failed to flee, enemy gets a turn
+                    if (!newState.isPlayerTurn) {
+                        setTimeout(() => {
+                            processEnemyTurnWithDelay(newState, abilities);
+                        }, 500);
+                    }
+                }, 2000);
+                break;
+            }
+            default:
+                // For abilities, treat as attack for now
+                const { newState } = processPlayerAttack(engineState);
+                setEngineState(newState);
+                setCombatState(syncCombatUIState(newState, abilities));
+                setIsProcessingCombat(false);
+        }
+    }, [engineState, combatState, isProcessingCombat, syncCombatUIState, processEnemyTurnWithDelay, createCombatRoll]);
+
+    // Handle ability use in combat
+    const handleCombatAbilityUse = useCallback((ability: CombatAbility) => {
+        // For now, abilities act like attacks with potentially different damage
+        handleCombatAction({
+            type: 'ability',
+            data: { abilityName: ability.name }
+        });
+    }, [handleCombatAction]);
+
+    // End combat manually (e.g., close button)
+    const endCombat = useCallback((reason: 'victory' | 'defeat' | 'flee') => {
+        // Convert 'flee' to 'fled' for handleCombatEndRef
+        const outcome = reason === 'flee' ? 'fled' : reason;
+        handleCombatEndRef.current?.(outcome, hp);
+    }, [hp]);
+
     // --- LOCATION TRANSITION HANDLER ---
     const handleLocationTransition = useCallback(async (toLocationName: string) => {
         if (!data) return;
 
         console.log('[PlayDF] Transitioning to location:', toLocationName);
+
+        // Clear stale dialogue/choices when changing locations
+        setDialogueState(null);
+        setCurrentChoices([]);
+
         setIsGeneratingMap(true);
         setMapGenerationStep(`Traveling to ${toLocationName}...`);
 
@@ -573,6 +1008,71 @@ export default function PlayDFPage() {
         setRewardQueue(prev => prev.filter(r => r.id !== id));
     }, []);
 
+    // --- DIALOGUE HANDLER ---
+    const handleDialogue = useCallback((dialogueData: {
+        lines?: Array<{ speaker?: string; text: string; emotion?: string }>;
+        activeNpc?: string
+    }) => {
+        if (dialogueData.lines && dialogueData.lines.length > 0) {
+            // Convert to DialogueLine format and create DialogueState
+            const lines: DialogueLine[] = dialogueData.lines.map(line => ({
+                speaker: line.speaker || undefined,
+                text: line.text,
+                emotion: (line.emotion as DialogueLine['emotion']) || 'neutral'
+            }));
+            setDialogueState({
+                lines,
+                currentLineIndex: 0,
+                isComplete: false
+            });
+        } else {
+            setDialogueState(null);
+        }
+        setActiveNpc(dialogueData.activeNpc || null);
+    }, []);
+
+    // --- ADD NOTIFICATION ---
+    const addNotification = useCallback((type: NotificationType, title: string, message?: string) => {
+        const id = generateId();
+        setNotifications(prev => [...prev, { id, type, title, message }]);
+    }, []);
+
+    const removeNotification = useCallback((id: string) => {
+        setNotifications(prev => prev.filter(n => n.id !== id));
+    }, []);
+
+    // --- COMBAT END HANDLER (must be after addXp and addNotification) ---
+    const handleCombatEnd = useCallback((outcome: 'victory' | 'defeat' | 'fled', finalPlayerHp: number) => {
+        // Update player HP from combat
+        setHp(finalPlayerHp);
+        saveGameState({ hp: finalPlayerHp });
+
+        if (outcome === 'victory') {
+            // Grant XP based on enemy
+            const xpGained = Math.floor((engineState?.enemy.maxHp || 30) * 2);
+            addXp(xpGained);
+            addNotification('achievement', 'Victory!', `Gained ${xpGained} XP`);
+            setScreenEffect('levelup');
+        } else if (outcome === 'defeat') {
+            addNotification('warning', 'Defeated!', 'You have fallen in battle...');
+            setScreenEffect('damage');
+        } else {
+            addNotification('info', 'Escaped!', 'You fled from combat');
+        }
+
+        // Clear combat after delay
+        setTimeout(() => {
+            setCombatState(null);
+            setEngineState(null);
+            setGameContext('explore');
+        }, 2000);
+    }, [engineState, saveGameState, addXp, addNotification]);
+
+    // Assign handleCombatEnd to ref for use in earlier callbacks
+    useEffect(() => {
+        handleCombatEndRef.current = handleCombatEnd;
+    }, [handleCombatEnd]);
+
     // --- GAME DATA HANDLER ---
     const handleGameData = useCallback((gameData: any) => {
         const stateUpdates: Parameters<typeof saveGameState>[0] = {};
@@ -592,20 +1092,171 @@ export default function PlayDFPage() {
         }
 
         if (gameData.choices && Array.isArray(gameData.choices)) {
+            // Support both old string format and new object format
             const normalizedChoices = gameData.choices
                 .map((c: any) => typeof c === 'string' ? c : c.text || c.action || c.label || '')
                 .filter((c: string) => c && c.trim().length > 0);
             setCurrentChoices(normalizedChoices);
+
+            // Also set structured dialogue choices for the new UI
+            // ALWAYS use index-based IDs to guarantee uniqueness (AI IDs can be duplicated)
+            const batchId = Date.now(); // Single timestamp for this batch
+            const structuredChoices: DialogueChoice[] = gameData.choices
+                .map((c: any, i: number) => {
+                    const text = typeof c === 'string' ? c : (c.text || c.action || c.label || '');
+                    return {
+                        id: `choice_${batchId}_${i}`, // Unique: timestamp + index
+                        text,
+                        skillCheck: typeof c === 'object' ? c.skillCheck : undefined,
+                        consequence: typeof c === 'object' ? c.consequence : undefined,
+                        disabled: typeof c === 'object' ? c.disabled : undefined,
+                        disabledReason: typeof c === 'object' ? c.disabledReason : undefined
+                    };
+                })
+                .filter((c: DialogueChoice) => c.text && c.text.trim().length > 0);
+
+            // Update dialogueState with choices
+            setDialogueState(prev => {
+                if (prev) {
+                    return { ...prev, choices: structuredChoices };
+                }
+                // If no dialogue lines, create a choice-only dialogue state
+                return {
+                    lines: [],
+                    currentLineIndex: 0,
+                    choices: structuredChoices,
+                    isComplete: false
+                };
+            });
         }
 
-        // Handle game events
+        // Handle notifications from AI
+        if (gameData.notifications && Array.isArray(gameData.notifications)) {
+            gameData.notifications.forEach((n: any) => {
+                if (n.type && n.title) {
+                    addNotification(n.type as NotificationType, n.title, n.message);
+                }
+            });
+        }
+
+        // Handle combat initiation from AI
+        if (gameData.combatStart || gameData.initiiateCombat) {
+            const enemy = gameData.combatStart || gameData.initiiateCombat;
+            initiateCombat({
+                name: enemy.name || enemy.enemyName || 'Enemy',
+                hp: enemy.hp || enemy.enemyHp || 30,
+                maxHp: enemy.maxHp || enemy.enemyMaxHp || enemy.hp || 30,
+                ac: enemy.ac || enemy.enemyAc || 12,
+                type: enemy.type || enemy.enemyType,
+            });
+            setGameContext('combat');
+        }
+
+        // Handle combat updates (dice rolls, damage, turn changes)
+        if (gameData.combatUpdate && combatState) {
+            const update = gameData.combatUpdate;
+
+            setCombatState(prev => {
+                if (!prev) return null;
+
+                const newLog: CombatLogEntry[] = [...prev.combatLog];
+
+                // Add dice roll to log if present
+                if (update.roll) {
+                    const roll = update.roll;
+                    newLog.push({
+                        id: `log_${Date.now()}_roll`,
+                        type: 'roll',
+                        actor: roll.roller || 'system',
+                        actorName: roll.roller === 'player' ? prev.player.name : prev.enemy.name,
+                        text: `${roll.type} roll: ${roll.baseRoll} + ${roll.modifier} = ${roll.total}`,
+                        roll: {
+                            id: `roll_${Date.now()}`,
+                            type: roll.type || 'attack',
+                            roller: roll.roller || 'player',
+                            diceType: roll.diceType || 'd20',
+                            baseRoll: roll.baseRoll || roll.roll || 10,
+                            modifier: roll.modifier || 0,
+                            modifierSource: roll.modifierSource || roll.stat,
+                            total: roll.total || (roll.baseRoll + roll.modifier),
+                            isNatural20: roll.baseRoll === 20,
+                            isNatural1: roll.baseRoll === 1,
+                            target: roll.target || roll.ac || roll.dc,
+                            success: roll.success,
+                            timestamp: Date.now(),
+                        },
+                        timestamp: Date.now(),
+                    });
+                }
+
+                // Add damage to log if present
+                if (update.damage) {
+                    newLog.push({
+                        id: `log_${Date.now()}_dmg`,
+                        type: 'damage',
+                        actor: update.damageDealer || 'player',
+                        actorName: update.damageDealer === 'player' ? prev.player.name : prev.enemy.name,
+                        text: `dealt ${update.damage} ${update.damageType || ''} damage`,
+                        damage: update.damage,
+                        damageType: update.damageType,
+                        isCritical: update.isCritical,
+                        timestamp: Date.now(),
+                    });
+                }
+
+                // Add narration if present
+                if (update.narration) {
+                    newLog.push({
+                        id: `log_${Date.now()}_narr`,
+                        type: 'narration',
+                        actor: 'system',
+                        text: update.narration,
+                        timestamp: Date.now(),
+                    });
+                }
+
+                return {
+                    ...prev,
+                    turn: update.turn || prev.turn,
+                    isPlayerTurn: update.isPlayerTurn ?? prev.isPlayerTurn,
+                    player: {
+                        ...prev.player,
+                        hp: update.playerHp ?? prev.player.hp,
+                        mp: update.playerMp ?? prev.player.mp,
+                    },
+                    enemy: {
+                        ...prev.enemy,
+                        hp: update.enemyHp ?? prev.enemy.hp,
+                    },
+                    combatLog: newLog,
+                    currentRoll: update.roll ? {
+                        id: `roll_${Date.now()}`,
+                        type: update.roll.type || 'attack',
+                        roller: update.roll.roller || 'player',
+                        diceType: update.roll.diceType || 'd20',
+                        baseRoll: update.roll.baseRoll || 10,
+                        modifier: update.roll.modifier || 0,
+                        modifierSource: update.roll.modifierSource,
+                        total: update.roll.total,
+                        isNatural20: update.roll.baseRoll === 20,
+                        isNatural1: update.roll.baseRoll === 1,
+                        target: update.roll.target,
+                        success: update.roll.success,
+                        timestamp: Date.now(),
+                    } : undefined,
+                };
+            });
+        }
+
+        // Handle combat end
+        if (gameData.combatEnd) {
+            const result = gameData.combatEnd;
+            endCombat(result.result || (result.victory ? 'victory' : result.fled ? 'flee' : 'defeat'));
+        }
+
+        // Handle game events (legacy format)
         if (gameData.gameEvent) {
             const event = gameData.gameEvent;
-
-            if (event.type === 'combat' && event.combat) {
-                setCombatState(event.combat);
-                setGameContext('combat');
-            }
 
             if (event.type === 'skillCheck' && event.skillCheck) {
                 setSkillCheckData(event.skillCheck);
@@ -627,15 +1278,8 @@ export default function PlayDFPage() {
         if (Object.keys(stateUpdates).length > 0) {
             saveGameState(stateUpdates);
         }
-    }, [addReward, addXp, saveGameState]);
+    }, [addReward, addXp, saveGameState, addNotification, initiateCombat, combatState, endCombat]);
 
-    // --- AUTO SCROLL ---
-    useEffect(() => {
-        if (scrollRef.current) {
-            const { scrollHeight, clientHeight } = scrollRef.current;
-            scrollRef.current.scrollTo({ top: scrollHeight - clientHeight, behavior: 'smooth' });
-        }
-    }, [messages, isLoading]);
 
     // --- INITIAL GAME START ---
     const [gameStarted, setGameStarted] = useState(false);
@@ -816,7 +1460,10 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
             },
             (gameData) => {
                 handleGameData(gameData);
-                if (gameData.choices) aiChoices = gameData.choices;
+                // Extract just text strings for database storage (validator expects string[])
+                if (gameData.choices) {
+                    aiChoices = gameData.choices.map((c: any) => typeof c === 'string' ? c : c.text || c.action || c.label || '').filter(Boolean);
+                }
             },
             (events) => {
                 // Narrative AI might also send map events - handle them
@@ -824,6 +1471,10 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
                     handleMapEvents(events);
                     setIsGeneratingMap(false);
                 }
+            },
+            (dialogueData) => {
+                // Handle dialogue data from AI
+                handleDialogue(dialogueData);
             },
             (err) => {
                 console.error("AI Error:", err);
@@ -883,7 +1534,9 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
         const contentToSend = typeof manualContent === 'string' ? manualContent : input;
         if (!contentToSend.trim() || isLoading || !data) return;
 
+        // Clear stale dialogue/choices before sending new message
         setCurrentChoices([]);
+        setDialogueState(null);
 
         const userMsg: Message = { role: 'user', content: contentToSend };
         setMessages(prev => [...prev, userMsg]);
@@ -907,6 +1560,46 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
 
         // Check if movement is implied
         const hasMovementIntent = detectsMovementIntent(contentToSend);
+
+        // Check if attack is implied - start combat immediately (NO AI NEEDED)
+        const attackIntent = detectsAttackIntent(contentToSend);
+        if (attackIntent.isAttack && attackIntent.targetName && !combatState) {
+            // Try to find the entity in the current room
+            const room = canvasRef.current?.getCurrentRoom();
+            const targetEntity = room?.entities.find(e =>
+                e.name.toLowerCase().includes(attackIntent.targetName!.toLowerCase()) ||
+                attackIntent.targetName!.toLowerCase().includes(e.name.toLowerCase())
+            );
+
+            if (targetEntity) {
+                initiateCombat({
+                    name: targetEntity.name,
+                    hp: targetEntity.hp || 30,
+                    maxHp: targetEntity.maxHp || targetEntity.hp || 30,
+                    ac: targetEntity.ac || 12,
+                    type: targetEntity.hostile ? 'hostile' : 'neutral',
+                });
+            } else {
+                // Fallback - create enemy from the target name
+                initiateCombat({
+                    name: attackIntent.targetName,
+                    hp: 30,
+                    maxHp: 30,
+                    ac: 12,
+                    type: 'unknown',
+                });
+            }
+
+            // Combat is algorithmic - no AI needed, return early
+            setIsLoading(false);
+            return;
+        }
+
+        // If already in combat, don't send to AI - combat is handled algorithmically
+        if (combatState) {
+            setIsLoading(false);
+            return;
+        }
 
         // Call dedicated Map AI in parallel if movement detected
         if (hasMovementIntent) {
@@ -972,9 +1665,16 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
             },
             (gameData) => {
                 handleGameData(gameData);
-                if (gameData.choices) aiChoices = gameData.choices;
+                // Extract just text strings for database storage (validator expects string[])
+                if (gameData.choices) {
+                    aiChoices = gameData.choices.map((c: any) => typeof c === 'string' ? c : c.text || c.action || c.label || '').filter(Boolean);
+                }
             },
             handleMapEvents,
+            (dialogueData) => {
+                // Handle dialogue data from AI
+                handleDialogue(dialogueData);
+            },
             (err) => {
                 console.error("AI Error:", err);
                 setMessages(prev => [...prev, {
@@ -1077,7 +1777,29 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
                 handleSendMessage(`I talk to ${name}`);
                 break;
             case 'attack':
-                handleSendMessage(`I attack ${name}`);
+                // Immediately trigger combat UI - ALGORITHMIC (no AI)
+                if (type === 'entity') {
+                    const entity = canvasRef.current?.getEntity(id);
+                    if (entity) {
+                        initiateCombat({
+                            name: entity.name || name,
+                            hp: entity.hp || 30,
+                            maxHp: entity.maxHp || entity.hp || 30,
+                            ac: entity.ac || 12,
+                            type: entity.hostile ? 'hostile' : 'neutral',
+                        });
+                    } else {
+                        // Fallback if entity not found in canvas
+                        initiateCombat({
+                            name: name,
+                            hp: 30,
+                            maxHp: 30,
+                            ac: 12,
+                            type: hostile ? 'hostile' : 'neutral',
+                        });
+                    }
+                }
+                // Combat is algorithmic - no AI call needed!
                 break;
             case 'examine':
                 handleSendMessage(`I examine ${name}`);
@@ -1094,7 +1816,7 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
                 }
                 break;
         }
-    }, [contextMenu, handleLocationTransition]);
+    }, [contextMenu, handleLocationTransition, initiateCombat]);
 
     // --- LOADING STATE ---
     // Loading states
@@ -1126,7 +1848,151 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
     }
 
     return (
-        <div className="flex h-screen bg-slate-950 text-slate-200 overflow-hidden">
+        <div className="relative h-screen w-screen bg-slate-950 text-slate-200 overflow-hidden">
+
+            {/* === FULL SCREEN GAME CANVAS === */}
+            <div className="absolute inset-0">
+                <AIGameCanvas
+                    ref={canvasRef}
+                    width={typeof window !== 'undefined' ? window.innerWidth : 1920}
+                    height={typeof window !== 'undefined' ? window.innerHeight : 1080}
+                    tileSize={32}
+                    className="w-full h-full"
+                    onTileClick={handleTileClick}
+                    onEntityClick={handleEntityClick}
+                    onObjectClick={handleObjectClick}
+                    onHover={handleHover}
+                    onReady={() => {
+                        console.log('[PlayDF] Canvas ready - waiting for Map AI to generate room');
+                    }}
+                />
+            </div>
+
+            {/* === TOP BAR OVERLAY === */}
+            <div className="absolute top-0 left-0 right-0 z-20 pointer-events-none">
+                <div className="flex items-start justify-between p-4">
+                    {/* Left: Location & Back */}
+                    <div className="pointer-events-auto">
+                        <div className="flex items-center gap-3 bg-slate-950/80 backdrop-blur-sm rounded-xl p-3 border border-purple-500/20">
+                            <Link href="/realms" className="p-2 hover:bg-purple-500/20 rounded-lg transition-all">
+                                <ArrowLeft size={18} className="text-slate-400" />
+                            </Link>
+                            <div>
+                                <h1 className="font-serif font-bold text-lg text-transparent bg-clip-text bg-gradient-to-r from-amber-300 to-yellow-200">
+                                    {data.campaign.title}
+                                </h1>
+                                <div className="flex items-center gap-2 text-xs text-slate-400">
+                                    <MapPin size={10} className="text-cyan-400" />
+                                    {data.locations?.find(l => l._id === currentLocationId)?.name || "Unknown"}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Right: Context & Actions */}
+                    <div className="flex items-center gap-3 pointer-events-auto">
+                        {/* Game Context Badge */}
+                        <div className={cn(
+                            "px-3 py-2 rounded-xl text-sm font-medium capitalize backdrop-blur-sm border",
+                            gameContext === 'combat' ? 'bg-red-500/20 text-red-400 border-red-500/30' :
+                            gameContext === 'social' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' :
+                            gameContext === 'rest' ? 'bg-green-500/20 text-green-400 border-green-500/30' :
+                            'bg-purple-500/20 text-purple-400 border-purple-500/30'
+                        )}>
+                            {gameContext === 'combat' && <Swords size={14} className="inline mr-2" />}
+                            {gameContext}
+                        </div>
+
+                        {/* Character Sheet Button */}
+                        <button
+                            onClick={() => setCharacterSheetOpen(true)}
+                            className="p-3 bg-slate-950/80 backdrop-blur-sm hover:bg-amber-500/20 rounded-xl text-slate-400 hover:text-amber-400 transition-all border border-purple-500/20 hover:border-amber-500/30"
+                        >
+                            <UserCircle size={20} />
+                        </button>
+
+                        {/* Inventory/Menu Toggle */}
+                        <button
+                            onClick={() => setShowPlayerHUD(prev => !prev)}
+                            className="p-3 bg-slate-950/80 backdrop-blur-sm hover:bg-cyan-500/20 rounded-xl text-slate-400 hover:text-cyan-400 transition-all border border-purple-500/20 hover:border-cyan-500/30"
+                        >
+                            <Backpack size={20} />
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            {/* === BOTTOM STATS BAR === */}
+            <div className="absolute bottom-0 left-0 right-0 z-20 pointer-events-none">
+                <div className="p-4">
+                    <div className="flex items-end justify-between">
+                        {/* Left: Player Stats */}
+                        <div className="pointer-events-auto bg-slate-950/80 backdrop-blur-sm rounded-xl p-4 border border-purple-500/20">
+                            <div className="flex items-center gap-6">
+                                {/* HP Bar */}
+                                <div className="flex items-center gap-3">
+                                    <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-red-500/20">
+                                        <Heart size={16} className="text-red-400" />
+                                    </div>
+                                    <div>
+                                        <div className="w-32 h-3 bg-slate-800 rounded-full overflow-hidden">
+                                            <motion.div
+                                                className="h-full bg-gradient-to-r from-red-600 to-red-400"
+                                                animate={{ width: `${(hp / maxHp) * 100}%` }}
+                                            />
+                                        </div>
+                                        <span className="text-xs text-slate-400 font-mono">{hp}/{maxHp}</span>
+                                    </div>
+                                </div>
+
+                                {/* XP Bar */}
+                                <div className="flex items-center gap-3">
+                                    <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-amber-500/20">
+                                        <Trophy size={16} className="text-amber-400" />
+                                    </div>
+                                    <div>
+                                        <div className="w-24 h-3 bg-slate-800 rounded-full overflow-hidden">
+                                            <motion.div
+                                                className="h-full bg-gradient-to-r from-amber-500 to-yellow-400"
+                                                animate={{ width: `${(xp / xpToLevel) * 100}%` }}
+                                            />
+                                        </div>
+                                        <span className="text-xs text-amber-400 font-mono font-bold">Level {level}</span>
+                                    </div>
+                                </div>
+
+                                {/* Gold */}
+                                <div className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 rounded-lg">
+                                    <Coins size={16} className="text-amber-400" />
+                                    <span className="text-sm text-amber-400 font-mono font-bold">{gold}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Right: Quick Action Input (minimal) */}
+                        <div className="pointer-events-auto bg-slate-950/80 backdrop-blur-sm rounded-xl p-3 border border-purple-500/20 flex items-center gap-2">
+                            <input
+                                type="text"
+                                value={input}
+                                onChange={(e) => setInput(e.target.value)}
+                                onKeyDown={handleKeyDown}
+                                placeholder="What do you do?"
+                                className="w-64 bg-slate-800/50 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 border border-transparent focus:border-purple-500/30"
+                                disabled={isLoading}
+                            />
+                            <motion.button
+                                onClick={() => handleSendMessage()}
+                                disabled={isLoading || !input.trim()}
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                className="p-2.5 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-900 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <Send size={16} />
+                            </motion.button>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             {/* === GAME UI OVERLAYS === */}
             <AnimatePresence>
@@ -1151,9 +2017,21 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
                     />
                 )}
 
+                {/* === FULL COMBAT OVERLAY === */}
+                {combatState && combatState.isActive && (
+                    <FullCombatOverlay
+                        combat={combatState}
+                        onAction={handleCombatAction}
+                        onAbilityUse={handleCombatAbilityUse}
+                        isLoading={isLoading}
+                        onClose={() => setCombatState(null)}
+                        activeDiceRoll={activeDiceRoll}
+                    />
+                )}
+
                 {rewardQueue.map((reward, index) => (
                     <motion.div
-                        key={reward.id}
+                        key={reward.id || `reward_${index}`}
                         initial={{ y: 0 }}
                         animate={{ y: index * 100 }}
                         style={{ position: 'fixed', top: 96, right: 24, zIndex: 50 - index }}
@@ -1166,6 +2044,49 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
                         />
                     </motion.div>
                 ))}
+
+                {/* === DIALOGUE SYSTEM OVERLAYS === */}
+                {/* Notification Queue - top right corner */}
+                <NotificationQueue
+                    notifications={notifications.map(n => ({
+                        id: n.id,
+                        type: n.type,
+                        title: n.title,
+                        description: n.message
+                    }))}
+                    onDismiss={removeNotification}
+                />
+
+                {/* Dialogue Manager - handles dialogue box and choices */}
+                {dialogueState && (
+                    <DialogueManager
+                        dialogue={dialogueState}
+                        onDialogueAdvance={() => {
+                            setDialogueState(prev => {
+                                if (!prev) return null;
+                                const nextIndex = prev.currentLineIndex + 1;
+                                if (nextIndex >= prev.lines.length) {
+                                    // If no more lines but has choices, keep showing choices
+                                    if (prev.choices && prev.choices.length > 0) {
+                                        return { ...prev, currentLineIndex: prev.lines.length - 1 };
+                                    }
+                                    return null; // No more dialogue
+                                }
+                                return { ...prev, currentLineIndex: nextIndex };
+                            });
+                        }}
+                        onDialogueComplete={() => {
+                            setDialogueState(null);
+                        }}
+                        onChoiceSelect={(choiceId) => {
+                            const choice = dialogueState.choices?.find(c => c.id === choiceId);
+                            if (choice) {
+                                handleSendMessage(choice.text);
+                                setDialogueState(null);
+                            }
+                        }}
+                    />
+                )}
 
                 {/* Map Generation Loading Overlay */}
                 {isGeneratingMap && (
@@ -1253,312 +2174,254 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
                 )}
             </AnimatePresence>
 
-            {/* === MAIN LAYOUT === */}
-            <div className="flex-1 flex">
-
-                {/* LEFT: GAME CANVAS */}
-                <div className={cn(
-                    "relative transition-all duration-300 bg-slate-900 border-r border-purple-500/20",
-                    isMapExpanded ? "w-2/3" : "w-1/2"
-                )}>
-                    {/* Header */}
-                    <div className="absolute top-0 left-0 right-0 z-10 p-4 bg-gradient-to-b from-slate-950 via-slate-950/90 to-transparent">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <Link href="/realms" className="p-2 hover:bg-purple-500/10 rounded-lg transition-all border border-transparent hover:border-purple-500/30">
-                                    <ArrowLeft size={18} className="text-slate-400" />
-                                </Link>
-                                <div>
-                                    <h1 className="font-serif font-bold text-lg text-transparent bg-clip-text bg-gradient-to-r from-amber-300 to-yellow-200">
-                                        {data.campaign.title}
-                                    </h1>
-                                    <div className="flex items-center gap-2 text-xs text-slate-500">
-                                        <MapPin size={10} className="text-cyan-400" />
-                                        {data.locations?.find(l => l._id === currentLocationId)?.name || "Unknown"}
-                                    </div>
-                                </div>
-                            </div>
-                            <button
-                                onClick={() => setIsMapExpanded(!isMapExpanded)}
-                                className="p-2 hover:bg-purple-500/10 rounded-lg text-slate-400 hover:text-purple-400 border border-transparent hover:border-purple-500/30 transition-all"
-                            >
-                                {isMapExpanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Canvas */}
-                    <AIGameCanvas
-                        ref={canvasRef}
-                        width={isMapExpanded ? 800 : 600}
-                        height={600}
-                        tileSize={32}
-                        className="w-full h-full"
-                        onTileClick={handleTileClick}
-                        onEntityClick={handleEntityClick}
-                        onObjectClick={handleObjectClick}
-                        onHover={handleHover}
-                        onReady={() => {
-                            console.log('[PlayDF] Canvas ready - waiting for Map AI to generate room');
-                            // DON'T load demo room automatically - let Map AI generate the real one
-                            // Demo room is only loaded as fallback if Map AI fails
-                        }}
-                    />
-
-                    {/* Hover Tooltip */}
-                    {hoverInfo && (
-                        <div
-                            className="absolute pointer-events-none z-50 px-3 py-2 bg-slate-900/95 border border-slate-700 rounded-lg shadow-xl"
-                            style={{
-                                left: Math.min(hoverInfo.screenX + 15, 450),
-                                top: Math.min(hoverInfo.screenY - 10, 550),
+            {/* === PLAYER HUD (Inventory Panel - toggle) === */}
+            <AnimatePresence>
+                {showPlayerHUD && data?.character && (
+                    <motion.div
+                        initial={{ x: 400, opacity: 0 }}
+                        animate={{ x: 0, opacity: 1 }}
+                        exit={{ x: 400, opacity: 0 }}
+                        className="fixed right-0 top-0 bottom-0 z-30"
+                    >
+                        <PlayerHUD
+                            character={{
+                                name: data.character.name,
+                                class: data.character.class,
+                                race: data.character.race,
+                                level: level,
+                                stats: (() => {
+                                    try {
+                                        const parsed = JSON.parse(data.character.stats || '{}');
+                                        return {
+                                            strength: parsed.strength || parsed.STR || 10,
+                                            dexterity: parsed.dexterity || parsed.DEX || 10,
+                                            constitution: parsed.constitution || parsed.CON || 10,
+                                            intelligence: parsed.intelligence || parsed.INT || 10,
+                                            wisdom: parsed.wisdom || parsed.WIS || 10,
+                                            charisma: parsed.charisma || parsed.CHA || 10,
+                                        };
+                                    } catch {
+                                        return { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 };
+                                    }
+                                })(),
+                                imageUrl: null,
                             }}
-                        >
-                            <div className="flex items-center gap-2">
-                                {hoverInfo.type === 'entity' && hoverInfo.hostile && (
-                                    <Sword size={14} className="text-red-400" />
-                                )}
-                                <span className={cn(
-                                    "font-medium",
-                                    hoverInfo.type === 'entity' && hoverInfo.hostile ? 'text-red-400' : 'text-amber-400'
-                                )}>
-                                    {hoverInfo.name}
-                                </span>
+                            playerState={{
+                                hp,
+                                maxHp,
+                                energy: playerGameState?.energy,
+                                maxEnergy: playerGameState?.maxEnergy,
+                                xp,
+                                level,
+                                gold,
+                                activeBuffs: playerGameState?.activeBuffs ? (() => {
+                                    try {
+                                        return JSON.parse(playerGameState.activeBuffs);
+                                    } catch {
+                                        return [];
+                                    }
+                                })() : [],
+                            }}
+                            inventory={(playerInventory || []).map((item: any, idx: number) => ({
+                                id: item.inventoryId || item.itemId || `inv_${idx}`,
+                                itemId: item.itemId,
+                                name: item.name,
+                                type: item.type,
+                                rarity: (item.rarity?.toLowerCase() || 'common') as Rarity,
+                                category: item.type?.toLowerCase(),
+                                effects: item.effects,
+                                description: item.description,
+                                quantity: item.quantity,
+                                equippedSlot: item.equippedSlot,
+                                usable: item.usable,
+                                consumable: item.consumable,
+                            }))}
+                            xpToNextLevel={xpToLevel}
+                            equippedSlots={{
+                                weapon: (playerInventory || []).find((i: any) => i.equippedSlot === 'weapon') ? {
+                                    id: (playerInventory || []).find((i: any) => i.equippedSlot === 'weapon')!.inventoryId,
+                                    itemId: (playerInventory || []).find((i: any) => i.equippedSlot === 'weapon')!.itemId,
+                                    name: (playerInventory || []).find((i: any) => i.equippedSlot === 'weapon')!.name,
+                                    type: (playerInventory || []).find((i: any) => i.equippedSlot === 'weapon')!.type,
+                                    rarity: ((playerInventory || []).find((i: any) => i.equippedSlot === 'weapon')!.rarity?.toLowerCase() || 'common') as Rarity,
+                                    quantity: 1,
+                                } : null,
+                                armor: (playerInventory || []).find((i: any) => i.equippedSlot === 'armor') ? {
+                                    id: (playerInventory || []).find((i: any) => i.equippedSlot === 'armor')!.inventoryId,
+                                    itemId: (playerInventory || []).find((i: any) => i.equippedSlot === 'armor')!.itemId,
+                                    name: (playerInventory || []).find((i: any) => i.equippedSlot === 'armor')!.name,
+                                    type: (playerInventory || []).find((i: any) => i.equippedSlot === 'armor')!.type,
+                                    rarity: ((playerInventory || []).find((i: any) => i.equippedSlot === 'armor')!.rarity?.toLowerCase() || 'common') as Rarity,
+                                    quantity: 1,
+                                } : null,
+                                accessory: (playerInventory || []).find((i: any) => i.equippedSlot === 'accessory') ? {
+                                    id: (playerInventory || []).find((i: any) => i.equippedSlot === 'accessory')!.inventoryId,
+                                    itemId: (playerInventory || []).find((i: any) => i.equippedSlot === 'accessory')!.itemId,
+                                    name: (playerInventory || []).find((i: any) => i.equippedSlot === 'accessory')!.name,
+                                    type: (playerInventory || []).find((i: any) => i.equippedSlot === 'accessory')!.type,
+                                    rarity: ((playerInventory || []).find((i: any) => i.equippedSlot === 'accessory')!.rarity?.toLowerCase() || 'common') as Rarity,
+                                    quantity: 1,
+                                } : null,
+                            }}
+                            onUseItem={async (itemId) => {
+                                // Find the item name
+                                const item = (playerInventory || []).find((i: any) =>
+                                    i.inventoryId === itemId || i.itemId === itemId
+                                );
+                                if (item) {
+                                    // Clear any stale dialogue choices
+                                    setDialogueState(null);
+                                    setCurrentChoices([]);
+                                    // Send action to AI
+                                    handleSendMessage(`I use ${item.name}`);
+                                }
+                            }}
+                            onEquipItem={async (itemId, slot) => {
+                                const item = (playerInventory || []).find((i: any) =>
+                                    i.inventoryId === itemId || i.itemId === itemId
+                                );
+                                if (item) {
+                                    setDialogueState(null);
+                                    setCurrentChoices([]);
+                                    handleSendMessage(`I equip ${item.name}`);
+                                }
+                            }}
+                            onDropItem={async (itemId) => {
+                                const item = (playerInventory || []).find((i: any) =>
+                                    i.inventoryId === itemId || i.itemId === itemId
+                                );
+                                if (item) {
+                                    setDialogueState(null);
+                                    setCurrentChoices([]);
+                                    handleSendMessage(`I drop ${item.name}`);
+                                }
+                            }}
+                        />
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* === HOVER TOOLTIP === */}
+            {hoverInfo && (
+                <div
+                    className="fixed pointer-events-none z-50 px-3 py-2 bg-slate-900/95 backdrop-blur-sm border border-slate-700 rounded-lg shadow-xl"
+                    style={{
+                        left: hoverInfo.screenX + 15,
+                        top: hoverInfo.screenY - 10,
+                    }}
+                >
+                    <div className="flex items-center gap-2">
+                        {hoverInfo.type === 'entity' && hoverInfo.hostile && (
+                            <Sword size={14} className="text-red-400" />
+                        )}
+                        <span className={cn(
+                            "font-medium",
+                            hoverInfo.type === 'entity' && hoverInfo.hostile ? 'text-red-400' : 'text-amber-400'
+                        )}>
+                            {hoverInfo.name}
+                        </span>
+                    </div>
+                    {hoverInfo.hp !== undefined && hoverInfo.maxHp !== undefined && (
+                        <div className="mt-1 flex items-center gap-2">
+                            <Heart size={12} className="text-red-400" />
+                            <div className="w-20 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                                <div
+                                    className="h-full bg-red-500"
+                                    style={{ width: `${(hoverInfo.hp / hoverInfo.maxHp) * 100}%` }}
+                                />
                             </div>
-                            {hoverInfo.hp !== undefined && hoverInfo.maxHp !== undefined && (
-                                <div className="mt-1 flex items-center gap-2">
-                                    <Heart size={12} className="text-red-400" />
-                                    <div className="w-20 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                                        <div
-                                            className="h-full bg-red-500"
-                                            style={{ width: `${(hoverInfo.hp / hoverInfo.maxHp) * 100}%` }}
-                                        />
-                                    </div>
-                                    <span className="text-xs text-slate-400">{hoverInfo.hp}/{hoverInfo.maxHp}</span>
-                                </div>
-                            )}
+                            <span className="text-xs text-slate-400">{hoverInfo.hp}/{hoverInfo.maxHp}</span>
                         </div>
                     )}
+                </div>
+            )}
 
-                    {/* Context Menu */}
-                    {contextMenu?.show && (
-                        <div
-                            className="absolute z-50 min-w-[140px] bg-slate-900/98 border border-slate-700 rounded-lg shadow-2xl overflow-hidden backdrop-blur-sm"
-                            style={{ left: contextMenu.x, top: contextMenu.y }}
-                        >
-                            <div className="px-3 py-2 border-b border-slate-700 bg-slate-800/50">
-                                <span className="font-medium text-amber-400 text-sm">{contextMenu.name}</span>
-                            </div>
-                            <div className="py-1">
-                                {contextMenu.type === 'entity' && (
+            {/* === CONTEXT MENU === */}
+            {contextMenu?.show && (
+                <div
+                    className="fixed z-50 min-w-[160px] bg-slate-900/98 backdrop-blur-sm border border-slate-700 rounded-xl shadow-2xl overflow-hidden"
+                    style={{ left: contextMenu.x, top: contextMenu.y }}
+                >
+                    <div className="px-4 py-3 border-b border-slate-700 bg-slate-800/50">
+                        <span className="font-medium text-amber-400">{contextMenu.name}</span>
+                    </div>
+                    <div className="py-2">
+                        {contextMenu.type === 'entity' && (
+                            <>
+                                {!contextMenu.hostile && (
+                                    <button
+                                        onClick={() => handleContextMenuAction('talk')}
+                                        className="w-full px-4 py-2.5 text-left text-sm hover:bg-purple-500/20 text-slate-200 flex items-center gap-3 transition-colors"
+                                    >
+                                        <MessageSquare size={16} className="text-cyan-400" />
+                                        Talk
+                                    </button>
+                                )}
+                                <button
+                                    onClick={() => handleContextMenuAction('attack')}
+                                    className="w-full px-4 py-2.5 text-left text-sm hover:bg-red-500/20 text-slate-200 flex items-center gap-3 transition-colors"
+                                >
+                                    <Sword size={16} className="text-red-400" />
+                                    Attack
+                                </button>
+                                <button
+                                    onClick={() => handleContextMenuAction('examine')}
+                                    className="w-full px-4 py-2.5 text-left text-sm hover:bg-purple-500/20 text-slate-200 flex items-center gap-3 transition-colors"
+                                >
+                                    <Eye size={16} className="text-purple-400" />
+                                    Examine
+                                </button>
+                            </>
+                        )}
+                        {contextMenu.type === 'object' && (
+                            <>
+                                {contextMenu.isExit ? (
+                                    <button
+                                        onClick={() => handleContextMenuAction('exit')}
+                                        className="w-full px-4 py-2.5 text-left text-sm hover:bg-green-500/20 text-slate-200 flex items-center gap-3 transition-colors"
+                                    >
+                                        <ArrowRight size={16} className="text-green-400" />
+                                        Go to {contextMenu.exitLocation}
+                                    </button>
+                                ) : (
                                     <>
-                                        {!contextMenu.hostile && (
-                                            <button
-                                                onClick={() => handleContextMenuAction('talk')}
-                                                className="w-full px-3 py-2 text-left text-sm hover:bg-purple-500/20 text-slate-200 flex items-center gap-2 transition-colors"
-                                            >
-                                                <MessageSquare size={14} className="text-cyan-400" />
-                                                Talk
-                                            </button>
-                                        )}
                                         <button
-                                            onClick={() => handleContextMenuAction('attack')}
-                                            className="w-full px-3 py-2 text-left text-sm hover:bg-red-500/20 text-slate-200 flex items-center gap-2 transition-colors"
+                                            onClick={() => handleContextMenuAction('use')}
+                                            className="w-full px-4 py-2.5 text-left text-sm hover:bg-purple-500/20 text-slate-200 flex items-center gap-3 transition-colors"
                                         >
-                                            <Sword size={14} className="text-red-400" />
-                                            Attack
+                                            <Hand size={16} className="text-amber-400" />
+                                            Use
                                         </button>
                                         <button
                                             onClick={() => handleContextMenuAction('examine')}
-                                            className="w-full px-3 py-2 text-left text-sm hover:bg-purple-500/20 text-slate-200 flex items-center gap-2 transition-colors"
+                                            className="w-full px-4 py-2.5 text-left text-sm hover:bg-purple-500/20 text-slate-200 flex items-center gap-3 transition-colors"
                                         >
-                                            <Eye size={14} className="text-purple-400" />
+                                            <Eye size={16} className="text-purple-400" />
                                             Examine
                                         </button>
                                     </>
                                 )}
-                                {contextMenu.type === 'object' && (
-                                    <>
-                                        {contextMenu.isExit ? (
-                                            <button
-                                                onClick={() => handleContextMenuAction('exit')}
-                                                className="w-full px-3 py-2 text-left text-sm hover:bg-green-500/20 text-slate-200 flex items-center gap-2 transition-colors"
-                                            >
-                                                <ArrowRight size={14} className="text-green-400" />
-                                                Go to {contextMenu.exitLocation}
-                                            </button>
-                                        ) : (
-                                            <>
-                                                <button
-                                                    onClick={() => handleContextMenuAction('use')}
-                                                    className="w-full px-3 py-2 text-left text-sm hover:bg-purple-500/20 text-slate-200 flex items-center gap-2 transition-colors"
-                                                >
-                                                    <Hand size={14} className="text-amber-400" />
-                                                    Use
-                                                </button>
-                                                <button
-                                                    onClick={() => handleContextMenuAction('examine')}
-                                                    className="w-full px-3 py-2 text-left text-sm hover:bg-purple-500/20 text-slate-200 flex items-center gap-2 transition-colors"
-                                                >
-                                                    <Eye size={14} className="text-purple-400" />
-                                                    Examine
-                                                </button>
-                                            </>
-                                        )}
-                                    </>
-                                )}
-                            </div>
-                            <div className="px-3 py-1 border-t border-slate-700">
-                                <button
-                                    onClick={() => setContextMenu(null)}
-                                    className="w-full py-1 text-xs text-slate-500 hover:text-slate-300 transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Stats Bar */}
-                    <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-slate-950 via-slate-950/90 to-transparent">
-                        <div className="flex items-center gap-6">
-                            {/* HP */}
-                            <div className="flex items-center gap-2">
-                                <Heart size={16} className="text-red-400" />
-                                <div className="w-32 h-2 bg-slate-800 rounded-full overflow-hidden">
-                                    <motion.div
-                                        className="h-full bg-gradient-to-r from-red-600 to-red-400"
-                                        animate={{ width: `${(hp / maxHp) * 100}%` }}
-                                    />
-                                </div>
-                                <span className="text-xs text-slate-400 font-mono">{hp}/{maxHp}</span>
-                            </div>
-
-                            {/* XP */}
-                            <div className="flex items-center gap-2">
-                                <Trophy size={16} className="text-amber-400" />
-                                <div className="w-24 h-2 bg-slate-800 rounded-full overflow-hidden">
-                                    <motion.div
-                                        className="h-full bg-gradient-to-r from-amber-500 to-yellow-400"
-                                        animate={{ width: `${(xp / xpToLevel) * 100}%` }}
-                                    />
-                                </div>
-                                <span className="text-xs text-slate-400 font-mono">Lv.{level}</span>
-                            </div>
-
-                            {/* Gold */}
-                            <div className="flex items-center gap-2">
-                                <Coins size={16} className="text-amber-400" />
-                                <span className="text-xs text-amber-400 font-mono">{gold}</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* RIGHT: NARRATIVE CHAT */}
-                <div className={cn(
-                    "flex flex-col transition-all duration-300",
-                    isMapExpanded ? "w-1/3" : "w-1/2"
-                )}>
-                    {/* Chat Header */}
-                    <div className="p-4 border-b border-purple-500/20 bg-slate-900/50">
-                        <div className="flex items-center justify-between">
-                            <h2 className="font-serif font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-300 to-cyan-200">
-                                Narrative
-                            </h2>
-                            <div className="flex items-center gap-2">
-                                <span className={cn(
-                                    "px-2 py-1 rounded-full text-xs font-medium capitalize",
-                                    gameContext === 'combat' ? 'bg-red-500/20 text-red-400' :
-                                    gameContext === 'social' ? 'bg-blue-500/20 text-blue-400' :
-                                    gameContext === 'rest' ? 'bg-green-500/20 text-green-400' :
-                                    'bg-purple-500/20 text-purple-400'
-                                )}>
-                                    {gameContext}
-                                </span>
-                                <button onClick={() => setCharacterSheetOpen(true)} className="p-2 hover:bg-amber-500/10 rounded-lg text-slate-400 hover:text-amber-400 transition-all">
-                                    <UserCircle size={18} />
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Messages */}
-                    <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-                        {messages.map((msg, idx) => (
-                            <motion.div
-                                key={idx}
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                className={cn(
-                                    "max-w-full",
-                                    msg.role === 'user' ? "flex justify-end" : "flex justify-start"
-                                )}
-                            >
-                                <div className={cn(
-                                    "rounded-xl px-4 py-3 text-sm leading-relaxed max-w-[90%]",
-                                    msg.role === 'user'
-                                        ? "bg-gradient-to-br from-amber-500 to-yellow-500 text-slate-900"
-                                        : "bg-slate-800/80 border border-purple-500/20 text-slate-200"
-                                )}>
-                                    {msg.content}
-                                </div>
-                            </motion.div>
-                        ))}
-                        {isLoading && (
-                            <div className="flex gap-2 px-4 py-3">
-                                <motion.div className="w-2 h-2 rounded-full bg-purple-500" animate={{ y: [0, -6, 0] }} transition={{ duration: 0.6, repeat: Infinity }} />
-                                <motion.div className="w-2 h-2 rounded-full bg-purple-500" animate={{ y: [0, -6, 0] }} transition={{ duration: 0.6, repeat: Infinity, delay: 0.1 }} />
-                                <motion.div className="w-2 h-2 rounded-full bg-purple-500" animate={{ y: [0, -6, 0] }} transition={{ duration: 0.6, repeat: Infinity, delay: 0.2 }} />
-                            </div>
+                            </>
                         )}
                     </div>
-
-                    {/* Input Area */}
-                    <div className="p-4 border-t border-purple-500/20 bg-slate-900/50">
-                        {/* Choices */}
-                        {currentChoices.length > 0 && (
-                            <div className="flex flex-wrap gap-2 mb-3">
-                                {currentChoices.map((choice, i) => (
-                                    <motion.button
-                                        key={`choice-${i}`}
-                                        initial={{ opacity: 0, scale: 0.95 }}
-                                        animate={{ opacity: 1, scale: 1 }}
-                                        transition={{ delay: i * 0.05 }}
-                                        onClick={() => handleSendMessage(choice)}
-                                        disabled={isLoading}
-                                        className="px-3 py-1.5 bg-slate-800 border border-cyan-500/30 rounded-full text-xs text-cyan-300 hover:border-cyan-400/60 hover:text-cyan-200 transition-all"
-                                    >
-                                        {choice}
-                                    </motion.button>
-                                ))}
-                            </div>
-                        )}
-
-                        {/* Text Input */}
-                        <div className="relative flex items-center gap-2">
-                            <input
-                                type="text"
-                                value={input}
-                                onChange={(e) => setInput(e.target.value)}
-                                onKeyDown={handleKeyDown}
-                                placeholder="What do you do?"
-                                className="flex-1 bg-slate-800 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 border border-purple-500/20"
-                                disabled={isLoading}
-                            />
-                            <motion.button
-                                onClick={() => handleSendMessage()}
-                                disabled={isLoading || !input.trim()}
-                                whileHover={{ scale: 1.05 }}
-                                whileTap={{ scale: 0.95 }}
-                                className="p-2.5 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-900 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                <Send size={16} />
-                            </motion.button>
-                        </div>
+                    <div className="px-4 py-2 border-t border-slate-700">
+                        <button
+                            onClick={() => setContextMenu(null)}
+                            className="w-full py-1.5 text-xs text-slate-500 hover:text-slate-300 transition-colors"
+                        >
+                            Cancel
+                        </button>
                     </div>
                 </div>
-            </div>
+            )}
+
+            {/* === LOADING INDICATOR === */}
+            {isLoading && (
+                <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 px-4 py-3 bg-slate-900/90 backdrop-blur-sm rounded-xl border border-purple-500/30">
+                    <Loader2 size={18} className="text-purple-400 animate-spin" />
+                    <span className="text-sm text-slate-300">Thinking...</span>
+                </div>
+            )}
 
             {/* Character Sheet Modal */}
             {isCharacterSheetOpen && (

@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { Id } from "./_generated/dataModel";
 
 export const getMyCampaigns = query({
     args: {},
@@ -409,6 +410,82 @@ export const incrementRealmPlay = mutation({
         await ctx.db.patch(args.campaignId, {
             playCount: (campaign.playCount || 0) + 1,
         });
+    },
+});
+
+// Get player relationships - how factions and NPCs feel about the player
+export const getPlayerRelationships = query({
+    args: { campaignId: v.id("campaigns") },
+    handler: async (ctx, args) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) return null;
+
+        const playerId = identity.tokenIdentifier;
+
+        // Fetch factions, NPCs, and player reputation in parallel
+        const [factions, npcs, reputations] = await Promise.all([
+            ctx.db.query("factions").withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId)).collect(),
+            ctx.db.query("npcs").withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId)).collect(),
+            ctx.db.query("playerReputation")
+                .withIndex("by_campaign_player", (q) => q.eq("campaignId", args.campaignId).eq("playerId", playerId))
+                .collect(),
+        ]);
+
+        // Get image URLs for factions
+        const factionsWithImages = await Promise.all(
+            factions.map(async (faction) => ({
+                ...faction,
+                imageUrl: faction.imageId ? await ctx.storage.getUrl(faction.imageId) : null,
+            }))
+        );
+
+        // Map reputation to faction IDs for easy lookup
+        const reputationMap = new Map(
+            reputations.map((r) => [r.factionId.toString(), r.reputation])
+        );
+
+        // Build faction relationships with reputation
+        const factionRelationships = factionsWithImages.map((faction) => ({
+            id: faction._id,
+            name: faction.name,
+            description: faction.description,
+            imageUrl: faction.imageUrl,
+            reputation: reputationMap.get(faction._id.toString()) ?? 0,
+            territory: faction.territory,
+        }));
+
+        // Get NPC images and build NPC relationships
+        const livingNpcs = npcs.filter((npc) => !npc.isDead);
+        const npcRelationships = await Promise.all(
+            livingNpcs.map(async (npc) => {
+                const imageUrl = npc.imageId ? await ctx.storage.getUrl(npc.imageId) : null;
+                const faction = npc.factionId ? factions.find((f) => f._id === npc.factionId) : null;
+
+                // NPC attitude can be influenced by faction reputation
+                const factionRep = npc.factionId
+                    ? (reputationMap.get(npc.factionId.toString()) ?? 0)
+                    : 0;
+
+                return {
+                    id: npc._id,
+                    name: npc.name,
+                    role: npc.role,
+                    attitude: npc.attitude,
+                    description: npc.description,
+                    imageUrl,
+                    factionId: npc.factionId,
+                    factionName: faction?.name ?? null,
+                    factionReputation: factionRep,
+                    loyalty: npc.loyalty,
+                    isRecruitable: npc.isRecruitable,
+                };
+            })
+        );
+
+        return {
+            factions: factionRelationships,
+            npcs: npcRelationships,
+        };
     },
 });
 
@@ -912,6 +989,252 @@ export const createQuest = mutation({
             rewardReputation: args.rewardReputation,
             rewardWorldUpdates: args.rewardWorldUpdates,
         });
+    },
+});
+
+// Save an AI-generated quest with its reward items
+export const saveGeneratedQuest = mutation({
+    args: {
+        campaignId: v.id("campaigns"),
+        locationId: v.id("locations"),
+        title: v.string(),
+        description: v.string(),
+        rewards: v.array(v.object({
+            name: v.string(),
+            type: v.string(),
+            rarity: v.string(),
+            effects: v.string(),
+            description: v.optional(v.string()),
+        })),
+        source: v.string(),
+        objectives: v.optional(v.array(v.object({
+            id: v.string(),
+            description: v.string(),
+            type: v.string(),
+            target: v.optional(v.string()),
+            targetCount: v.optional(v.number()),
+            isCompleted: v.boolean(),
+            isOptional: v.optional(v.boolean()),
+            hint: v.optional(v.string()),
+        }))),
+        difficulty: v.optional(v.string()),
+        xpReward: v.optional(v.number()),
+        goldReward: v.optional(v.number()),
+    },
+    handler: async (ctx, args) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) throw new Error("Unauthorized");
+
+        // Get campaign to use its userId (quest is for the campaign, not the player)
+        const campaign = await ctx.db.get(args.campaignId);
+        if (!campaign) throw new Error("Campaign not found");
+
+        // Create reward items first
+        const rewardItemIds: Id<"items">[] = [];
+        for (const reward of args.rewards) {
+            const itemId = await ctx.db.insert("items", {
+                userId: campaign.userId,
+                campaignId: args.campaignId,
+                name: reward.name,
+                type: reward.type,
+                rarity: reward.rarity,
+                effects: reward.effects,
+                description: reward.description,
+                source: "ai-quest",
+            });
+            rewardItemIds.push(itemId);
+        }
+
+        // Create the quest
+        const questId = await ctx.db.insert("quests", {
+            userId: campaign.userId,
+            campaignId: args.campaignId,
+            locationId: args.locationId,
+            title: args.title,
+            description: args.description,
+            status: "active",
+            source: args.source,
+            rewardItemIds: rewardItemIds as any,
+            objectives: args.objectives,
+            currentObjectiveIndex: 0,
+            difficulty: args.difficulty || "medium",
+            xpReward: args.xpReward || 50,
+            goldReward: args.goldReward || 25,
+        });
+
+        return questId;
+    },
+});
+
+// Update quest progress (objective completion, status changes)
+export const updateQuestProgress = mutation({
+    args: {
+        questId: v.id("quests"),
+        objectiveId: v.optional(v.string()),
+        incrementCount: v.optional(v.number()),
+        completeObjective: v.optional(v.boolean()),
+        newStatus: v.optional(v.string()),
+    },
+    handler: async (ctx, args) => {
+        const quest = await ctx.db.get(args.questId);
+        if (!quest) throw new Error("Quest not found");
+
+        const updates: Record<string, unknown> = {};
+
+        // Update specific objective
+        if (args.objectiveId && quest.objectives) {
+            const objectives = [...quest.objectives];
+            const objIndex = objectives.findIndex(o => o.id === args.objectiveId);
+
+            if (objIndex !== -1) {
+                const obj = { ...objectives[objIndex] };
+
+                // Increment count
+                if (args.incrementCount) {
+                    obj.currentCount = (obj.currentCount || 0) + args.incrementCount;
+                    if (obj.targetCount && obj.currentCount >= obj.targetCount) {
+                        obj.isCompleted = true;
+                    }
+                }
+
+                // Complete objective directly
+                if (args.completeObjective) {
+                    obj.isCompleted = true;
+                }
+
+                objectives[objIndex] = obj;
+                updates.objectives = objectives;
+
+                // Check if all required objectives are complete
+                const allRequiredComplete = objectives
+                    .filter(o => !o.isOptional)
+                    .every(o => o.isCompleted);
+
+                if (allRequiredComplete && quest.status === "active") {
+                    updates.status = "completed";
+                }
+            }
+        }
+
+        // Direct status update
+        if (args.newStatus) {
+            updates.status = args.newStatus;
+        }
+
+        if (Object.keys(updates).length > 0) {
+            await ctx.db.patch(args.questId, updates);
+        }
+
+        return { success: true, updates };
+    },
+});
+
+// Complete a quest and grant rewards
+export const completeQuest = mutation({
+    args: {
+        questId: v.id("quests"),
+        playerId: v.string(),
+        campaignId: v.id("campaigns"),
+    },
+    handler: async (ctx, args) => {
+        const quest = await ctx.db.get(args.questId);
+        if (!quest) throw new Error("Quest not found");
+        if (quest.status === "completed") throw new Error("Quest already completed");
+
+        // Mark quest as completed
+        await ctx.db.patch(args.questId, { status: "completed" });
+
+        // Grant rewards to player game state
+        const playerState = await ctx.db
+            .query("playerGameState")
+            .withIndex("by_campaign_and_player", q =>
+                q.eq("campaignId", args.campaignId).eq("playerId", args.playerId)
+            )
+            .first();
+
+        if (playerState) {
+            const updates: Record<string, unknown> = {};
+
+            if (quest.xpReward) {
+                updates.xp = (playerState.xp || 0) + quest.xpReward;
+            }
+            if (quest.goldReward) {
+                updates.gold = (playerState.gold || 0) + quest.goldReward;
+            }
+
+            if (Object.keys(updates).length > 0) {
+                await ctx.db.patch(playerState._id, updates);
+            }
+        }
+
+        // Add reward items to player inventory
+        if (quest.rewardItemIds && quest.rewardItemIds.length > 0) {
+            for (const itemId of quest.rewardItemIds) {
+                await ctx.db.insert("playerInventory", {
+                    campaignId: args.campaignId,
+                    playerId: args.playerId,
+                    itemId: itemId,
+                    quantity: 1,
+                    acquiredAt: Date.now(),
+                });
+            }
+        }
+
+        // Apply reputation changes
+        if (quest.rewardReputation) {
+            try {
+                const repChanges = JSON.parse(quest.rewardReputation);
+                for (const [factionName, change] of Object.entries(repChanges)) {
+                    // Find faction by name
+                    const faction = await ctx.db
+                        .query("factions")
+                        .withIndex("by_campaign", q => q.eq("campaignId", args.campaignId))
+                        .filter(q => q.eq(q.field("name"), factionName))
+                        .first();
+
+                    if (faction) {
+                        // Update or create reputation
+                        const existingRep = await ctx.db
+                            .query("playerReputation")
+                            .withIndex("by_campaign_player", q =>
+                                q.eq("campaignId", args.campaignId).eq("playerId", args.playerId)
+                            )
+                            .filter(q => q.eq(q.field("factionId"), faction._id))
+                            .first();
+
+                        if (existingRep) {
+                            await ctx.db.patch(existingRep._id, {
+                                reputation: existingRep.reputation + (change as number),
+                                updatedAt: Date.now(),
+                            });
+                        } else {
+                            await ctx.db.insert("playerReputation", {
+                                campaignId: args.campaignId,
+                                playerId: args.playerId,
+                                factionId: faction._id,
+                                reputation: change as number,
+                                updatedAt: Date.now(),
+                            });
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to parse reputation rewards:", e);
+            }
+        }
+
+        // Activate next quest in chain
+        if (quest.nextQuestId) {
+            await ctx.db.patch(quest.nextQuestId, { status: "active" });
+        }
+
+        return {
+            success: true,
+            xpGranted: quest.xpReward || 0,
+            goldGranted: quest.goldReward || 0,
+            itemsGranted: quest.rewardItemIds?.length || 0,
+            nextQuestActivated: !!quest.nextQuestId,
+        };
     },
 });
 

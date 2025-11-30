@@ -448,14 +448,38 @@ const generateWorldContext = (campaignData: CampaignData, playerState?: PlayerSt
     ${regions.map((r) => `- ${r.name}: ${r.description || 'No description'}${r.governingFactionId ? ` | Governed by faction` : ''}`).join('\n')}
     ` : ''}
 
-    === QUESTS (Prioritized) ===
+    === QUESTS - YOUR PRIMARY STORYTELLING TOOL ===
+    QUEST GUIDANCE RULES:
+    - ACTIVELY guide players toward quest objectives through NPC dialogue, environmental hints, and narrative suggestions
+    - When players seem lost, have NPCs mention rumors or point toward quest locations
+    - Reference active quests naturally in NPC conversations and world descriptions
+    - Track objective progress and celebrate milestone completions
+    - When ALL objectives are complete, trigger the questComplete event
+
     ${questTiers.active.length > 0 ? `
-    ACTIVE QUESTS (CURRENT OBJECTIVES):
-    ${questTiers.active.map((q) => `- [ACTIVE] ${q.title}: ${q.description} (Giver: ${allFilteredNpcs.find((n) => n._id === q.npcId)?.name || 'Unknown'})`).join('\n')}
-    ` : ''}
+    ★★★ ACTIVE QUESTS (HIGH PRIORITY - WEAVE INTO NARRATIVE) ★★★
+    ${questTiers.active.map((q: any) => {
+      const giver = allFilteredNpcs.find((n) => n._id === q.npcId)?.name || 'Unknown';
+      const objectives = q.objectives?.map((obj: any, i: number) =>
+        `      ${obj.isCompleted ? '✓' : '○'} ${i + 1}. ${obj.description}${obj.target ? ` (Target: ${obj.target})` : ''}${obj.targetCount ? ` [${obj.currentCount || 0}/${obj.targetCount}]` : ''}${obj.hint ? ` | Hint: ${obj.hint}` : ''}`
+      ).join('\n') || '      (No specific objectives)';
+      return `
+    ─────────────────────────────────────
+    QUEST: ${q.title} [${q.difficulty?.toUpperCase() || 'MEDIUM'}]
+    Quest Giver: ${giver}
+    Description: ${q.description}
+    Rewards: ${q.xpReward || 50} XP, ${q.goldReward || 25} Gold
+    OBJECTIVES:
+${objectives}
+    ─────────────────────────────────────`;
+    }).join('\n')}
+    ` : `
+    ★ NO ACTIVE QUESTS - Guide the player to find one! ★
+    Have NPCs mention problems, rumors, or opportunities nearby.
+    `}
     ${questTiers.available.length > 0 ? `
-    AVAILABLE QUESTS:
-    ${questTiers.available.map((q) => `- [AVAILABLE] ${q.title}: ${q.description} (Giver: ${allFilteredNpcs.find((n) => n._id === q.npcId)?.name || 'Unknown'})`).join('\n')}
+    AVAILABLE QUESTS (Can be offered to player):
+    ${questTiers.available.map((q) => `- "${q.title}" from ${allFilteredNpcs.find((n) => n._id === q.npcId)?.name || 'Unknown'}: ${q.description.substring(0, 100)}...`).join('\n')}
     ` : ''}
 
     MONSTERS (Known, limited):
@@ -895,7 +919,7 @@ export const chatStream = httpAction(async (ctx, request) => {
         const optimizedContext = await ctx.runQuery((api as any).contextOptimization.getOptimizedContext, {
           campaignId: campaignId,
           playerId: playerId,
-          currentLocationId: currentLocationId,
+          currentLocationId: currentLocationId || undefined, // Convex validators reject null, use undefined
         });
 
         if (optimizedContext) {
@@ -963,7 +987,7 @@ IMPORTANT: Respond in this EXACT format:
   "choices": ["Action 1", "Action 2", "Action 3"],
   "context": "explore|combat|social|rest",
   "gameEvent": {
-    "type": "exploration|combat|social|skillCheck|reward|npcDeath|crime|recruitment",
+    "type": "exploration|combat|social|skillCheck|reward|npcDeath|crime|recruitment|questProgress|questComplete",
     "combat": { "enemyName": "Enemy Name", "enemyHP": 20, "enemyMaxHP": 20, "isPlayerTurn": true },
     "skillCheck": {
       "skill": "Perception|Stealth|Athletics|Persuasion|etc",
@@ -978,7 +1002,9 @@ IMPORTANT: Respond in this EXACT format:
     "reward": { "item": "Item Name", "rarity": "common|uncommon|rare|epic|legendary", "xp": 50 },
     "npcDeath": { "npcName": "NPC Name", "npcId": "npc_id_if_known", "cause": "How they died", "killedBy": "player|npc_name" },
     "crime": { "type": "murder|theft|assault|trespassing", "description": "What happened", "bountyAmount": 100 },
-    "recruitment": { "npcName": "NPC Name", "npcId": "npc_id", "cost": 100, "role": "companion|guard|worker" }
+    "recruitment": { "npcName": "NPC Name", "npcId": "npc_id", "cost": 100, "role": "companion|guard|worker" },
+    "questProgress": { "questTitle": "Quest Name", "objectiveId": "obj_1", "objectiveDescription": "What was completed", "incrementCount": 1 },
+    "questComplete": { "questTitle": "Quest Name", "xpReward": 50, "goldReward": 25, "itemRewards": ["Item Name"] }
   },
   "hp": ${playerState?.hp || 20},
   "xpGained": 0,
@@ -1044,6 +1070,8 @@ GAME EVENT RULES:
    - NPC dies: type="npcDeath" - ONLY use for named NPCs from the NPC list, not random enemies
    - Player commits a crime: type="crime" ${bountyEnabled ? '(ACTIVE - track all crimes!)' : '(disabled for this realm)'}
    - Player can recruit an NPC: type="recruitment" - only if NPC is marked [RECRUITABLE]
+   - Quest objective completed: type="questProgress" - when player completes a step (kills target, talks to NPC, reaches location, etc.)
+   - Quest fully completed: type="questComplete" - when ALL objectives are done, celebrate and grant rewards!
    
 3. Rarity levels: "common" (gray), "uncommon" (green), "rare" (blue), "epic" (purple), "legendary" (gold)
 
@@ -1058,7 +1086,108 @@ SPECIAL RULES:
 - NPCs marked [RECRUITABLE] can be invited to join the player's camp for a gold cost
 - If the player kills a named NPC, ALWAYS include an npcDeath event so it's tracked
 ${bountyEnabled ? '- Criminal actions (murder, theft, assault) should trigger a crime event with appropriate bounty' : ''}
-${worldState.isJailed ? '- The player is JAILED. Limit actions to jail-appropriate choices: wait, attempt escape, bribe, serve time' : ''}`;
+${worldState.isJailed ? '- The player is JAILED. Limit actions to jail-appropriate choices: wait, attempt escape, bribe, serve time' : ''}
+
+★★★ QUEST & STORY GUIDANCE - MOST IMPORTANT ★★★
+Your PRIMARY job is to guide players through the story and help them complete quests. DO NOT just react - ACTIVELY GUIDE:
+
+1. WEAVE QUESTS INTO EVERY RESPONSE:
+   - If there's an active quest, ALWAYS reference it somehow (NPC mentions it, environment shows clues, etc.)
+   - Have NPCs naturally bring up quest-related information
+   - Describe environments in ways that hint toward objectives
+
+2. WHEN PLAYER SEEMS LOST:
+   - Have an NPC approach them with news or rumors
+   - Describe environmental details that point toward quest locations
+   - Use choices to suggest quest-relevant actions
+
+3. CELEBRATE PROGRESS:
+   - When an objective is completed, make it feel rewarding in the narrative
+   - Have NPCs react positively to the player's achievements
+   - Build toward the climactic quest completion
+
+4. USE THE CREATOR'S WORLD:
+   - Reference the WORLD BIBLE and LORE constantly
+   - Use NPC personalities and attitudes from the lists
+   - Make locations feel alive with the details provided
+   - The creator built this world - HONOR IT by using their content
+
+5. PROVIDE CLEAR DIRECTION:
+   - Always give 2-4 choices that include at least one quest-relevant option
+   - If no active quest, make choices lead toward discovering available quests
+   - Never leave the player wondering what to do next
+
+★★★ AI-DRIVEN MAP SYSTEM - VISUAL DUNGEON GENERATION ★★★
+You control a 2D visual tilemap that renders in real-time. Generate map events to create immersive visuals.
+
+TILE ID REFERENCE:
+- TERRAIN (0-49): VOID=0, FLOOR_STONE=1, FLOOR_WOOD=2, FLOOR_DIRT=3, FLOOR_GRASS=4, FLOOR_SAND=5, FLOOR_COBBLE=6, WALL_STONE=10, WALL_BRICK=11, WALL_CAVE=12, WALL_WOOD=13, WATER_SHALLOW=20, WATER_DEEP=21, LAVA=22, ICE=23, DOOR_CLOSED=30, DOOR_OPEN=31, DOOR_LOCKED=32, GATE_CLOSED=33, GATE_OPEN=34, STAIRS_DOWN=40, STAIRS_UP=41, PIT=42, BRIDGE=43
+- ENTITIES (100-199): PLAYER_WARRIOR=100, PLAYER_MAGE=101, PLAYER_ROGUE=102, GOBLIN=110, GOBLIN_ARCHER=111, ORC=115, ORC_BERSERKER=116, SKELETON=120, SKELETON_WARRIOR=121, ZOMBIE=125, RAT=130, GIANT_RAT=131, SPIDER=132, GIANT_SPIDER=133, BAT=134, WOLF=135, VILLAGER=140, MERCHANT=141, GUARD=142, BOSS_DEMON=150, BOSS_DRAGON=151, BOSS_LICH=152
+- OBJECTS (200-299): CHEST_CLOSED=200, CHEST_OPEN=201, CHEST_LOCKED=202, BARREL=203, CRATE=204, TABLE=210, CHAIR=211, BED=212, TORCH_WALL=220, TORCH_GROUND=221, CAMPFIRE=222, BRAZIER=223, LANTERN=224, ALTAR=230, FOUNTAIN=231, LEVER=232, GOLD_PILE=240, POTION=242, TRAP_SPIKE=250, TRAP_FIRE=252
+
+MAP EVENT TYPES (include in <mapEvents> tags):
+
+1. GENERATE ROOM - When player enters a new area:
+<mapEvents>
+[{"type":"generateRoom","generateRoom":{"width":12,"height":10,"tiles":[[10,10,10,10,10,10,10,10,10,10,10,10],[10,1,1,1,1,1,1,1,1,1,1,10],[10,1,1,1,1,1,1,1,1,1,1,10],[10,1,1,1,1,1,1,1,1,1,1,10],[10,1,1,1,1,1,1,1,1,1,1,10],[10,1,1,1,1,1,1,1,1,1,1,10],[10,1,1,1,1,1,1,1,1,1,1,10],[10,1,1,1,1,1,1,1,1,1,1,10],[10,1,1,1,1,31,1,1,1,1,1,10],[10,10,10,10,10,10,10,10,10,10,10,10]],"entities":[{"id":"goblin_1","type":110,"x":8,"y":4,"name":"Sneaky Goblin","hostile":true,"hp":15,"maxHp":15}],"objects":[{"id":"chest_1","type":200,"x":6,"y":2,"interactable":true,"state":"closed"},{"id":"torch_1","type":220,"x":2,"y":2,"interactable":false}],"lighting":"dim","ambience":"dungeon","playerSpawn":{"x":5,"y":8}}}]
+</mapEvents>
+
+2. MOVE ENTITY - When player or NPCs move:
+<mapEvents>
+[{"type":"moveEntity","moveEntity":{"entityId":"player","path":[{"x":5,"y":7},{"x":5,"y":6},{"x":6,"y":6}],"speed":"normal"}}]
+</mapEvents>
+
+3. SPAWN ENTITY - When enemies appear:
+<mapEvents>
+[{"type":"spawnEntity","spawnEntity":{"id":"skeleton_1","type":120,"x":3,"y":4,"name":"Risen Skeleton","hostile":true,"animation":"emerge"}}]
+</mapEvents>
+
+4. REMOVE ENTITY - When enemies die:
+<mapEvents>
+[{"type":"removeEntity","removeEntity":{"entityId":"goblin_1","animation":"dissolve"}}]
+</mapEvents>
+
+5. INTERACT OBJECT - When player uses something:
+<mapEvents>
+[{"type":"interactObject","interactObject":{"objectId":"chest_1","action":"open","result":{"items":["Gold Coins"],"gold":50}}}]
+</mapEvents>
+
+6. COMBAT EFFECT - During combat:
+<mapEvents>
+[{"type":"combatEffect","combatEffect":{"attackerId":"player","targetId":"goblin_1","effectType":"slash","damage":8,"isCritical":false}}]
+</mapEvents>
+
+7. UPDATE TILE - When environment changes:
+<mapEvents>
+[{"type":"updateTile","updateTile":{"x":5,"y":8,"oldTile":30,"newTile":31,"animation":"instant"}}]
+</mapEvents>
+
+8. CAMERA EFFECT - For dramatic moments:
+<mapEvents>
+[{"type":"cameraEffect","cameraEffect":{"effectType":"shake","intensity":"medium"}}]
+</mapEvents>
+
+MAP GENERATION RULES:
+1. Generate a room (8x8 to 16x16) when player enters a NEW area
+2. Use walls (10-13) around edges, floors (1-6) inside
+3. Place doors (30-34) for exits, stairs (40-41) for level changes
+4. Include 2-4 entities (enemies, NPCs) relevant to the narrative
+5. Add objects (chests, torches, furniture) for atmosphere
+6. Set lighting: "dark", "dim", or "bright"
+7. Set ambience: "dungeon", "cave", "crypt", "forest", "castle", "swamp"
+
+MOVEMENT RULES:
+1. ALWAYS move the player when they describe movement
+2. Use paths with 2-5 waypoints for smooth animation
+3. Move enemies toward player during combat
+4. Speed: "slow" for cautious, "normal" for walking, "fast" for running
+
+COMBAT VISUALIZATION:
+1. Show attack effects with combatEffect events
+2. Remove dead enemies with removeEntity (animation: "dissolve" or "explode")
+3. Shake camera on critical hits or boss attacks
+
+The map enhances the narrative - every room should feel unique and atmospheric!`;
 
   const contents = [
     {
@@ -1104,6 +1233,699 @@ ${worldState.isJailed ? '- The player is JAILED. Limit actions to jail-appropria
   });
 });
 
+// =============================================================================
+// DEDICATED MAP GENERATION AI - Handles spatial reasoning and movement
+// =============================================================================
+
+export const generateMapEvents = action({
+  args: {
+    campaignId: v.id("campaigns"),
+    playerAction: v.string(),
+    currentLocationName: v.string(),
+    currentLocationDescription: v.optional(v.string()),
+    locationType: v.optional(v.string()),
+    currentRoomState: v.optional(v.object({
+      width: v.number(),
+      height: v.number(),
+      playerPosition: v.object({ x: v.number(), y: v.number() }),
+      entities: v.array(v.object({
+        id: v.string(),
+        type: v.number(),
+        x: v.number(),
+        y: v.number(),
+        name: v.string(),
+        hostile: v.boolean(),
+      })),
+      objects: v.array(v.object({
+        id: v.string(),
+        type: v.number(),
+        x: v.number(),
+        y: v.number(),
+        state: v.optional(v.string()),
+      })),
+    })),
+    needsNewRoom: v.boolean(),
+    narrativeContext: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.error("GEMINI_API_KEY is not set");
+      return { events: [], error: "API key missing" };
+    }
+
+    // Build the map-focused prompt
+    const mapPrompt = `You are a MAP GENERATION AI for a 2D dungeon crawler game. Your ONLY job is to generate visual map events.
+
+CURRENT LOCATION: ${args.currentLocationName}
+TYPE: ${args.locationType || 'dungeon'}
+DESCRIPTION: ${args.currentLocationDescription || 'A mysterious area'}
+
+PLAYER ACTION: "${args.playerAction}"
+
+${args.narrativeContext ? `NARRATIVE CONTEXT: ${args.narrativeContext}` : ''}
+
+${args.currentRoomState ? `
+CURRENT ROOM STATE:
+- Size: ${args.currentRoomState.width}x${args.currentRoomState.height}
+- Player at: (${args.currentRoomState.playerPosition.x}, ${args.currentRoomState.playerPosition.y})
+- Entities: ${args.currentRoomState.entities.map(e => `${e.name} at (${e.x},${e.y})${e.hostile ? ' [HOSTILE]' : ''}`).join(', ') || 'None'}
+- Objects: ${args.currentRoomState.objects.map(o => `Object at (${o.x},${o.y})`).join(', ') || 'None'}
+` : 'NO EXISTING ROOM - Generate a new one!'}
+
+${args.needsNewRoom ? 'TASK: Generate a NEW ROOM for this location.' : 'TASK: Generate movement/interaction events based on the player action.'}
+
+TILE ID REFERENCE:
+TERRAIN: VOID=0, FLOOR_STONE=1, FLOOR_WOOD=2, FLOOR_DIRT=3, FLOOR_GRASS=4, FLOOR_SAND=5, FLOOR_COBBLE=6, WALL_STONE=10, WALL_BRICK=11, WALL_CAVE=12, WALL_WOOD=13, WATER_SHALLOW=20, WATER_DEEP=21, LAVA=22, ICE=23, DOOR_CLOSED=30, DOOR_OPEN=31, DOOR_LOCKED=32, STAIRS_DOWN=40, STAIRS_UP=41, PIT=42, BRIDGE=43
+ENTITIES: PLAYER_WARRIOR=100, GOBLIN=110, ORC=115, SKELETON=120, ZOMBIE=125, RAT=130, SPIDER=132, WOLF=135, VILLAGER=140, MERCHANT=141, GUARD=142, BOSS_DEMON=150
+OBJECTS: CHEST_CLOSED=200, CHEST_OPEN=201, BARREL=203, TABLE=210, TORCH_WALL=220, CAMPFIRE=222, ALTAR=230, FOUNTAIN=231, GOLD_PILE=240, POTION=242, TRAP_SPIKE=250
+
+MOVEMENT DETECTION - If the player action mentions ANY of these, generate a moveEntity event:
+- "walk", "go", "move", "head", "travel", "run", "approach", "step"
+- "to the", "toward", "towards", "over to", "up to"
+- Direction words: "north", "south", "east", "west", "left", "right", "up", "down", "forward", "back"
+- Object references: "chest", "door", "table", "enemy", "NPC name", etc.
+
+RESPONSE FORMAT - Return ONLY a JSON array of events:
+[
+  {"type": "generateRoom", "generateRoom": { ... }},
+  {"type": "moveEntity", "moveEntity": { ... }},
+  etc.
+]
+
+EVENT EXAMPLES:
+
+1. NEW ROOM (when needsNewRoom=true or entering new area):
+{"type":"generateRoom","generateRoom":{"width":12,"height":10,"tiles":[[10,10,10,10,10,10,10,10,10,10,10,10],[10,1,1,1,1,1,1,1,1,1,1,10],[10,1,1,1,1,1,1,1,1,1,1,10],[10,1,1,1,1,1,1,1,1,1,1,10],[10,1,1,1,1,1,1,1,1,1,1,10],[10,1,1,1,1,1,1,1,1,1,1,10],[10,1,1,1,1,1,1,1,1,1,1,10],[10,1,1,1,1,1,1,1,1,1,1,10],[10,1,1,1,1,31,1,1,1,1,1,10],[10,10,10,10,10,10,10,10,10,10,10,10]],"entities":[{"id":"goblin_1","type":110,"x":8,"y":4,"name":"Goblin Scout","hostile":true,"hp":15,"maxHp":15}],"objects":[{"id":"chest_1","type":200,"x":6,"y":2,"interactable":true,"state":"closed"},{"id":"torch_1","type":220,"x":2,"y":2,"interactable":false}],"lighting":"dim","ambience":"dungeon","playerSpawn":{"x":5,"y":8}}}
+
+2. PLAYER MOVEMENT (when player says "I walk to X"):
+{"type":"moveEntity","moveEntity":{"entityId":"player","path":[{"x":5,"y":7},{"x":5,"y":6},{"x":6,"y":5}],"speed":"normal"}}
+
+3. ENEMY MOVEMENT (during combat or patrol):
+{"type":"moveEntity","moveEntity":{"entityId":"goblin_1","path":[{"x":7,"y":4},{"x":6,"y":4}],"speed":"slow"}}
+
+4. OPEN CHEST/INTERACT:
+{"type":"interactObject","interactObject":{"objectId":"chest_1","action":"open","result":{"items":["Health Potion"],"gold":25}}}
+
+5. COMBAT EFFECT:
+{"type":"combatEffect","combatEffect":{"attackerId":"player","targetId":"goblin_1","effectType":"slash","damage":8}}
+
+6. SPAWN ENEMY:
+{"type":"spawnEntity","spawnEntity":{"id":"skeleton_1","type":120,"x":3,"y":5,"name":"Skeleton Warrior","hostile":true,"animation":"emerge"}}
+
+7. REMOVE DEAD ENEMY:
+{"type":"removeEntity","removeEntity":{"entityId":"goblin_1","animation":"dissolve"}}
+
+RULES:
+1. If needsNewRoom=true, ALWAYS include a generateRoom event first
+2. DETECT MOVEMENT INTENT - if player mentions moving, walking, going somewhere, create a moveEntity event
+3. Calculate reasonable paths (2-5 waypoints) from current position to target
+4. During combat, move enemies toward player
+5. Match the location type with appropriate tiles (dungeon=stone, forest=grass, etc.)
+6. Add atmospheric objects (torches, furniture, decorations)
+7. Place doors at logical exit points
+
+RESPOND WITH ONLY A JSON ARRAY - NO OTHER TEXT:`;
+
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: mapPrompt }] }],
+            generationConfig: {
+              temperature: 0.7,
+              maxOutputTokens: 2000,
+              responseMimeType: "application/json",
+            },
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("[MapAI] API Error:", errorText);
+        return { events: [], error: `API Error: ${response.status}` };
+      }
+
+      const data = await response.json();
+      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
+
+      // Clean and parse the response
+      let cleanedJson = rawText
+        .replace(/```json/g, '')
+        .replace(/```/g, '')
+        .replace(/:\s*True\b/g, ': true')
+        .replace(/:\s*False\b/g, ': false')
+        .replace(/:\s*None\b/g, ': null')
+        .replace(/,\s*([}\]])/g, '$1')
+        .trim();
+
+      // If it's wrapped in an object, extract the array
+      if (cleanedJson.startsWith('{')) {
+        const parsed = JSON.parse(cleanedJson);
+        if (parsed.events) {
+          return { events: parsed.events };
+        }
+      }
+
+      const events = JSON.parse(cleanedJson);
+      return { events: Array.isArray(events) ? events : [events] };
+    } catch (e) {
+      console.error("[MapAI] Failed to generate map events:", e);
+      return { events: [], error: String(e) };
+    }
+  },
+});
+
+// =============================================================================
+// WORLD-AWARE MAP GENERATION AI - Uses creator's template for dynamic worlds
+// =============================================================================
+
+// Location type to terrain mapping
+const LOCATION_TERRAIN_MAP: Record<string, { floor: number; wall: number; ambience: string; lighting: string }> = {
+  // Natural environments
+  forest: { floor: 4, wall: 12, ambience: "forest", lighting: "bright" },      // FLOOR_GRASS, WALL_CAVE (trees)
+  woods: { floor: 4, wall: 12, ambience: "forest", lighting: "dim" },
+  jungle: { floor: 4, wall: 12, ambience: "forest", lighting: "dim" },
+  swamp: { floor: 3, wall: 12, ambience: "swamp", lighting: "dim" },           // FLOOR_DIRT
+  marsh: { floor: 3, wall: 20, ambience: "swamp", lighting: "dim" },           // WATER_SHALLOW
+  desert: { floor: 5, wall: 10, ambience: "desert", lighting: "bright" },      // FLOOR_SAND
+  beach: { floor: 5, wall: 20, ambience: "coast", lighting: "bright" },
+  mountain: { floor: 1, wall: 12, ambience: "cave", lighting: "dim" },         // FLOOR_STONE, WALL_CAVE
+  hills: { floor: 4, wall: 10, ambience: "plains", lighting: "bright" },
+  plains: { floor: 4, wall: 10, ambience: "plains", lighting: "bright" },
+  grassland: { floor: 4, wall: 10, ambience: "plains", lighting: "bright" },
+  tundra: { floor: 23, wall: 10, ambience: "frozen", lighting: "bright" },     // ICE
+  snow: { floor: 23, wall: 12, ambience: "frozen", lighting: "bright" },
+
+  // Water
+  lake: { floor: 20, wall: 21, ambience: "water", lighting: "bright" },        // WATER_SHALLOW, WATER_DEEP
+  river: { floor: 20, wall: 4, ambience: "water", lighting: "bright" },
+  ocean: { floor: 21, wall: 21, ambience: "water", lighting: "bright" },
+  coast: { floor: 5, wall: 20, ambience: "coast", lighting: "bright" },
+
+  // Civilization
+  town: { floor: 6, wall: 11, ambience: "town", lighting: "bright" },          // FLOOR_COBBLE, WALL_BRICK
+  village: { floor: 3, wall: 13, ambience: "town", lighting: "bright" },       // FLOOR_DIRT, WALL_WOOD
+  city: { floor: 6, wall: 11, ambience: "city", lighting: "bright" },
+  castle: { floor: 1, wall: 10, ambience: "castle", lighting: "dim" },         // FLOOR_STONE, WALL_STONE
+  fortress: { floor: 1, wall: 10, ambience: "castle", lighting: "dim" },
+  palace: { floor: 1, wall: 11, ambience: "castle", lighting: "bright" },
+  temple: { floor: 1, wall: 10, ambience: "temple", lighting: "dim" },
+  shrine: { floor: 1, wall: 10, ambience: "temple", lighting: "dim" },
+  inn: { floor: 2, wall: 13, ambience: "inn", lighting: "bright" },            // FLOOR_WOOD, WALL_WOOD
+  tavern: { floor: 2, wall: 13, ambience: "inn", lighting: "dim" },
+  shop: { floor: 2, wall: 13, ambience: "town", lighting: "bright" },
+  market: { floor: 6, wall: 13, ambience: "town", lighting: "bright" },
+  guild: { floor: 1, wall: 11, ambience: "guild", lighting: "dim" },
+  academy: { floor: 1, wall: 11, ambience: "library", lighting: "bright" },
+  library: { floor: 2, wall: 13, ambience: "library", lighting: "dim" },
+
+  // Underground/Dark
+  dungeon: { floor: 1, wall: 10, ambience: "dungeon", lighting: "dark" },
+  cave: { floor: 1, wall: 12, ambience: "cave", lighting: "dark" },
+  cavern: { floor: 1, wall: 12, ambience: "cave", lighting: "dark" },
+  mine: { floor: 1, wall: 12, ambience: "mine", lighting: "dark" },
+  crypt: { floor: 1, wall: 10, ambience: "crypt", lighting: "dark" },
+  tomb: { floor: 1, wall: 10, ambience: "crypt", lighting: "dark" },
+  catacomb: { floor: 1, wall: 10, ambience: "crypt", lighting: "dark" },
+  sewer: { floor: 1, wall: 11, ambience: "sewer", lighting: "dark" },
+
+  // Special
+  ruins: { floor: 1, wall: 10, ambience: "ruins", lighting: "dim" },
+  tower: { floor: 1, wall: 10, ambience: "tower", lighting: "dim" },
+  camp: { floor: 3, wall: 0, ambience: "camp", lighting: "dim" },              // No walls for camps
+  outpost: { floor: 3, wall: 13, ambience: "camp", lighting: "dim" },
+  bridge: { floor: 43, wall: 20, ambience: "bridge", lighting: "bright" },     // BRIDGE
+  road: { floor: 6, wall: 4, ambience: "road", lighting: "bright" },
+  path: { floor: 3, wall: 4, ambience: "road", lighting: "bright" },
+
+  // Default
+  default: { floor: 1, wall: 10, ambience: "dungeon", lighting: "dim" },
+};
+
+// NPC role to entity type mapping
+const NPC_ROLE_ENTITY_MAP: Record<string, number> = {
+  merchant: 141,
+  shopkeeper: 141,
+  trader: 141,
+  vendor: 141,
+  guard: 142,
+  soldier: 142,
+  knight: 142,
+  warrior: 142,
+  villager: 140,
+  peasant: 140,
+  farmer: 140,
+  citizen: 140,
+  commoner: 140,
+  innkeeper: 140,
+  bartender: 140,
+  // Hostile types
+  bandit: 115,      // ORC as bandit
+  thief: 102,       // PLAYER_ROGUE repurposed
+  assassin: 102,
+  goblin: 110,
+  orc: 115,
+  skeleton: 120,
+  zombie: 125,
+  // Default
+  default: 140,
+};
+
+// Calculate distance between two locations
+function calculateDistance(loc1: { mapX?: number; mapY?: number }, loc2: { mapX?: number; mapY?: number }): number {
+  const x1 = loc1.mapX ?? 500;
+  const y1 = loc1.mapY ?? 500;
+  const x2 = loc2.mapX ?? 500;
+  const y2 = loc2.mapY ?? 500;
+  return Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+}
+
+// Get terrain config for a location type
+function getTerrainForLocation(locationType: string): { floor: number; wall: number; ambience: string; lighting: string } {
+  const normalizedType = locationType.toLowerCase().trim();
+
+  // Check for partial matches
+  for (const [key, value] of Object.entries(LOCATION_TERRAIN_MAP)) {
+    if (normalizedType.includes(key) || key.includes(normalizedType)) {
+      return value;
+    }
+  }
+
+  return LOCATION_TERRAIN_MAP.default;
+}
+
+// Get entity type for NPC role
+function getEntityTypeForNPC(role: string, isHostile: boolean): number {
+  if (isHostile) {
+    return NPC_ROLE_ENTITY_MAP.bandit; // Default hostile
+  }
+
+  const normalizedRole = role.toLowerCase().trim();
+
+  for (const [key, value] of Object.entries(NPC_ROLE_ENTITY_MAP)) {
+    if (normalizedRole.includes(key) || key.includes(normalizedRole)) {
+      return value;
+    }
+  }
+
+  return NPC_ROLE_ENTITY_MAP.default;
+}
+
+// HTTP streaming version for real-time map updates - WORLD AWARE
+export const mapStream = httpAction(async (ctx, request) => {
+  const {
+    campaignId,
+    playerAction,
+    currentLocationName,
+    currentLocationDescription,
+    locationType,
+    currentRoomState,
+    needsNewRoom,
+    narrativeContext,
+  } = await request.json();
+
+  const corsHeaders = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+  };
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return new Response(JSON.stringify({ events: [], error: "API key missing" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
+  }
+
+  // =========================================================================
+  // FETCH CAMPAIGN TEMPLATE DATA - This is the key enhancement!
+  // =========================================================================
+
+  // Extend Location type for mapX/mapY
+  interface LocationWithMap extends Location {
+    mapX?: number;
+    mapY?: number;
+    environment?: string;
+    neighbors?: Id<"locations">[];
+  }
+
+  // Extend NPC type for grid positions
+  interface NPCWithGrid extends NPC {
+    gridX?: number;
+    gridY?: number;
+    spriteColor?: string;
+    isHostile?: boolean;
+    health?: number;
+    maxHealth?: number;
+  }
+
+  let worldContext = "";
+  let locationsData: LocationWithMap[] = [];
+  let npcsAtLocation: NPCWithGrid[] = [];
+  let nearbyLocations: { name: string; type: string; distance: number; direction: string }[] = [];
+  let currentLocation: LocationWithMap | null = null;
+  let terrain = LOCATION_TERRAIN_MAP.default;
+
+  try {
+    // Fetch full campaign data
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const campaignData = await ctx.runQuery((api as any).forge.getCampaignDetails, {
+      campaignId: campaignId
+    });
+
+    if (campaignData) {
+      locationsData = campaignData.locations as LocationWithMap[];
+      const allNpcs = campaignData.npcs as NPCWithGrid[];
+
+      // Find current location
+      currentLocation = locationsData.find(
+        (loc: LocationWithMap) => loc.name.toLowerCase() === currentLocationName?.toLowerCase()
+      ) || null;
+
+      // Get terrain for this location
+      if (currentLocation) {
+        terrain = getTerrainForLocation(currentLocation.type || locationType || "dungeon");
+      } else if (locationType) {
+        terrain = getTerrainForLocation(locationType);
+      }
+
+      // Find NPCs at current location
+      if (currentLocation) {
+        npcsAtLocation = allNpcs.filter(
+          (npc: NPCWithGrid) => npc.locationId?.toString() === currentLocation!._id.toString() && !npc.isDead
+        );
+      }
+
+      // Calculate nearby locations with distances and directions
+      if (currentLocation && currentLocation.mapX !== undefined && currentLocation.mapY !== undefined) {
+        nearbyLocations = locationsData
+          .filter((loc: LocationWithMap) => loc._id !== currentLocation!._id)
+          .map((loc: LocationWithMap) => {
+            const dist = calculateDistance(currentLocation!, loc);
+            // Calculate direction
+            const dx = (loc.mapX ?? 500) - (currentLocation!.mapX ?? 500);
+            const dy = (loc.mapY ?? 500) - (currentLocation!.mapY ?? 500);
+            let direction = "";
+            if (Math.abs(dy) > Math.abs(dx) * 0.5) direction += dy < 0 ? "north" : "south";
+            if (Math.abs(dx) > Math.abs(dy) * 0.5) direction += dx > 0 ? "east" : "west";
+            if (!direction) direction = "nearby";
+
+            return {
+              name: loc.name,
+              type: loc.type,
+              distance: Math.round(dist),
+              direction,
+            };
+          })
+          .sort((a: { distance: number }, b: { distance: number }) => a.distance - b.distance)
+          .slice(0, 8); // Top 8 nearest locations
+      }
+
+      // Build world context for the AI
+      worldContext = `
+WORLD BIBLE: ${campaignData.campaign.worldBible || campaignData.campaign.description || "A vast fantasy world"}
+
+THIS CAMPAIGN HAS ${locationsData.length} LOCATIONS:
+${locationsData.slice(0, 15).map((loc: LocationWithMap) =>
+  `- ${loc.name} (${loc.type}): ${loc.description?.substring(0, 80) || 'No description'}... ${loc.mapX !== undefined ? `[Map: ${loc.mapX},${loc.mapY}]` : ''}`
+).join('\n')}
+${locationsData.length > 15 ? `... and ${locationsData.length - 15} more locations` : ''}
+
+${nearbyLocations.length > 0 ? `
+NEARBY LOCATIONS FROM ${currentLocationName} (for world-scale room generation):
+${nearbyLocations.map(loc =>
+  `- ${loc.name} (${loc.type}): ${loc.distance} units ${loc.direction}`
+).join('\n')}
+
+When generating OUTDOOR or OVERWORLD rooms, include PATHS and SIGNS pointing to these nearby locations.
+The farther the distance, the more travel required (100 units ≈ 1 day travel).
+` : ''}
+
+${npcsAtLocation.length > 0 ? `
+NPCs AT ${currentLocationName.toUpperCase()} - INCLUDE THESE IN THE MAP:
+${npcsAtLocation.map((npc: NPCWithGrid) => {
+  const entityType = getEntityTypeForNPC(npc.role, npc.isHostile || npc.attitude === "Hostile");
+  return `- ${npc.name} (${npc.role}, ${npc.attitude}): Entity type ${entityType}${npc.gridX !== undefined ? ` at (${npc.gridX},${npc.gridY})` : ''} - ${npc.description?.substring(0, 50) || ''}...`;
+}).join('\n')}
+` : ''}`;
+    }
+  } catch (e) {
+    console.error("[MapStream] Failed to fetch campaign data:", e);
+    // Continue with basic generation if fetch fails
+  }
+
+  // Build the world-aware map prompt
+  const mapPrompt = `You are a WORLD-AWARE MAP GENERATION AI for a 2D tilemap RPG. Your job is to create DYNAMIC, LIVING maps based on the creator's world template.
+
+=== WORLD CONTEXT ===
+${worldContext || 'No world data available - generate a generic dungeon.'}
+
+=== CURRENT LOCATION ===
+LOCATION: ${currentLocationName} (${locationType || currentLocation?.type || 'dungeon'})
+${currentLocationDescription || currentLocation?.description ? `DESCRIPTION: ${currentLocationDescription || currentLocation?.description}` : ''}
+${currentLocation?.environment ? `ENVIRONMENT: ${currentLocation.environment}` : ''}
+
+=== TERRAIN FOR THIS LOCATION TYPE ===
+Floor Tile: ${terrain.floor} (${Object.entries(LOCATION_TERRAIN_MAP).find(([, v]) => v.floor === terrain.floor)?.[0] || 'stone'})
+Wall Tile: ${terrain.wall}
+Ambience: ${terrain.ambience}
+Lighting: ${terrain.lighting}
+
+=== PLAYER ACTION ===
+"${playerAction}"
+${narrativeContext ? `NARRATIVE CONTEXT: ${narrativeContext}` : ''}
+
+=== CURRENT ROOM STATE ===
+${currentRoomState ? `
+Room: ${currentRoomState.width}x${currentRoomState.height}
+Player at: (${currentRoomState.playerPosition?.x || 5}, ${currentRoomState.playerPosition?.y || 8})
+Entities: ${currentRoomState.entities?.map((e: { name: string; x: number; y: number }) => `${e.name}@(${e.x},${e.y})`).join(', ') || 'none'}
+Objects: ${currentRoomState.objects?.length || 0} objects
+` : 'NO ROOM EXISTS - Must generate a new one!'}
+
+=== TASK ===
+${needsNewRoom ? `
+GENERATE A NEW ROOM that represents "${currentLocationName}".
+
+**CRITICAL ROOM DESIGN RULES:**
+1. DO NOT generate simple rectangular box rooms!
+2. Create INTERESTING, VARIED shapes:
+   - L-shaped rooms, T-junctions, irregular natural caves
+   - Multiple connected chambers with corridors
+   - Open outdoor areas with winding paths
+   - Buildings with alcoves, corners, and features
+
+3. ALWAYS include EXITS to nearby locations:
+   - Place DOOR_CLOSED(30) or GATE_CLOSED(33) tiles at exits
+   - Each exit should have a corresponding object with "exit" metadata
+   - Outdoor areas: use PATH tiles (44) leading off the edge
+   - Include at least 2-4 exits for towns/villages
+
+4. Size based on location type:
+   - Towns/Villages: 16-20 tiles, open layout with streets/paths
+   - Dungeons/Caves: 12-16 tiles, corridors connecting chambers
+   - Buildings/Shops: 8-12 tiles, interior furniture
+   - Forests/Outdoors: 14-18 tiles, organic shapes with trees
+
+5. POPULATE richly:
+   - Add NPCs from the template at this location
+   - Include environmental objects (torches, furniture, trees)
+   - Place interactable objects (chests, doors, signs)
+` : `
+GENERATE EVENTS based on "${playerAction}".
+
+If player wants to TRAVEL to another location (mentions going to a place, leaving, exiting):
+- Generate a "transitionLocation" event: {"type":"transitionLocation","transitionLocation":{"toLocation":"LocationName"}}
+
+If player wants to MOVE within the room:
+- Generate moveEntity with path to target
+
+If player wants to INTERACT (open chest, talk to NPC, etc.):
+- Generate appropriate interaction events
+`}
+
+=== TILE ID REFERENCE ===
+TERRAIN (use for this location type):
+VOID=0, FLOOR_STONE=1, FLOOR_WOOD=2, FLOOR_DIRT=3, FLOOR_GRASS=4, FLOOR_SAND=5, FLOOR_COBBLE=6
+WALL_STONE=10, WALL_BRICK=11, WALL_CAVE=12, WALL_WOOD=13
+WATER_SHALLOW=20, WATER_DEEP=21, LAVA=22, ICE=23
+DOOR_CLOSED=30, DOOR_OPEN=31, DOOR_LOCKED=32, GATE_CLOSED=33, GATE_OPEN=34
+STAIRS_DOWN=40, STAIRS_UP=41, PIT=42, BRIDGE=43, PATH=44
+
+ENTITIES (match to NPC roles):
+PLAYER_WARRIOR=100, PLAYER_MAGE=101, PLAYER_ROGUE=102
+GOBLIN=110, GOBLIN_ARCHER=111, ORC=115, ORC_BERSERKER=116
+SKELETON=120, SKELETON_WARRIOR=121, ZOMBIE=125
+RAT=130, GIANT_RAT=131, SPIDER=132, GIANT_SPIDER=133, BAT=134, WOLF=135
+VILLAGER=140, MERCHANT=141, GUARD=142, ELDER=143, CHILD=144
+BOSS_DEMON=150, BOSS_DRAGON=151, BOSS_LICH=152
+
+OBJECTS (environmental decoration):
+CHEST_CLOSED=200, CHEST_OPEN=201, CHEST_LOCKED=202, BARREL=203, CRATE=204
+TABLE=210, CHAIR=211, BED=212, BOOKSHELF=213, CABINET=214
+TORCH_WALL=220, TORCH_GROUND=221, CAMPFIRE=222, BRAZIER=223, LANTERN=224, STREETLAMP=225
+ALTAR=230, FOUNTAIN=231, WELL=232, STATUE=233, SIGNPOST=234
+TREE=235, BUSH=236, FLOWER=237, ROCK=238, FENCE=239
+GOLD_PILE=240, GEM=241, POTION=242, SCROLL=243
+ANVIL=244, FORGE=245, CAULDRON=246
+TRAP_SPIKE=250, TRAP_ARROW=251, TRAP_FIRE=252
+
+=== WORLD-BUILDING RULES ===
+
+1. TOWN/VILLAGE GENERATION:
+   - Use FLOOR_COBBLE(6) or FLOOR_DIRT(3) for streets
+   - Add SIGNPOST(234) pointing to nearby locations
+   - Include MERCHANT(141), GUARD(142), VILLAGER(140) NPCs
+   - Add WELL(232), FOUNTAIN(231), STREETLAMP(225) decorations
+   - Place buildings with DOOR_CLOSED(30) as entrances
+   - Leave open areas for markets/plazas
+
+2. DUNGEON/CAVE GENERATION:
+   - Use FLOOR_STONE(1) and WALL_CAVE(12) or WALL_STONE(10)
+   - Add TORCH_WALL(220) for sparse lighting
+   - Include hostile entities: GOBLIN, SKELETON, etc.
+   - Place CHEST_CLOSED(200), BARREL(203) for loot
+   - Create corridors connecting chambers
+   - Add STAIRS_DOWN(40) for deeper levels
+
+3. FOREST/OUTDOOR GENERATION:
+   - Use FLOOR_GRASS(4) with TREE(235), BUSH(236)
+   - Create winding FLOOR_DIRT(3) paths
+   - Add natural features: ROCK(238), WATER_SHALLOW(20)
+   - Include wildlife: WOLF(135), RAT(130), BAT(134)
+   - Place SIGNPOST(234) at path intersections
+
+4. BUILDING INTERIORS:
+   - Use FLOOR_WOOD(2) and WALL_WOOD(13)
+   - Add furniture: TABLE(210), CHAIR(211), BED(212)
+   - Include appropriate NPCs (MERCHANT in shops, etc.)
+   - Smaller room sizes (8-12 tiles)
+
+5. MOVEMENT DETECTION - Generate moveEntity when player says:
+   - "walk to", "go to", "approach", "head toward"
+   - Direction words: north, south, east, west, left, right
+   - Object targets: "the chest", "the door", "the merchant"
+
+=== OUTPUT FORMAT ===
+Return ONLY a JSON array of events.
+
+**ROOM GENERATION EXAMPLE (village with exits):**
+[{"type":"generateRoom","generateRoom":{
+  "width":18,"height":16,
+  "tiles":[
+    [0,0,0,0,4,4,44,44,44,4,4,0,0,0,0,0,0,0],
+    [0,4,4,4,4,4,44,4,44,4,4,4,4,4,0,0,0,0],
+    [4,4,4,4,4,4,44,4,44,4,4,4,4,4,4,0,0,0],
+    [4,4,13,13,13,30,13,4,44,4,4,4,4,4,4,4,0,0],
+    [4,4,13,2,2,2,13,4,44,4,4,13,13,30,13,4,4,0],
+    [4,4,13,2,2,2,13,4,44,44,44,13,2,2,13,4,4,4],
+    [4,4,13,13,13,13,13,4,4,4,44,13,2,2,13,4,4,4],
+    [4,4,4,4,4,4,4,4,4,4,44,13,13,13,13,4,4,4],
+    [4,4,4,4,6,6,6,6,6,44,44,4,4,4,4,4,4,4],
+    [4,4,4,6,6,6,6,6,6,44,4,4,4,4,4,4,4,4],
+    [4,4,4,6,6,6,6,6,6,44,44,44,44,44,44,4,4,4],
+    [4,4,4,4,6,6,6,6,4,4,4,4,4,4,44,4,4,0],
+    [4,4,4,4,4,4,4,4,4,4,4,4,4,4,44,4,0,0],
+    [0,4,4,4,4,4,4,4,4,4,4,4,4,4,44,0,0,0],
+    [0,0,4,4,4,4,4,4,4,4,4,4,4,44,44,0,0,0],
+    [0,0,0,0,0,4,4,4,4,4,4,44,44,44,0,0,0,0]
+  ],
+  "entities":[
+    {"id":"guard_1","type":142,"x":7,"y":9,"name":"Village Guard","hostile":false,"hp":30,"maxHp":30},
+    {"id":"merchant_1","type":141,"x":4,"y":5,"name":"Trader Mira","hostile":false,"hp":20,"maxHp":20}
+  ],
+  "objects":[
+    {"id":"well_1","type":232,"x":6,"y":9,"interactable":true},
+    {"id":"sign_north","type":234,"x":7,"y":1,"interactable":true,"label":"To Dark Forest","exit":{"toLocation":"Dark Forest"}},
+    {"id":"sign_east","type":234,"x":14,"y":10,"interactable":true,"label":"To Mountain Pass","exit":{"toLocation":"Mountain Pass"}},
+    {"id":"door_shop","type":30,"x":5,"y":3,"interactable":true,"label":"General Store"},
+    {"id":"door_inn","type":30,"x":13,"y":4,"interactable":true,"label":"The Rusty Tankard"}
+  ],
+  "lighting":"bright",
+  "ambience":"village",
+  "playerSpawn":{"x":9,"y":9}
+}}]
+
+**LOCATION TRANSITION (when player uses an exit):**
+[{"type":"transitionLocation","transitionLocation":{"toLocation":"Dark Forest","direction":"north"}}]
+
+**MOVEMENT:**
+[{"type":"moveEntity","moveEntity":{"entityId":"player","path":[{"x":6,"y":6},{"x":7,"y":5}],"speed":"normal"}}]
+
+IMPORTANT:
+- Tiles array must have exactly height rows, each with exactly width columns
+- Use 0 (VOID) for areas outside the walkable map
+- Use 44 (PATH) for roads/trails that lead to exits
+- Objects with "exit" property trigger location transitions when interacted
+
+RESPOND WITH ONLY THE JSON ARRAY - NO EXPLANATION TEXT:`;
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: mapPrompt }] }],
+        generationConfig: {
+          temperature: 0.8, // Slightly higher for more creative world generation
+          maxOutputTokens: 3000, // More tokens for larger rooms
+          responseMimeType: "application/json",
+        },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("[MapStream] API Error:", errorText);
+    return new Response(JSON.stringify({ events: [], error: "API Error" }), {
+      status: response.status,
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
+  }
+
+  const data = await response.json();
+  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
+
+  try {
+    let cleanedJson = rawText
+      .replace(/```json/g, '')
+      .replace(/```/g, '')
+      .replace(/:\s*True\b/g, ': true')
+      .replace(/:\s*False\b/g, ': false')
+      .replace(/:\s*None\b/g, ': null')
+      .replace(/,\s*([}\]])/g, '$1')
+      .trim();
+
+    if (cleanedJson.startsWith('{')) {
+      const parsed = JSON.parse(cleanedJson);
+      if (parsed.events) {
+        return new Response(JSON.stringify({ events: parsed.events }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+    }
+
+    const events = JSON.parse(cleanedJson);
+    console.log("[MapStream] Generated events for", currentLocationName, ":", events.length, "events");
+    return new Response(JSON.stringify({ events: Array.isArray(events) ? events : [events] }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
+  } catch (e) {
+    console.error("[MapStream] Parse error:", e, "Raw:", rawText.substring(0, 200));
+    return new Response(JSON.stringify({ events: [], error: "Parse error", raw: rawText.substring(0, 500) }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
+  }
+});
+
 export const generateQuest = action({
   args: {
     campaignId: v.id("campaigns"),
@@ -1129,28 +1951,52 @@ export const generateQuest = action({
 
     const prompt = `
     Generate a unique, engaging quest located in or near "${args.locationName}".
-    
-    The quest should fit the campaign tone.
-    Include:
-    1. Title
-    2. Description (hook + objective)
-    3. A reward item (Name, Type, Rarity, Effects, Description).
-    
+
+    The quest should:
+    - Fit the campaign tone and lore
+    - Have clear, achievable objectives
+    - Reference NPCs, locations, or factions from the world
+    - Feel integrated into the world (not generic fetch quests)
+
+    Create a quest with 2-4 specific objectives. Objective types:
+    - "talk": Speak to a specific NPC
+    - "explore": Visit a specific location
+    - "collect": Gather items or information
+    - "kill": Defeat enemies
+    - "deliver": Bring something to someone
+    - "escort": Protect someone
+    - "custom": Other unique objectives
+
     Respond in this STRICT JSON format:
     {
-      "title": "Quest Title",
-      "description": "Full quest description...",
+      "title": "Quest Title (compelling, evocative)",
+      "description": "Full quest description with hook, context, and stakes. Make the player care about WHY they should do this.",
+      "difficulty": "easy|medium|hard|legendary",
+      "xpReward": 50,
+      "goldReward": 25,
+      "objectives": [
+        {
+          "id": "obj_1",
+          "description": "What the player needs to do",
+          "type": "talk|explore|collect|kill|deliver|escort|custom",
+          "target": "Target name (NPC, location, item, etc)",
+          "targetCount": 1,
+          "isCompleted": false,
+          "isOptional": false,
+          "hint": "A subtle hint if player gets stuck"
+        }
+      ],
       "rewards": [
         {
           "name": "Item Name",
           "type": "Weapon/Armor/Potion/etc",
           "rarity": "Common/Rare/Legendary",
           "effects": "Short effect description",
-          "description": "Flavor text"
+          "description": "Flavor text that fits the world"
         }
       ]
     }
-    Do not wrap in markdown.
+    Do not wrap in markdown. Make the quest feel unique to this world.
     `;
 
     const response = await fetch(
@@ -1184,7 +2030,11 @@ export const generateQuest = action({
             title: questData.title,
             description: questData.description,
             rewards: questData.rewards || [],
-            source: "ai"
+            source: "ai",
+            objectives: questData.objectives || [],
+            difficulty: questData.difficulty || "medium",
+            xpReward: questData.xpReward || 50,
+            goldReward: questData.goldReward || 25,
         });
 
         return questData;

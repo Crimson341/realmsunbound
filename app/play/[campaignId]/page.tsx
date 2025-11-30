@@ -10,7 +10,7 @@ import {
     Send, Heart, MapPin, Map,
     Menu, X, ArrowLeft,
     Loader2, Swords, Backpack, UserCircle, Search, Trophy,
-    Tent, AlertTriangle, Skull, Coins, ShieldAlert
+    Tent, AlertTriangle, Skull, Coins, ShieldAlert, Users
 } from 'lucide-react';
 import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -37,6 +37,7 @@ import { LootableBodiesList, TradingNPCsList } from '../../../components/NPCInte
 import { ShopsAtLocation } from '../../../components/ShopsAtLocation';
 import { AbilitiesBar } from '../../../components/AbilitiesBar';
 import { WorldMapModal } from '../../../components/WorldMapModal';
+import { RelationshipsPanel } from '../../../components/RelationshipsPanel';
 
 // --- TYPES ---
 
@@ -209,58 +210,77 @@ const SmartTooltip = ({ children, content, className }: { children: React.ReactN
     };
 
     return (
-        <div ref={ref} className={cn("relative inline-block", className)} onMouseEnter={handleEnter} onMouseLeave={handleLeaveTrigger}> 
+        <div ref={ref} className={cn("relative inline-block", className)} onMouseEnter={handleEnter} onMouseLeave={handleLeaveTrigger}>
             {children}
             {(state !== 'idle') && (
-                <div
-                     className={cn(
-                        "absolute left-1/2 -translate-x-1/2 w-64 bg-genshin-dark text-stone-300 text-xs rounded-sm border border-genshin-gold/30 shadow-2xl backdrop-blur-xl z-50 animate-in fade-in zoom-in-95 duration-200",
-                        position === 'top' ? "bottom-full mb-2" : "top-full mt-2"
-                     )}
-                     onMouseLeave={handleLeaveTooltip}
-                > 
-                    <div className="h-0.5 bg-stone-800 w-full absolute top-0 left-0 rounded-t-sm overflow-hidden">
-                         <div
-                            className="h-full bg-genshin-gold ease-linear"
-                            style={{
-                                width: '100%',
-                                transitionProperty: 'width',
-                                transitionDuration: state === 'locked' ? '0s' : '2000ms',
-                                transitionTimingFunction: 'linear'
-                            }}
-                         />
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.95, y: position === 'top' ? 10 : -10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    className={cn(
+                        "absolute left-1/2 -translate-x-1/2 w-72 bg-slate-950/95 backdrop-blur-xl text-slate-300 text-xs rounded-xl z-50",
+                        "border border-purple-500/30 shadow-[0_0_30px_rgba(139,92,246,0.15)]",
+                        position === 'top' ? "bottom-full mb-3" : "top-full mt-3"
+                    )}
+                    onMouseLeave={handleLeaveTooltip}
+                >
+                    {/* Animated arcane border */}
+                    <div className="absolute inset-0 rounded-xl overflow-hidden pointer-events-none">
+                        <div className="absolute inset-0 bg-gradient-to-r from-purple-500/10 via-cyan-500/5 to-purple-500/10 animate-pulse" />
                     </div>
-                    <div className="p-3 relative">
+                    {/* Top progress bar */}
+                    <div className="h-0.5 bg-slate-800 w-full absolute top-0 left-0 rounded-t-xl overflow-hidden">
+                        <motion.div
+                            className="h-full bg-gradient-to-r from-purple-500 via-cyan-400 to-purple-500"
+                            initial={{ width: '100%' }}
+                            animate={{ width: state === 'locked' ? '100%' : '0%' }}
+                            transition={{ duration: state === 'locked' ? 0 : 2, ease: 'linear' }}
+                        />
+                    </div>
+                    {/* Rune corners */}
+                    <div className="absolute top-1.5 left-1.5 text-purple-500/30 text-[10px]">◈</div>
+                    <div className="absolute top-1.5 right-1.5 text-purple-500/30 text-[10px]">◈</div>
+                    <div className="absolute bottom-1.5 left-1.5 text-purple-500/30 text-[10px]">◈</div>
+                    <div className="absolute bottom-1.5 right-1.5 text-purple-500/30 text-[10px]">◈</div>
+                    <div className="p-4 relative">
                         {content}
-                        <div className={cn(
-                            "absolute left-1/2 -translate-x-1/2 border-4 border-transparent w-0 h-0",
-                            position === 'top' 
-                                ? "top-full border-t-genshin-dark -mt-0.5" 
-                                : "bottom-full border-b-genshin-dark -mb-0.5"
-                        )} />
                     </div>
-                </div>
+                    {/* Arrow */}
+                    <div className={cn(
+                        "absolute left-1/2 -translate-x-1/2 w-3 h-3 bg-slate-950 border-purple-500/30 rotate-45",
+                        position === 'top'
+                            ? "top-full -mt-1.5 border-r border-b"
+                            : "bottom-full -mb-1.5 border-l border-t"
+                    )} />
+                </motion.div>
             )}
         </div>
     )
 };
 
 const EntitySpan = ({ entity, text }: { entity: any, text: string }) => {
+    const typeColors: Record<string, { text: string; bg: string; border: string }> = {
+        'Location': { text: 'text-cyan-400', bg: 'bg-cyan-500/10', border: 'border-cyan-500/30' },
+        'NPC': { text: 'text-purple-400', bg: 'bg-purple-500/10', border: 'border-purple-500/30' },
+        'Item': { text: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/30' },
+        'Monster': { text: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/30' },
+    };
+    const colors = typeColors[entity.type] || typeColors['NPC'];
+
     const tooltipContent = (
         <>
-            <div className="flex items-center justify-between mb-2 border-b border-genshin-gold/20 pb-2">
-                <span className="font-bold text-genshin-gold text-sm font-serif">{entity.name}</span>
-                <span className="text-[10px] uppercase tracking-wider font-bold text-stone-400 bg-white/5 px-2 py-0.5 rounded-sm border border-white/10">{entity.type}</span>
+            <div className="flex items-center justify-between mb-3 border-b border-slate-700/50 pb-2">
+                <span className={`font-bold ${colors.text} text-sm font-serif`}>{entity.name}</span>
+                <span className={`text-[10px] uppercase tracking-widest font-bold ${colors.text} ${colors.bg} px-2 py-0.5 rounded-full border ${colors.border}`}>
+                    {entity.type}
+                </span>
             </div>
-            <p className="leading-relaxed italic text-stone-400 font-sans">{entity.description || "No details available."}</p>
+            <p className="leading-relaxed text-slate-400 text-xs">{entity.description || "No details available."}</p>
         </>
     );
 
     return (
         <SmartTooltip content={tooltipContent}>
-             <span
-                className="font-semibold border-b border-dotted border-genshin-gold/40 hover:border-genshin-gold cursor-help transition-colors text-genshin-gold-light"
-            >
+            <span className={`font-medium ${colors.text} border-b border-dotted ${colors.border} hover:border-solid cursor-help transition-all hover:brightness-125`}>
                 {text}
             </span>
         </SmartTooltip>
@@ -371,6 +391,10 @@ export default function PlayPage() {
     const spreadRumor = useMutation(api.world.spreadRumor);
     const createDeathRumor = useMutation(api.world.createDeathRumor);
 
+    // Quest system mutations
+    const updateQuestProgress = useMutation(api.forge.updateQuestProgress);
+    const completeQuest = useMutation(api.forge.completeQuest);
+
     // Message persistence
     const saveMessage = useMutation(api.messages.saveMessage);
 
@@ -405,6 +429,10 @@ export default function PlayPage() {
 
     // --- MAP STATE ---
     const [isMapOpen, setIsMapOpen] = useState(false);
+
+    // --- RELATIONSHIPS STATE ---
+    const [isRelationshipsOpen, setRelationshipsOpen] = useState(false);
+    const relationships = useQuery(api.forge.getPlayerRelationships, { campaignId });
 
     // --- LOAD MESSAGES FROM DB ---
     useEffect(() => {
@@ -706,6 +734,70 @@ export default function PlayPage() {
                     rarity: 'uncommon' as Rarity,
                     xp: 0,
                 });
+            }
+
+            // Quest progress event - update objective progress
+            if (event.type === 'questProgress' && event.questProgress && data?.activeQuests) {
+                const { questTitle, objectiveId, incrementCount } = event.questProgress;
+                // Find the quest by title
+                const quest = data.activeQuests.find((q: any) =>
+                    q.title.toLowerCase() === questTitle.toLowerCase()
+                );
+                if (quest) {
+                    updateQuestProgress({
+                        questId: quest._id,
+                        objectiveId: objectiveId,
+                        incrementCount: incrementCount || 1,
+                        completeObjective: !incrementCount,
+                    }).catch(console.error);
+
+                    // Show progress toast
+                    addReward({
+                        item: `Quest Progress: ${event.questProgress.objectiveDescription || 'Objective completed!'}`,
+                        rarity: 'uncommon' as Rarity,
+                        xp: 10,
+                    });
+                    addXp(10);
+                }
+            }
+
+            // Quest complete event - complete quest and grant rewards
+            if (event.type === 'questComplete' && event.questComplete && data?.activeQuests) {
+                const { questTitle, xpReward, goldReward, itemRewards } = event.questComplete;
+                // Find the quest by title
+                const quest = data.activeQuests.find((q: any) =>
+                    q.title.toLowerCase() === questTitle.toLowerCase()
+                );
+                if (quest && playerId) {
+                    completeQuest({
+                        questId: quest._id,
+                        playerId: playerId,
+                        campaignId: campaignId,
+                    }).then((result) => {
+                        if (result.success) {
+                            // Show completion celebration
+                            setScreenEffect('levelup'); // Epic celebration effect
+                            addReward({
+                                item: `Quest Complete: ${questTitle}`,
+                                rarity: 'legendary' as Rarity,
+                                xp: xpReward || 50,
+                            });
+                            if (xpReward) addXp(xpReward);
+                            if (goldReward) {
+                                setGold(prev => prev + goldReward);
+                                stateUpdates.gold = (stateUpdates.gold || gold) + goldReward;
+                            }
+                            // Show item rewards
+                            itemRewards?.forEach((itemName: string) => {
+                                addReward({
+                                    item: itemName,
+                                    rarity: 'rare' as Rarity,
+                                    xp: 0,
+                                });
+                            });
+                        }
+                    }).catch(console.error);
+                }
             }
         }
 
@@ -1300,45 +1392,62 @@ I attempt to disengage and flee from combat with ${combatState.enemyName}!`;
             </AnimatePresence>
 
             {/* LEFT SIDEBAR (Quests) */}
-            <div className="hidden lg:flex w-72 bg-[#131520] border-r border-genshin-gold/10 flex-col z-20 shadow-[10px_0_30px_-10px_rgba(0,0,0,0.5)]">
-                <div className="p-6 border-b border-genshin-gold/10 bg-genshin-dark/50 flex items-center justify-between">
-                    <h2 className="font-serif font-bold text-genshin-gold tracking-wider flex items-center gap-2">
-                        <Swords size={18} />
+            <div className="hidden lg:flex w-72 bg-slate-950 border-r border-purple-500/20 flex-col z-20 shadow-[10px_0_40px_-10px_rgba(0,0,0,0.7)] relative overflow-hidden">
+                {/* Arcane background pattern */}
+                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(139,92,246,0.05)_0%,transparent_50%)] pointer-events-none" />
+
+                <div className="p-5 border-b border-purple-500/20 bg-slate-900/50 flex items-center justify-between relative">
+                    <h2 className="font-serif font-bold text-transparent bg-clip-text bg-gradient-to-r from-amber-300 to-yellow-200 tracking-wider flex items-center gap-2.5">
+                        <Swords size={18} className="text-amber-400" />
                         Quest Log
                     </h2>
-                    <button 
+                    <button
                         onClick={handleGenerateQuest}
                         disabled={isGeneratingQuest}
-                        className="p-1.5 rounded hover:bg-white/10 text-stone-400 hover:text-genshin-gold transition-all disabled:opacity-50 group relative"
+                        className="p-2 rounded-lg hover:bg-purple-500/10 text-slate-400 hover:text-purple-400 transition-all disabled:opacity-50 group relative border border-transparent hover:border-purple-500/30"
                     >
-                        {isGeneratingQuest ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
-                        <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 px-2 py-1 bg-black text-xs rounded opacity-0 group-hover:opacity-100 whitespace-nowrap pointer-events-none z-50">
+                        {isGeneratingQuest ? <Loader2 size={16} className="animate-spin text-purple-400" /> : <Search size={16} />}
+                        <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 px-3 py-1.5 bg-slate-900 border border-purple-500/30 text-xs rounded-lg opacity-0 group-hover:opacity-100 whitespace-nowrap pointer-events-none z-50 text-slate-300">
                             Find Quest in Area
                         </span>
                     </button>
                 </div>
-                <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
+                <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar relative">
                     {data.activeQuests && data.activeQuests.length > 0 ? (
-                        <div className="space-y-4">
+                        <div className="space-y-3">
                             {data.activeQuests.map((quest: any, i: number) => (
-                                <div 
-                                    key={i} 
+                                <motion.div
+                                    key={i}
+                                    initial={{ opacity: 0, x: -10 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    transition={{ delay: i * 0.05 }}
                                     onClick={() => setSelectedQuest(quest)}
-                                    className="bg-genshin-dark/50 rounded-sm p-4 border border-genshin-gold/10 hover:border-genshin-gold/30 transition-all group cursor-pointer shadow-sm hover:bg-white/5 active:scale-95"
+                                    className="relative bg-slate-900/70 rounded-xl p-4 border border-purple-500/20 hover:border-amber-500/40 transition-all group cursor-pointer hover:bg-slate-800/50 active:scale-[0.98] overflow-hidden"
                                 >
-                                    <div className="font-bold text-genshin-gold mb-2 font-serif group-hover:text-white transition-colors text-sm flex justify-between">
-                                        {quest.title}
-                                        {quest.source === 'ai' && <span className="text-[8px] uppercase tracking-widest border border-genshin-gold/20 px-1 rounded bg-genshin-gold/5">Dynamic</span>}
+                                    {/* Hover glow effect */}
+                                    <div className="absolute inset-0 bg-gradient-to-r from-amber-500/0 via-amber-500/5 to-amber-500/0 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                    {/* Rune corner */}
+                                    <div className="absolute top-1.5 right-1.5 text-amber-500/20 text-[10px]">◈</div>
+
+                                    <div className="relative z-10">
+                                        <div className="font-bold text-amber-400 mb-2 font-serif group-hover:text-amber-300 transition-colors text-sm flex justify-between items-start gap-2">
+                                            <span className="line-clamp-1">{quest.title}</span>
+                                            {quest.source === 'ai' && (
+                                                <span className="text-[8px] uppercase tracking-widest border border-cyan-500/30 px-1.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 flex-shrink-0">
+                                                    Dynamic
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="text-slate-500 text-xs leading-relaxed line-clamp-2 group-hover:text-slate-400">{quest.description}</div>
                                     </div>
-                                    <div className="text-stone-500 text-xs leading-relaxed line-clamp-2 group-hover:text-stone-400">{quest.description}</div>
-                                </div>
+                                </motion.div>
                             ))}
                         </div>
                     ) : (
-                        <div className="text-stone-600 italic text-sm border border-dashed border-stone-800 p-6 rounded-sm text-center">
+                        <div className="text-slate-500 text-sm border border-dashed border-slate-700 p-6 rounded-xl text-center bg-slate-900/30">
+                            <Swords size={24} className="mx-auto mb-3 opacity-30" />
                             No active quests.
-                            <br/>
-                            <span className="text-xs text-stone-700 mt-2 block">
+                            <span className="text-xs text-slate-600 mt-2 block">
                                 Explore or click the loupe to find rumors.
                             </span>
                         </div>
@@ -1349,82 +1458,131 @@ I attempt to disengage and flee from combat with ${combatState.enemyName}!`;
             {/* MAIN CHAT AREA */}
             <div className="flex-1 flex flex-col relative">
                 {/* Header */}
-                <header className="h-16 border-b border-genshin-gold/20 flex items-center justify-between px-6 bg-genshin-dark/90 backdrop-blur-md z-10 shadow-lg">
-                    <div className="flex items-center gap-4">
-                        <Link href="/realms" className="p-2 hover:bg-white/5 rounded-full transition-colors group">
-                            <ArrowLeft size={20} className="text-stone-400 group-hover:text-genshin-gold transition-colors" />
+                <header className="h-18 border-b border-purple-500/20 flex items-center justify-between px-6 bg-slate-950/95 backdrop-blur-xl z-10 shadow-[0_4px_30px_rgba(0,0,0,0.5)] relative overflow-hidden">
+                    {/* Subtle animated gradient */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-purple-900/10 via-transparent to-cyan-900/10 pointer-events-none" />
+
+                    <div className="flex items-center gap-4 relative z-10">
+                        <Link href="/realms" className="p-2.5 hover:bg-purple-500/10 rounded-xl transition-all group border border-transparent hover:border-purple-500/30">
+                            <ArrowLeft size={20} className="text-slate-400 group-hover:text-purple-400 transition-colors" />
                         </Link>
                         <div>
-                            <h1 className="font-serif font-bold text-lg leading-none text-genshin-gold text-shadow-sm">{data.campaign.title}</h1>
-                            <SmartTooltip 
+                            <h1 className="font-serif font-bold text-xl leading-none text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-300">
+                                {data.campaign.title}
+                            </h1>
+                            <SmartTooltip
                                 content={
-                                    <p className="text-xs italic text-stone-400 max-w-[200px]">
+                                    <p className="text-xs text-slate-400 max-w-[200px]">
                                         {data.locations?.find(l => l._id === currentLocationId)?.description || "No description available."}
                                     </p>
                                 }
                             >
-                                <div className="flex items-center gap-2 text-xs text-stone-400 mt-1 font-bold tracking-wide uppercase hover:text-genshin-gold cursor-help transition-colors">
-                                    <MapPin size={12} className="text-genshin-gold" />
-                                    <span className="border-b border-dashed border-genshin-gold/30 pb-0.5">
+                                <div className="flex items-center gap-2 text-xs text-slate-400 mt-1.5 font-medium tracking-wide uppercase hover:text-cyan-400 cursor-help transition-colors">
+                                    <MapPin size={12} className="text-cyan-400" />
+                                    <span className="border-b border-dashed border-cyan-500/30 pb-0.5">
                                         {data.locations?.find(l => l._id === currentLocationId)?.name || "Unknown Location"}
                                     </span>
                                 </div>
                             </SmartTooltip>
                         </div>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 relative z-10">
                         {/* XP Bar in header */}
-                        <div className="hidden md:block w-32">
+                        <div className="hidden md:block w-36 mr-2">
                             <XPBar currentXP={xp} maxXP={xpToLevel} level={level} compact />
                         </div>
                         <button
                             onClick={() => setIsMapOpen(true)}
-                            className="p-2 hover:bg-white/5 rounded-full text-stone-400 hover:text-genshin-gold transition-colors group relative"
+                            className="p-2.5 hover:bg-cyan-500/10 rounded-xl text-slate-400 hover:text-cyan-400 transition-all border border-transparent hover:border-cyan-500/30"
                             title="Open World Map"
                         >
                             <Map size={20} />
                         </button>
-                        <button onClick={() => setCharacterSheetOpen(true)} className="p-2 hover:bg-white/5 rounded-full text-stone-400 hover:text-genshin-gold transition-colors">
+                        <button
+                            onClick={() => setRelationshipsOpen(true)}
+                            className="p-2.5 hover:bg-purple-500/10 rounded-xl text-slate-400 hover:text-purple-400 transition-all border border-transparent hover:border-purple-500/30"
+                            title="Relationships"
+                        >
+                            <Users size={20} />
+                        </button>
+                        <button onClick={() => setCharacterSheetOpen(true)} className="p-2.5 hover:bg-amber-500/10 rounded-xl text-slate-400 hover:text-amber-400 transition-all border border-transparent hover:border-amber-500/30">
                             <UserCircle size={20} />
                         </button>
-                        <button onClick={() => setSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-white/5 rounded-full text-stone-400 hover:text-genshin-gold transition-colors lg:hidden">
+                        <button onClick={() => setSidebarOpen(!isSidebarOpen)} className="p-2.5 hover:bg-purple-500/10 rounded-xl text-slate-400 hover:text-purple-400 transition-all border border-transparent hover:border-purple-500/30 lg:hidden">
                             <Menu size={20} />
                         </button>
                     </div>
                 </header>
 
                 {/* Messages */}
-                <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] bg-fixed opacity-90">
+                <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar bg-gradient-to-b from-slate-950 via-slate-900/95 to-slate-950 relative">
+                    {/* Subtle vignette effect */}
+                    <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_center,transparent_0%,rgba(0,0,0,0.4)_100%)]" />
+
                     {messages.map((msg, idx) => (
-                        <div key={idx} className={cn(
-                            "max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-2 duration-500",
-                            msg.role === 'user' ? "flex justify-end" : "flex justify-start"
-                        )}>
+                        <motion.div
+                            key={idx}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.4, ease: 'easeOut' }}
+                            className={cn(
+                                "max-w-3xl mx-auto relative",
+                                msg.role === 'user' ? "flex justify-end" : "flex justify-start"
+                            )}
+                        >
                             <div className={cn(
-                                "rounded-sm px-6 py-4 text-base leading-relaxed shadow-md max-w-[85%]",
-                                msg.role === 'user' 
-                                    ? "bg-genshin-gold text-genshin-dark font-medium rounded-br-none" 
-                                    : "bg-[#1f2235]/90 border border-genshin-gold/10 text-stone-300 rounded-bl-none backdrop-blur-sm"
+                                "relative rounded-2xl px-6 py-4 text-base leading-relaxed max-w-[85%]",
+                                msg.role === 'user'
+                                    ? "bg-gradient-to-br from-amber-500 via-amber-400 to-yellow-500 text-slate-900 font-medium rounded-br-sm shadow-[0_4px_20px_rgba(245,158,11,0.3)]"
+                                    : "bg-slate-900/90 border border-purple-500/20 text-slate-200 rounded-bl-sm backdrop-blur-md shadow-[0_4px_30px_rgba(0,0,0,0.3)]"
                             )}>
-                                {msg.role === 'model' ? (
-                                    <HighlightText text={msg.content} entities={entities} />
-                                ) : (
-                                    msg.content
+                                {/* Arcane glow for AI messages */}
+                                {msg.role === 'model' && (
+                                    <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-purple-500/5 via-transparent to-cyan-500/5 pointer-events-none" />
                                 )}
+                                {/* Rune decoration for AI messages */}
+                                {msg.role === 'model' && (
+                                    <>
+                                        <div className="absolute top-2 left-2 text-purple-500/20 text-xs">◈</div>
+                                        <div className="absolute bottom-2 right-2 text-cyan-500/20 text-xs">◈</div>
+                                    </>
+                                )}
+                                <div className="relative z-10">
+                                    {msg.role === 'model' ? (
+                                        <HighlightText text={msg.content} entities={entities} />
+                                    ) : (
+                                        msg.content
+                                    )}
+                                </div>
                             </div>
-                        </div>
+                        </motion.div>
                     ))}
                     {isLoading && (
-                        <div className="max-w-3xl mx-auto flex gap-2 px-6">
-                            <div className="w-2 h-2 rounded-full bg-genshin-gold animate-bounce" />
-                            <div className="w-2 h-2 rounded-full bg-genshin-gold animate-bounce delay-100" />
-                            <div className="w-2 h-2 rounded-full bg-genshin-gold animate-bounce delay-200" />
+                        <div className="max-w-3xl mx-auto flex gap-2 px-6 py-4">
+                            <motion.div
+                                className="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-purple-500 to-cyan-500"
+                                animate={{ y: [0, -8, 0], opacity: [0.5, 1, 0.5] }}
+                                transition={{ duration: 0.8, repeat: Infinity, delay: 0 }}
+                            />
+                            <motion.div
+                                className="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-purple-500 to-cyan-500"
+                                animate={{ y: [0, -8, 0], opacity: [0.5, 1, 0.5] }}
+                                transition={{ duration: 0.8, repeat: Infinity, delay: 0.15 }}
+                            />
+                            <motion.div
+                                className="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-purple-500 to-cyan-500"
+                                animate={{ y: [0, -8, 0], opacity: [0.5, 1, 0.5] }}
+                                transition={{ duration: 0.8, repeat: Infinity, delay: 0.3 }}
+                            />
                         </div>
                     )}
                 </div>
 
                 {/* Input Area */}
-                <div className="p-6 bg-gradient-to-t from-genshin-dark via-genshin-dark to-transparent">
+                <div className="p-6 bg-gradient-to-t from-slate-950 via-slate-950/95 to-transparent relative">
+                    {/* Arcane glow line */}
+                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1/2 h-px bg-gradient-to-r from-transparent via-purple-500/50 to-transparent" />
+
                     <div className="max-w-3xl mx-auto relative">
                         {/* Quick Action Bar */}
                         <QuickActionBar
@@ -1439,37 +1597,49 @@ I attempt to disengage and flee from combat with ${combatState.enemyName}!`;
                                 {currentChoices.map((choice, i) => (
                                     <motion.button
                                         key={`choice-${i}-${choice.slice(0, 20)}`}
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        transition={{ delay: i * 0.05 }}
+                                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        transition={{ delay: i * 0.06, type: 'spring', stiffness: 300 }}
                                         onClick={() => handleSendMessage(choice)}
                                         disabled={isLoading}
-                                        className="px-4 py-2 bg-genshin-dark/80 backdrop-blur-sm border border-genshin-gold/30 rounded-full text-xs font-bold text-genshin-gold hover:bg-genshin-gold hover:text-genshin-dark transition-all shadow-lg hover:shadow-genshin-gold/30 active:scale-95"
+                                        className="group relative px-5 py-2.5 bg-slate-900/80 backdrop-blur-md border border-cyan-500/30 rounded-full text-xs font-medium text-cyan-300 hover:border-cyan-400/60 hover:text-cyan-200 transition-all shadow-lg hover:shadow-cyan-500/20 active:scale-95 overflow-hidden"
                                     >
-                                        {choice}
+                                        {/* Hover glow */}
+                                        <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/0 via-cyan-500/10 to-cyan-500/0 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                        <span className="relative z-10">{choice}</span>
                                     </motion.button>
                                 ))}
                             </div>
                         )}
 
                         {/* Text Input */}
-                        <div className="relative">
-                            <input
-                                type="text"
-                                value={input}
-                                onChange={(e) => setInput(e.target.value)}
-                                onKeyDown={handleKeyDown}
-                                placeholder="What do you do?"
-                                className="w-full bg-[#1f2235] border border-genshin-gold/30 rounded-lg pl-6 pr-14 py-4 focus:outline-none focus:border-genshin-gold focus:ring-1 focus:ring-genshin-gold/20 transition-all shadow-xl placeholder:text-stone-600 text-stone-200"
-                                disabled={isLoading}
-                            />
-                            <button 
-                                onClick={() => handleSendMessage()}
-                                disabled={isLoading || !input.trim()}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-genshin-gold hover:bg-[#eac88f] text-genshin-dark rounded-lg transition-all disabled:opacity-0 disabled:scale-75"
-                            >
-                                <Send size={18} />
-                            </button>
+                        <div className="relative group">
+                            {/* Glowing border effect on focus */}
+                            <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-500/50 via-cyan-500/50 to-purple-500/50 rounded-2xl opacity-0 group-focus-within:opacity-100 blur transition-opacity duration-300" />
+
+                            <div className="relative bg-slate-900/95 rounded-xl border border-purple-500/20 group-focus-within:border-purple-500/40 transition-all shadow-xl overflow-hidden">
+                                {/* Rune decorations */}
+                                <div className="absolute top-1/2 -translate-y-1/2 left-3 text-purple-500/20 text-sm pointer-events-none">◈</div>
+
+                                <input
+                                    type="text"
+                                    value={input}
+                                    onChange={(e) => setInput(e.target.value)}
+                                    onKeyDown={handleKeyDown}
+                                    placeholder="What do you do?"
+                                    className="w-full bg-transparent pl-10 pr-14 py-4 focus:outline-none transition-all placeholder:text-slate-600 text-slate-200 text-base"
+                                    disabled={isLoading}
+                                />
+                                <motion.button
+                                    onClick={() => handleSendMessage()}
+                                    disabled={isLoading || !input.trim()}
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2.5 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-900 rounded-xl transition-all disabled:opacity-0 disabled:scale-75 shadow-lg shadow-amber-500/20"
+                                >
+                                    <Send size={18} />
+                                </motion.button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1477,49 +1647,60 @@ I attempt to disengage and flee from combat with ${combatState.enemyName}!`;
 
             {/* RIGHT SIDEBAR */}
             <div className={cn(
-                "w-80 bg-[#131520] border-l border-genshin-gold/10 flex flex-col z-20 shadow-[-10px_0_30px_-10px_rgba(0,0,0,0.5)]",
+                "w-80 bg-slate-950 border-l border-cyan-500/20 flex flex-col z-20 shadow-[-10px_0_40px_-10px_rgba(0,0,0,0.7)] relative overflow-hidden",
                 "fixed inset-y-0 right-0 transform transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0",
                 isSidebarOpen ? "translate-x-0" : "translate-x-full"
             )}>
-                <div className="h-full flex flex-col">
-                    <div className="p-6 border-b border-genshin-gold/10 flex items-center justify-between bg-genshin-dark/50">
-                        <h2 className="font-serif font-bold text-genshin-gold tracking-wider">Adventurer&apos;s Log</h2>
-                        <button onClick={() => setSidebarOpen(false)} className="text-stone-500 hover:text-genshin-gold lg:hidden">
+                {/* Arcane background pattern */}
+                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(34,211,238,0.05)_0%,transparent_50%)] pointer-events-none" />
+
+                <div className="h-full flex flex-col relative">
+                    <div className="p-5 border-b border-cyan-500/20 flex items-center justify-between bg-slate-900/50">
+                        <h2 className="font-serif font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 to-teal-200 tracking-wider">Adventurer&apos;s Log</h2>
+                        <button onClick={() => setSidebarOpen(false)} className="text-slate-500 hover:text-cyan-400 lg:hidden p-1.5 rounded-lg hover:bg-cyan-500/10 border border-transparent hover:border-cyan-500/30 transition-all">
                             <X size={20} />
                         </button>
                     </div>
                     
-                    <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+                    <div className="flex-1 overflow-y-auto p-5 space-y-5 custom-scrollbar">
                         {/* XP Progress */}
                         <XPBar currentXP={xp} maxXP={xpToLevel} level={level} />
 
                         {/* Vitals */}
                         <div className="space-y-3">
-                            <h3 className="text-xs font-bold uppercase tracking-widest text-stone-500 flex items-center gap-2 font-serif">
-                                <Heart size={12} /> Vitals
+                            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 flex items-center gap-2">
+                                <Heart size={12} className="text-red-400" /> Vitals
                             </h3>
-                            <div className="bg-genshin-dark rounded-lg p-4 border border-genshin-gold/10 shadow-inner space-y-3">
-                                <div>
+                            <div className="bg-slate-900/70 rounded-xl p-4 border border-red-500/20 shadow-inner space-y-3 relative overflow-hidden">
+                                {/* Subtle glow */}
+                                <div className="absolute inset-0 bg-gradient-to-br from-red-500/5 to-transparent pointer-events-none" />
+
+                                <div className="relative">
                                     <div className="flex justify-between text-sm mb-2">
-                                        <span className="text-stone-400 font-serif text-xs uppercase tracking-wide">Health Points</span>
-                                        <span className={`font-bold ${hp / maxHp < 0.25 ? 'text-red-400' : 'text-genshin-gold'}`}>{hp} / {maxHp}</span>
+                                        <span className="text-slate-400 text-xs uppercase tracking-wide">Health Points</span>
+                                        <span className={`font-bold font-mono ${hp / maxHp < 0.25 ? 'text-red-400 animate-pulse' : 'text-emerald-400'}`}>{hp} / {maxHp}</span>
                                     </div>
-                                    <div className="h-3 bg-stone-800 rounded-full overflow-hidden border border-white/5">
-                                        <motion.div 
-                                            className={`h-full relative ${hp / maxHp < 0.25 ? 'bg-gradient-to-r from-red-600 to-red-400 animate-hp-danger' : 'bg-gradient-to-r from-green-600 to-emerald-400'}`}
+                                    <div className="h-3 bg-slate-800 rounded-full overflow-hidden border border-slate-700/50">
+                                        <motion.div
+                                            className={`h-full relative ${hp / maxHp < 0.25 ? 'bg-gradient-to-r from-red-600 to-red-400' : 'bg-gradient-to-r from-emerald-500 to-green-400'}`}
                                             animate={{ width: `${(hp / maxHp) * 100}%` }}
                                             transition={{ duration: 0.5 }}
                                         >
-                                            <div className="absolute inset-0 bg-[linear-gradient(45deg,rgba(255,255,255,0.2)_25%,transparent_25%,transparent_50%,rgba(255,255,255,0.2)_50%,rgba(255,255,255,0.2)_75%,transparent_75%,transparent)] bg-[length:10px_10px] animate-[shine_1s_linear_infinite]" />
+                                            {/* Animated shine */}
+                                            <motion.div
+                                                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent"
+                                                animate={{ x: ['-100%', '100%'] }}
+                                                transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
+                                            />
                                         </motion.div>
                                     </div>
                                 </div>
                                 {/* Gold */}
-                                <div className="flex justify-between items-center pt-2 border-t border-white/5">
-                                    <span className="text-stone-400 font-serif text-xs uppercase tracking-wide flex items-center gap-1.5">
+                                <div className="flex justify-between items-center pt-3 border-t border-slate-700/50 relative">
+                                    <span className="text-slate-400 text-xs uppercase tracking-wide flex items-center gap-1.5">
                                         <Coins size={12} className="text-amber-400" /> Gold
                                     </span>
-                                    <span className="font-bold text-amber-400">{gold}</span>
+                                    <span className="font-bold text-amber-400 font-mono">{gold}</span>
                                 </div>
                             </div>
                         </div>
@@ -1789,6 +1970,14 @@ I attempt to disengage and flee from combat with ${combatState.enemyName}!`;
                     onTravelRequest={handleMapTravel}
                 />
             )}
+
+            {/* Relationships Panel */}
+            <RelationshipsPanel
+                isOpen={isRelationshipsOpen}
+                onClose={() => setRelationshipsOpen(false)}
+                factions={relationships?.factions ?? []}
+                npcs={relationships?.npcs ?? []}
+            />
         </div>
     );
 }

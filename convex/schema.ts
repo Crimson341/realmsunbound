@@ -147,7 +147,7 @@ export default defineSchema({
     description: v.string(),
     rewards: v.optional(v.string()),
     rewardItemIds: v.optional(v.array(v.id("items"))),
-    status: v.string(),
+    status: v.string(), // 'available', 'active', 'completed', 'failed'
     npcId: v.optional(v.id("npcs")),
     source: v.optional(v.string()), // 'creator' or 'ai'
     nextQuestId: v.optional(v.id("quests")),
@@ -156,8 +156,28 @@ export default defineSchema({
     rewardLoreIds: v.optional(v.array(v.id("lore"))),
     rewardFollowerIds: v.optional(v.array(v.id("npcs"))),
     embedding: v.optional(v.array(v.number())), // Searchable
+    // --- QUEST OBJECTIVES SYSTEM ---
+    objectives: v.optional(v.array(v.object({
+      id: v.string(),                          // Unique identifier for this objective
+      description: v.string(),                 // What player needs to do
+      type: v.string(),                        // 'kill', 'collect', 'talk', 'explore', 'deliver', 'escort', 'custom'
+      target: v.optional(v.string()),          // NPC name, item name, location name, etc.
+      targetCount: v.optional(v.number()),     // How many (e.g., kill 5 wolves)
+      currentCount: v.optional(v.number()),    // Current progress
+      isCompleted: v.boolean(),                // Whether this objective is done
+      isOptional: v.optional(v.boolean()),     // Optional bonus objective
+      hint: v.optional(v.string()),            // Hint for players who are stuck
+    }))),
+    currentObjectiveIndex: v.optional(v.number()), // Which objective is currently active (for sequential quests)
+    questGiverDialogue: v.optional(v.string()),    // What the quest giver says when offering quest
+    completionDialogue: v.optional(v.string()),   // What they say when you complete it
+    difficulty: v.optional(v.string()),           // 'easy', 'medium', 'hard', 'legendary'
+    estimatedTime: v.optional(v.string()),        // '10 minutes', '1 hour', etc.
+    xpReward: v.optional(v.number()),             // XP gained on completion
+    goldReward: v.optional(v.number()),           // Gold gained on completion
   })
   .index("by_user", ["userId"])
+  .index("by_campaign", ["campaignId"])
   .vectorIndex("by_embedding", {
     vectorField: "embedding",
     dimensions: 768,

@@ -244,6 +244,7 @@ export interface RoomEntity {
   hostile: boolean;
   hp?: number;
   maxHp?: number;
+  color?: string; // Custom hex color for the entity circle (e.g., "#ff5500")
 }
 
 export interface RoomObject {
@@ -254,6 +255,8 @@ export interface RoomObject {
   interactable: boolean;
   contents?: string[];
   state?: 'open' | 'closed' | 'locked' | 'active' | 'inactive';
+  label?: string; // Display name for tooltips (e.g., "To Dark Forest")
+  exit?: { toLocation: string }; // If this object is an exit to another location
 }
 
 export type LightingLevel = 'dark' | 'dim' | 'bright';

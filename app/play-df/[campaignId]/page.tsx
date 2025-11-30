@@ -8,9 +8,10 @@ import { api } from '../../../convex/_generated/api';
 import { Id } from '../../../convex/_generated/dataModel';
 import {
     Send, Heart, MapPin, Map,
-    Menu, X, ArrowLeft,
-    Loader2, Swords, Backpack, UserCircle, Search, Trophy,
-    Tent, AlertTriangle, Skull, Coins, ShieldAlert, Users, Maximize2, Minimize2
+    Menu, X, ArrowLeft, ArrowRight,
+    Loader2, Swords, Sword, Backpack, UserCircle, Search, Trophy,
+    Tent, AlertTriangle, Skull, Coins, ShieldAlert, Users, Maximize2, Minimize2,
+    Eye, Hand, MessageSquare
 } from 'lucide-react';
 import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -34,7 +35,8 @@ import {
     ScreenEffectType,
 } from '../../../components/GameUI';
 import { AIGameCanvas, AIGameCanvasHandle, parseAIGameEvents, createEventProcessor } from '../../../game/ai-canvas/AIGameCanvas';
-import { AIGameEvent } from '../../../game/ai-canvas/types';
+import { HoverInfo } from '../../../game/ai-canvas/AIGameEngine';
+import { AIGameEvent, RoomEntity, RoomObject } from '../../../game/ai-canvas/types';
 
 // --- TYPES ---
 
@@ -44,6 +46,18 @@ type Message = {
     choices?: string[];
     questOffer?: string[];
 };
+
+interface ContextMenuState {
+    show: boolean;
+    x: number;
+    y: number;
+    type: 'entity' | 'object';
+    id: string;
+    name: string;
+    hostile?: boolean;
+    isExit?: boolean;
+    exitLocation?: string;
+}
 
 interface QueuedReward extends RewardData {
     id: string;
@@ -420,6 +434,10 @@ export default function PlayDFPage() {
 
     // --- COMBAT STATE ---
     const [combatState, setCombatState] = useState<CombatState | null>(null);
+
+    // --- HOVER & CONTEXT MENU STATE ---
+    const [hoverInfo, setHoverInfo] = useState<HoverInfo | null>(null);
+    const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
     // --- STATE SAVING ---
     const saveGameState = useCallback(async (updates: {
@@ -988,32 +1006,95 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
         }
     };
 
-    // --- TILE/ENTITY CLICK HANDLERS ---
-    const handleTileClick = useCallback((x: number, y: number) => {
-        const playerPos = canvasRef.current?.getPlayerPosition();
-        if (playerPos) {
-            handleSendMessage(`I move to position (${x}, ${y})`);
+    // --- HOVER HANDLER ---
+    const handleHover = useCallback((info: HoverInfo | null) => {
+        setHoverInfo(info);
+    }, []);
+
+    // --- TILE/ENTITY/OBJECT CLICK HANDLERS ---
+    // Tile click: just close menu, movement is handled by engine's pathfinding
+    const handleTileClick = useCallback((_x: number, _y: number) => {
+        setContextMenu(null); // Close any open context menu
+    }, []);
+
+    // Entity click: show action context menu
+    const handleEntityClick = useCallback((entityId: string, entity: RoomEntity) => {
+        const pos = canvasRef.current?.getPlayerPosition() || { x: 0, y: 0 };
+        const screenX = (entity.x - pos.x + 10) * 32 + 100; // Approximate screen position
+        const screenY = (entity.y - pos.y + 8) * 32 + 50;
+
+        setContextMenu({
+            show: true,
+            x: Math.min(screenX, 400),
+            y: Math.min(screenY, 400),
+            type: 'entity',
+            id: entityId,
+            name: entity.name,
+            hostile: entity.hostile,
+        });
+    }, []);
+
+    // Object click: show action context menu or handle exit directly
+    const handleObjectClick = useCallback((objectId: string, object: RoomObject) => {
+        // Check if this is an exit object
+        if (object.exit?.toLocation) {
+            // Direct transition - no menu needed
+            handleLocationTransition(object.exit.toLocation);
+            return;
         }
-    }, []);
 
-    const handleEntityClick = useCallback((entityId: string) => {
-        handleSendMessage(`I approach the ${entityId.replace(/_/g, ' ')}`);
-    }, []);
+        const pos = canvasRef.current?.getPlayerPosition() || { x: 0, y: 0 };
+        const screenX = (object.x - pos.x + 10) * 32 + 100;
+        const screenY = (object.y - pos.y + 8) * 32 + 50;
 
-    const handleObjectClick = useCallback((objectId: string) => {
-        // Check if this looks like an exit (sign_north, exit_forest, door_to_village, etc.)
+        // Check if object ID suggests an exit
         const exitPatterns = /^(sign|exit|door|gate|path)_?(to_?)?(.+)$/i;
         const match = objectId.match(exitPatterns);
+        const isExit = !!(match && match[3]);
+        const exitLocation = isExit ? match[3].replace(/_/g, ' ') : undefined;
 
-        if (match && match[3]) {
-            // This looks like an exit - try to extract the location name
-            const locationHint = match[3].replace(/_/g, ' ');
-            console.log('[PlayDF] Detected exit interaction:', objectId, '→', locationHint);
-            handleSendMessage(`I leave through the exit to ${locationHint}`);
-        } else {
-            handleSendMessage(`I interact with the ${objectId.replace(/_/g, ' ')}`);
+        setContextMenu({
+            show: true,
+            x: Math.min(screenX, 400),
+            y: Math.min(screenY, 400),
+            type: 'object',
+            id: objectId,
+            name: object.label || objectId.replace(/_/g, ' '),
+            isExit,
+            exitLocation,
+        });
+    }, [handleLocationTransition]);
+
+    // Handle context menu actions - ONLY THESE CALL THE AI
+    const handleContextMenuAction = useCallback((action: string) => {
+        if (!contextMenu) return;
+
+        const { type, id, name, hostile, exitLocation } = contextMenu;
+        setContextMenu(null);
+
+        switch (action) {
+            case 'talk':
+                handleSendMessage(`I talk to ${name}`);
+                break;
+            case 'attack':
+                handleSendMessage(`I attack ${name}`);
+                break;
+            case 'examine':
+                handleSendMessage(`I examine ${name}`);
+                break;
+            case 'use':
+                handleSendMessage(`I use ${name}`);
+                break;
+            case 'open':
+                handleSendMessage(`I open ${name}`);
+                break;
+            case 'exit':
+                if (exitLocation) {
+                    handleLocationTransition(exitLocation);
+                }
+                break;
         }
-    }, []);
+    }, [contextMenu, handleLocationTransition]);
 
     // --- LOADING STATE ---
     // Loading states
@@ -1216,12 +1297,127 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
                         onTileClick={handleTileClick}
                         onEntityClick={handleEntityClick}
                         onObjectClick={handleObjectClick}
+                        onHover={handleHover}
                         onReady={() => {
                             console.log('[PlayDF] Canvas ready - waiting for Map AI to generate room');
                             // DON'T load demo room automatically - let Map AI generate the real one
                             // Demo room is only loaded as fallback if Map AI fails
                         }}
                     />
+
+                    {/* Hover Tooltip */}
+                    {hoverInfo && (
+                        <div
+                            className="absolute pointer-events-none z-50 px-3 py-2 bg-slate-900/95 border border-slate-700 rounded-lg shadow-xl"
+                            style={{
+                                left: Math.min(hoverInfo.screenX + 15, 450),
+                                top: Math.min(hoverInfo.screenY - 10, 550),
+                            }}
+                        >
+                            <div className="flex items-center gap-2">
+                                {hoverInfo.type === 'entity' && hoverInfo.hostile && (
+                                    <Sword size={14} className="text-red-400" />
+                                )}
+                                <span className={cn(
+                                    "font-medium",
+                                    hoverInfo.type === 'entity' && hoverInfo.hostile ? 'text-red-400' : 'text-amber-400'
+                                )}>
+                                    {hoverInfo.name}
+                                </span>
+                            </div>
+                            {hoverInfo.hp !== undefined && hoverInfo.maxHp !== undefined && (
+                                <div className="mt-1 flex items-center gap-2">
+                                    <Heart size={12} className="text-red-400" />
+                                    <div className="w-20 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                                        <div
+                                            className="h-full bg-red-500"
+                                            style={{ width: `${(hoverInfo.hp / hoverInfo.maxHp) * 100}%` }}
+                                        />
+                                    </div>
+                                    <span className="text-xs text-slate-400">{hoverInfo.hp}/{hoverInfo.maxHp}</span>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Context Menu */}
+                    {contextMenu?.show && (
+                        <div
+                            className="absolute z-50 min-w-[140px] bg-slate-900/98 border border-slate-700 rounded-lg shadow-2xl overflow-hidden backdrop-blur-sm"
+                            style={{ left: contextMenu.x, top: contextMenu.y }}
+                        >
+                            <div className="px-3 py-2 border-b border-slate-700 bg-slate-800/50">
+                                <span className="font-medium text-amber-400 text-sm">{contextMenu.name}</span>
+                            </div>
+                            <div className="py-1">
+                                {contextMenu.type === 'entity' && (
+                                    <>
+                                        {!contextMenu.hostile && (
+                                            <button
+                                                onClick={() => handleContextMenuAction('talk')}
+                                                className="w-full px-3 py-2 text-left text-sm hover:bg-purple-500/20 text-slate-200 flex items-center gap-2 transition-colors"
+                                            >
+                                                <MessageSquare size={14} className="text-cyan-400" />
+                                                Talk
+                                            </button>
+                                        )}
+                                        <button
+                                            onClick={() => handleContextMenuAction('attack')}
+                                            className="w-full px-3 py-2 text-left text-sm hover:bg-red-500/20 text-slate-200 flex items-center gap-2 transition-colors"
+                                        >
+                                            <Sword size={14} className="text-red-400" />
+                                            Attack
+                                        </button>
+                                        <button
+                                            onClick={() => handleContextMenuAction('examine')}
+                                            className="w-full px-3 py-2 text-left text-sm hover:bg-purple-500/20 text-slate-200 flex items-center gap-2 transition-colors"
+                                        >
+                                            <Eye size={14} className="text-purple-400" />
+                                            Examine
+                                        </button>
+                                    </>
+                                )}
+                                {contextMenu.type === 'object' && (
+                                    <>
+                                        {contextMenu.isExit ? (
+                                            <button
+                                                onClick={() => handleContextMenuAction('exit')}
+                                                className="w-full px-3 py-2 text-left text-sm hover:bg-green-500/20 text-slate-200 flex items-center gap-2 transition-colors"
+                                            >
+                                                <ArrowRight size={14} className="text-green-400" />
+                                                Go to {contextMenu.exitLocation}
+                                            </button>
+                                        ) : (
+                                            <>
+                                                <button
+                                                    onClick={() => handleContextMenuAction('use')}
+                                                    className="w-full px-3 py-2 text-left text-sm hover:bg-purple-500/20 text-slate-200 flex items-center gap-2 transition-colors"
+                                                >
+                                                    <Hand size={14} className="text-amber-400" />
+                                                    Use
+                                                </button>
+                                                <button
+                                                    onClick={() => handleContextMenuAction('examine')}
+                                                    className="w-full px-3 py-2 text-left text-sm hover:bg-purple-500/20 text-slate-200 flex items-center gap-2 transition-colors"
+                                                >
+                                                    <Eye size={14} className="text-purple-400" />
+                                                    Examine
+                                                </button>
+                                            </>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                            <div className="px-3 py-1 border-t border-slate-700">
+                                <button
+                                    onClick={() => setContextMenu(null)}
+                                    className="w-full py-1 text-xs text-slate-500 hover:text-slate-300 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Stats Bar */}
                     <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-slate-950 via-slate-950/90 to-transparent">

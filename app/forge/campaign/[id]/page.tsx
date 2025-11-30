@@ -673,6 +673,12 @@ export default function CampaignManager() {
                                                             <h4 className="font-bold text-[#43485C] text-lg group-hover:text-[#D4AF37] transition-colors">{loc.name}</h4>
                                                             <span className="text-xs uppercase tracking-wider text-[#D4AF37] font-bold bg-[#D4AF37]/10 px-2 py-0.5 rounded-full">{loc.type}</span>
                                                         </div>
+                                                        <Link
+                                                            href={`/forge/campaign/${campaignId}/location/${loc._id}/layout`}
+                                                            className="px-3 py-1.5 text-xs font-bold uppercase tracking-wider bg-[#D4AF37]/10 text-[#D4AF37] rounded-lg hover:bg-[#D4AF37] hover:text-white transition-colors"
+                                                        >
+                                                            Edit Layout
+                                                        </Link>
                                                     </div>
                                                     {loc.environment && (
                                                         <p className="text-sm text-[#43485C]/60 mt-2 italic">Environment: {loc.environment}</p>

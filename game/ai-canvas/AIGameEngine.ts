@@ -15,13 +15,30 @@ import {
   getLightColor,
 } from './types';
 
+export interface HoverInfo {
+  type: 'entity' | 'object' | 'tile';
+  id: string;
+  name: string;
+  description?: string;
+  hostile?: boolean;
+  hp?: number;
+  maxHp?: number;
+  x: number;
+  y: number;
+  screenX: number;
+  screenY: number;
+}
+
 export interface AIGameEngineConfig {
   width: number;
   height: number;
   tileSize: number;
+  editMode?: boolean; // When true, disables player movement on click (for map editor)
   onTileClick?: (x: number, y: number) => void;
-  onEntityClick?: (entityId: string) => void;
-  onObjectClick?: (objectId: string) => void;
+  onEntityClick?: (entityId: string, entity: RoomEntity) => void;
+  onObjectClick?: (objectId: string, object: RoomObject) => void;
+  onHover?: (info: HoverInfo | null) => void;
+  onPlayerMoveComplete?: (x: number, y: number) => void;
 }
 
 interface RenderedEntity {
@@ -79,6 +96,8 @@ export class AIGameEngine {
   private playerPosition: Position = { x: 0, y: 0 };
   private exploredTiles: Set<string> = new Set();
   private visibleTiles: Set<string> = new Set();
+  private tileLightLevels: Map<string, number> = new Map(); // 0.0 (dark) to 1.0 (bright)
+  private lightSources: Array<{ x: number; y: number; radius: number; color: number }> = [];
 
   // Animation
   private damageNumbers: DamageNumber[] = [];
@@ -128,10 +147,11 @@ export class AIGameEngine {
     this.app.stage.addChild(this.worldContainer);
     this.app.stage.addChild(this.uiLayer);
 
-    // Setup click handling
+    // Setup click and hover handling
     this.app.stage.eventMode = 'static';
     this.app.stage.hitArea = this.app.screen;
     this.app.stage.on('pointerdown', this.handleClick.bind(this));
+    this.app.stage.on('pointermove', this.handleHover.bind(this));
 
     // Start game loop
     this.app.ticker.add(this.update.bind(this));
@@ -144,10 +164,31 @@ export class AIGameEngine {
     const tileX = Math.floor(worldPos.x / this.config.tileSize);
     const tileY = Math.floor(worldPos.y / this.config.tileSize);
 
+    console.log('[AIGameEngine] handleClick:', {
+      screenPos: event.global,
+      worldPos,
+      tileX,
+      tileY,
+      editMode: this.config.editMode,
+      hasRoom: !!this.currentRoom,
+      roomSize: this.currentRoom ? { w: this.currentRoom.width, h: this.currentRoom.height } : null
+    });
+
+    // In edit mode, only report clicks - don't do any game logic
+    if (this.config.editMode) {
+      if (this.currentRoom && tileX >= 0 && tileX < this.currentRoom.width && tileY >= 0 && tileY < this.currentRoom.height) {
+        console.log('[AIGameEngine] Calling onTileClick for edit mode');
+        this.config.onTileClick?.(tileX, tileY);
+      } else {
+        console.log('[AIGameEngine] Click outside room bounds or no room loaded');
+      }
+      return;
+    }
+
     // Check if clicked on entity
     for (const [id, entity] of this.entities) {
       if (entity.data.x === tileX && entity.data.y === tileY) {
-        this.config.onEntityClick?.(id);
+        this.config.onEntityClick?.(id, entity.data);
         return;
       }
     }
@@ -155,14 +196,199 @@ export class AIGameEngine {
     // Check if clicked on object
     for (const [id, obj] of this.objects) {
       if (obj.data.x === tileX && obj.data.y === tileY && obj.data.interactable) {
-        this.config.onObjectClick?.(id);
+        this.config.onObjectClick?.(id, obj.data);
         return;
       }
     }
 
-    // Clicked on tile
+    // Clicked on tile - move player there locally (no AI needed)
     if (this.currentRoom && tileX >= 0 && tileX < this.currentRoom.width && tileY >= 0 && tileY < this.currentRoom.height) {
+      // Check if tile is walkable
+      const tileId = this.currentRoom.tiles[tileY]?.[tileX] ?? 0;
+      if (this.isWalkableTile(tileId)) {
+        this.movePlayerTo(tileX, tileY);
+      }
       this.config.onTileClick?.(tileX, tileY);
+    }
+  }
+
+  private handleHover(event: { global: { x: number; y: number } }): void {
+    const worldPos = this.worldContainer.toLocal(event.global);
+    const tileX = Math.floor(worldPos.x / this.config.tileSize);
+    const tileY = Math.floor(worldPos.y / this.config.tileSize);
+
+    // Check if hovering over entity
+    for (const [id, entity] of this.entities) {
+      if (entity.data.x === tileX && entity.data.y === tileY) {
+        this.config.onHover?.({
+          type: 'entity',
+          id,
+          name: entity.data.name,
+          hostile: entity.data.hostile,
+          hp: entity.data.hp,
+          maxHp: entity.data.maxHp,
+          x: tileX,
+          y: tileY,
+          screenX: event.global.x,
+          screenY: event.global.y,
+        });
+        return;
+      }
+    }
+
+    // Check if hovering over object
+    for (const [id, obj] of this.objects) {
+      if (obj.data.x === tileX && obj.data.y === tileY) {
+        this.config.onHover?.({
+          type: 'object',
+          id,
+          name: obj.data.label || id.replace(/_/g, ' '),
+          x: tileX,
+          y: tileY,
+          screenX: event.global.x,
+          screenY: event.global.y,
+        });
+        return;
+      }
+    }
+
+    // Not hovering over anything
+    this.config.onHover?.(null);
+  }
+
+  // Simple A* pathfinding
+  private findPath(startX: number, startY: number, endX: number, endY: number): Position[] {
+    if (!this.currentRoom) return [];
+
+    const width = this.currentRoom.width;
+    const height = this.currentRoom.height;
+
+    // Check if end is valid
+    const endTile = this.currentRoom.tiles[endY]?.[endX] ?? 0;
+    if (!this.isWalkableTile(endTile)) return [];
+
+    interface Node {
+      x: number;
+      y: number;
+      g: number;
+      h: number;
+      f: number;
+      parent: Node | null;
+    }
+
+    const openSet: Node[] = [];
+    const closedSet = new Set<string>();
+    const key = (x: number, y: number) => `${x},${y}`;
+
+    const heuristic = (x1: number, y1: number, x2: number, y2: number) =>
+      Math.abs(x1 - x2) + Math.abs(y1 - y2);
+
+    const startNode: Node = {
+      x: startX,
+      y: startY,
+      g: 0,
+      h: heuristic(startX, startY, endX, endY),
+      f: heuristic(startX, startY, endX, endY),
+      parent: null,
+    };
+
+    openSet.push(startNode);
+
+    while (openSet.length > 0) {
+      // Get node with lowest f
+      openSet.sort((a, b) => a.f - b.f);
+      const current = openSet.shift()!;
+
+      if (current.x === endX && current.y === endY) {
+        // Reconstruct path
+        const path: Position[] = [];
+        let node: Node | null = current;
+        while (node) {
+          path.unshift({ x: node.x, y: node.y });
+          node = node.parent;
+        }
+        return path.slice(1); // Remove start position
+      }
+
+      closedSet.add(key(current.x, current.y));
+
+      // Check neighbors (4-directional)
+      const neighbors = [
+        { x: current.x, y: current.y - 1 },
+        { x: current.x, y: current.y + 1 },
+        { x: current.x - 1, y: current.y },
+        { x: current.x + 1, y: current.y },
+      ];
+
+      for (const neighbor of neighbors) {
+        if (neighbor.x < 0 || neighbor.x >= width || neighbor.y < 0 || neighbor.y >= height) continue;
+        if (closedSet.has(key(neighbor.x, neighbor.y))) continue;
+
+        const tileId = this.currentRoom.tiles[neighbor.y]?.[neighbor.x] ?? 0;
+        if (!this.isWalkableTile(tileId)) continue;
+
+        // Check for entities blocking (except player)
+        let blocked = false;
+        for (const entity of this.entities.values()) {
+          if (entity.data.id !== 'player' && entity.data.x === neighbor.x && entity.data.y === neighbor.y) {
+            blocked = true;
+            break;
+          }
+        }
+        if (blocked) continue;
+
+        const g = current.g + 1;
+        const h = heuristic(neighbor.x, neighbor.y, endX, endY);
+        const f = g + h;
+
+        const existing = openSet.find(n => n.x === neighbor.x && n.y === neighbor.y);
+        if (existing) {
+          if (g < existing.g) {
+            existing.g = g;
+            existing.f = f;
+            existing.parent = current;
+          }
+        } else {
+          openSet.push({
+            x: neighbor.x,
+            y: neighbor.y,
+            g,
+            h,
+            f,
+            parent: current,
+          });
+        }
+      }
+    }
+
+    return []; // No path found
+  }
+
+  private isWalkableTile(tileId: number): boolean {
+    // Floors, doors, bridges, paths are walkable
+    const walkable = [
+      TERRAIN.FLOOR_STONE, TERRAIN.FLOOR_WOOD, TERRAIN.FLOOR_DIRT,
+      TERRAIN.FLOOR_GRASS, TERRAIN.FLOOR_SAND, TERRAIN.FLOOR_COBBLE,
+      TERRAIN.DOOR_OPEN, TERRAIN.DOOR_CLOSED, TERRAIN.GATE_OPEN,
+      TERRAIN.STAIRS_DOWN, TERRAIN.STAIRS_UP, TERRAIN.BRIDGE,
+      44, // PATH
+    ];
+    return walkable.includes(tileId);
+  }
+
+  // Move player to a tile (local movement, no AI)
+  public movePlayerTo(targetX: number, targetY: number): void {
+    const player = this.entities.get('player');
+    if (!player) return;
+
+    const path = this.findPath(player.data.x, player.data.y, targetX, targetY);
+    if (path.length > 0) {
+      player.path = path;
+      player.pathIndex = 0;
+      player.targetX = path[0].x;
+      player.targetY = path[0].y;
+      player.moving = true;
+      player.speed = 8; // Normal speed
     }
   }
 
@@ -902,7 +1128,10 @@ export class AIGameEngine {
   private renderEntity(entity: RoomEntity): void {
     const container = new Container();
     const size = this.config.tileSize;
-    const color = ENTITY_COLORS[entity.type] ?? 0xffffff;
+    // Use custom color if provided, otherwise fall back to type-based color
+    const color = entity.color
+      ? parseInt(entity.color.replace('#', ''), 16)
+      : (ENTITY_COLORS[entity.type] ?? 0xffffff);
     const radius = size * 0.4;
 
     // Shadow
@@ -1257,27 +1486,101 @@ export class AIGameEngine {
   }
 
   // ============================================
-  // VISIBILITY / FOG OF WAR
+  // VISIBILITY / FOG OF WAR WITH DYNAMIC LIGHTING
   // ============================================
+
+  /**
+   * Collect all light sources from objects in the room
+   */
+  private collectLightSources(): void {
+    this.lightSources = [];
+
+    if (!this.currentRoom) return;
+
+    // Add light sources from objects
+    for (const obj of this.currentRoom.objects) {
+      if (isLightSource(obj.type)) {
+        this.lightSources.push({
+          x: obj.x,
+          y: obj.y,
+          radius: getLightRadius(obj.type),
+          color: getLightColor(obj.type),
+        });
+      }
+    }
+
+    // Player carries a small light (larger in dark rooms)
+    const playerLightRadius = this.currentRoom.lighting === 'dark' ? 3 :
+                              this.currentRoom.lighting === 'dim' ? 2 : 1;
+    this.lightSources.push({
+      x: this.playerPosition.x,
+      y: this.playerPosition.y,
+      radius: playerLightRadius,
+      color: 0xffffcc, // Warm white
+    });
+  }
+
+  /**
+   * Calculate light level for a specific tile (0.0 = dark, 1.0 = bright)
+   */
+  private calculateTileLightLevel(tileX: number, tileY: number): number {
+    if (!this.currentRoom) return 0;
+
+    // Base ambient light from room lighting setting
+    let ambientLight = this.currentRoom.lighting === 'bright' ? 0.7 :
+                       this.currentRoom.lighting === 'dim' ? 0.25 : 0.05;
+
+    let maxLight = ambientLight;
+
+    // Add light from each light source
+    for (const light of this.lightSources) {
+      const dx = tileX - light.x;
+      const dy = tileY - light.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (distance <= light.radius) {
+        // Light falloff: brighter at center, dimmer at edge
+        const falloff = 1 - (distance / light.radius);
+        const lightIntensity = falloff * falloff; // Quadratic falloff for softer edges
+        maxLight = Math.max(maxLight, lightIntensity);
+      }
+    }
+
+    return Math.min(1, maxLight);
+  }
 
   private updateVisibility(): void {
     if (!this.currentRoom) return;
 
+    // Collect all light sources (including player's light that moves with them)
+    this.collectLightSources();
+
     this.visibleTiles.clear();
-    const viewRadius = this.currentRoom.lighting === 'bright' ? 12 : this.currentRoom.lighting === 'dim' ? 7 : 4;
+    this.tileLightLevels.clear();
 
-    for (let dy = -viewRadius; dy <= viewRadius; dy++) {
-      for (let dx = -viewRadius; dx <= viewRadius; dx++) {
-        const x = this.playerPosition.x + dx;
-        const y = this.playerPosition.y + dy;
+    // Calculate view radius based on room lighting + light sources
+    const baseViewRadius = this.currentRoom.lighting === 'bright' ? 15 :
+                           this.currentRoom.lighting === 'dim' ? 10 : 6;
 
-        if (x < 0 || x >= this.currentRoom.width || y < 0 || y >= this.currentRoom.height) continue;
+    // Calculate light levels for all tiles within potential view
+    for (let y = 0; y < this.currentRoom.height; y++) {
+      for (let x = 0; x < this.currentRoom.width; x++) {
+        const dx = x - this.playerPosition.x;
+        const dy = y - this.playerPosition.y;
+        const distFromPlayer = Math.sqrt(dx * dx + dy * dy);
 
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist <= viewRadius) {
+        // Only process tiles within maximum view distance
+        if (distFromPlayer <= baseViewRadius) {
           const key = `${x},${y}`;
-          this.visibleTiles.add(key);
-          this.exploredTiles.add(key);
+          const lightLevel = this.calculateTileLightLevel(x, y);
+          this.tileLightLevels.set(key, lightLevel);
+
+          // Tile is visible if it has enough light and is close enough to player
+          // (simulating that you need to be somewhat close to see even lit areas)
+          if (lightLevel > 0.1 && distFromPlayer <= baseViewRadius) {
+            this.visibleTiles.add(key);
+            this.exploredTiles.add(key);
+          }
         }
       }
     }
@@ -1295,11 +1598,35 @@ export class AIGameEngine {
         const key = `${x},${y}`;
         const isVisible = this.visibleTiles.has(key);
         const isExplored = this.exploredTiles.has(key);
+        const lightLevel = this.tileLightLevels.get(key) || 0;
 
-        if (!isVisible) {
-          const fog = new Graphics();
-          fog.rect(0, 0, this.config.tileSize, this.config.tileSize);
-          fog.fill({ color: 0x0a0a15, alpha: isExplored ? 0.65 : 0.95 });
+        // Always add a fog overlay, but with varying alpha based on light
+        const fog = new Graphics();
+        fog.rect(0, 0, this.config.tileSize, this.config.tileSize);
+
+        let alpha: number;
+        let color = 0x0a0a15;
+
+        if (!isVisible && !isExplored) {
+          // Completely unexplored - full darkness
+          alpha = 0.95;
+        } else if (!isVisible && isExplored) {
+          // Explored but not currently visible - dim memory
+          alpha = 0.7;
+        } else {
+          // Currently visible - darkness based on inverse of light level
+          // More light = less darkness overlay
+          alpha = Math.max(0, 0.6 - (lightLevel * 0.6));
+
+          // Add subtle color tint near light sources
+          if (lightLevel > 0.5) {
+            // Near a bright light source - slightly warmer tint
+            color = 0x1a1510;
+          }
+        }
+
+        if (alpha > 0.01) {
+          fog.fill({ color, alpha });
           fog.x = x * this.config.tileSize;
           fog.y = y * this.config.tileSize;
           this.fogLayer.addChild(fog);
@@ -1333,5 +1660,13 @@ export class AIGameEngine {
 
   getEntity(id: string): RoomEntity | undefined {
     return this.entities.get(id)?.data;
+  }
+
+  setEditMode(editMode: boolean): void {
+    this.config.editMode = editMode;
+  }
+
+  setOnTileClick(callback: ((x: number, y: number) => void) | undefined): void {
+    this.config.onTileClick = callback;
   }
 }

@@ -1,17 +1,19 @@
 'use client';
 
-import React, { useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
-import { AIGameEngine, AIGameEngineConfig } from './AIGameEngine';
-import { AIGameEvent, RoomData } from './types';
+import React, { useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
+import { AIGameEngine, AIGameEngineConfig, HoverInfo } from './AIGameEngine';
+import { AIGameEvent, RoomData, RoomEntity, RoomObject } from './types';
 
 export interface AIGameCanvasProps {
   width?: number;
   height?: number;
   tileSize?: number;
   className?: string;
+  editMode?: boolean; // When true, disables player movement on click (for map editor)
   onTileClick?: (x: number, y: number) => void;
-  onEntityClick?: (entityId: string) => void;
-  onObjectClick?: (objectId: string) => void;
+  onEntityClick?: (entityId: string, entity: RoomEntity) => void;
+  onObjectClick?: (objectId: string, object: RoomObject) => void;
+  onHover?: (info: HoverInfo | null) => void;
   onReady?: () => void;
 }
 
@@ -21,6 +23,7 @@ export interface AIGameCanvasHandle {
   getPlayerPosition: () => { x: number; y: number };
   getCurrentRoom: () => RoomData | null;
   loadDemoRoom: () => void;
+  movePlayer: (dx: number, dy: number) => void;
 }
 
 export const AIGameCanvas = forwardRef<AIGameCanvasHandle, AIGameCanvasProps>(
@@ -30,9 +33,11 @@ export const AIGameCanvas = forwardRef<AIGameCanvasHandle, AIGameCanvasProps>(
       height = 480,
       tileSize = 32,
       className = '',
+      editMode = false,
       onTileClick,
       onEntityClick,
       onObjectClick,
+      onHover,
       onReady,
     },
     ref
@@ -52,9 +57,11 @@ export const AIGameCanvas = forwardRef<AIGameCanvasHandle, AIGameCanvasProps>(
         width,
         height,
         tileSize,
+        editMode,
         onTileClick,
         onEntityClick,
         onObjectClick,
+        onHover,
       };
 
       const engine = new AIGameEngine(config);
@@ -75,11 +82,15 @@ export const AIGameCanvas = forwardRef<AIGameCanvasHandle, AIGameCanvasProps>(
       };
     }, [width, height, tileSize]);
 
-    // Update callbacks when they change
+    // Update editMode when it changes
     useEffect(() => {
-      // The engine stores these in config, but we can't update them dynamically
-      // For now, callbacks are set at initialization
-    }, [onTileClick, onEntityClick, onObjectClick]);
+      engineRef.current?.setEditMode(editMode);
+    }, [editMode]);
+
+    // Update onTileClick callback when it changes (prevents stale closures)
+    useEffect(() => {
+      engineRef.current?.setOnTileClick(onTileClick);
+    }, [onTileClick]);
 
     // Expose imperative methods
     useImperativeHandle(
@@ -129,6 +140,14 @@ export const AIGameCanvas = forwardRef<AIGameCanvasHandle, AIGameCanvasProps>(
             playerSpawn: { x: 5, y: 8 }
           };
           engineRef.current?.loadRoom(demoRoom);
+        },
+        movePlayer: (dx: number, dy: number) => {
+          const pos = engineRef.current?.player;
+          if (pos) {
+            const newX = pos.x + dx;
+            const newY = pos.y + dy;
+            engineRef.current?.movePlayerTo(newX, newY);
+          }
         },
       }),
       []

@@ -756,4 +756,65 @@ export default defineSchema({
   .index("by_campaign_player", ["campaignId", "playerId"])
   .index("by_faction", ["factionId"]),
 
+  // --- PROCEDURAL MAP GENERATION SYSTEM ---
+
+  // Location Templates - creator-authored tilemap layouts for the Forge editor
+  locationTemplates: defineTable({
+    locationId: v.id("locations"),              // Links to parent location
+    campaignId: v.id("campaigns"),              // For indexed queries
+
+    // Core Template Data
+    width: v.number(),                          // Grid width (tiles)
+    height: v.number(),                         // Grid height (tiles)
+    tiles: v.string(),                          // JSON: number[][] tile IDs
+    collisionMask: v.string(),                  // JSON: number[][] (0=walkable, 1=blocked)
+
+    // Spawn Points
+    playerSpawnX: v.number(),                   // Default player spawn X
+    playerSpawnY: v.number(),                   // Default player spawn Y
+    alternateSpawns: v.optional(v.string()),    // JSON: [{fromLocationId, x, y}] - spawn based on where player came from
+
+    // Placed Content
+    placedEntities: v.string(),                 // JSON: PlacedEntity[] - NPCs, monsters positioned on map
+    placedObjects: v.string(),                  // JSON: PlacedObject[] - chests, furniture, lights, traps
+    transitions: v.string(),                    // JSON: Transition[] - exits to other locations
+
+    // Visual Settings
+    lighting: v.optional(v.string()),           // "dark" | "dim" | "bright"
+    ambience: v.optional(v.string()),           // dungeon, forest, town, cave, etc.
+
+    // Metadata
+    version: v.number(),                        // Template version for detecting updates
+    createdAt: v.number(),
+    updatedAt: v.optional(v.number()),
+  })
+  .index("by_location", ["locationId"])
+  .index("by_campaign", ["campaignId"]),
+
+  // Generated Maps - per-player map instances with dynamic state (hybrid persistence)
+  generatedMaps: defineTable({
+    campaignId: v.id("campaigns"),
+    playerId: v.string(),                       // tokenIdentifier of the player
+    locationId: v.id("locations"),
+    templateId: v.optional(v.id("locationTemplates")),  // Which template was used
+    templateVersion: v.optional(v.number()),    // Version at generation time (for detecting updates)
+
+    // Generated map data (may include procedural variations)
+    width: v.number(),
+    height: v.number(),
+    tiles: v.string(),                          // JSON: number[][] - the actual generated tiles
+
+    // Dynamic State - Modified during gameplay, persists across sessions
+    entityStates: v.string(),                   // JSON: {entityId: {hp, x, y, dead, diedAt, ...}}
+    objectStates: v.string(),                   // JSON: {objectId: {opened, destroyed, openedAt, ...}}
+    exploredTiles: v.string(),                  // JSON: ["x,y", ...] - fog of war explored tiles
+
+    // Tracking
+    firstVisitAt: v.number(),
+    lastVisitAt: v.number(),
+    visitCount: v.number(),
+  })
+  .index("by_player_location", ["campaignId", "playerId", "locationId"])
+  .index("by_campaign", ["campaignId"]),
+
 });

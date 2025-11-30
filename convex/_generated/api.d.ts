@@ -24,6 +24,7 @@ import type * as lib_memory from "../lib/memory.js";
 import type * as lib_memory_storage from "../lib/memory_storage.js";
 import type * as lib_utils from "../lib/utils.js";
 import type * as map from "../map.js";
+import type * as mapGenerator from "../mapGenerator.js";
 import type * as messages from "../messages.js";
 import type * as npcs from "../npcs.js";
 import type * as shops from "../shops.js";
@@ -52,6 +53,7 @@ declare const fullApi: ApiFromModules<{
   "lib/memory_storage": typeof lib_memory_storage;
   "lib/utils": typeof lib_utils;
   map: typeof map;
+  mapGenerator: typeof mapGenerator;
   messages: typeof messages;
   npcs: typeof npcs;
   shops: typeof shops;

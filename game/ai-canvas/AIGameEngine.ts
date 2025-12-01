@@ -14,6 +14,10 @@ import {
   getLightRadius,
   getLightColor,
   FacingDirection,
+  BattleState,
+  BattleEntity,
+  BattleHighlight,
+  BattleCombatLogEntry,
 } from './types';
 import { SpriteManager, AnimatedSpriteInstance } from './SpriteManager';
 
@@ -35,10 +39,11 @@ export interface AIGameEngineConfig {
   width: number;
   height: number;
   tileSize: number;
+  zoom?: number; // Default zoom level (2.0 for Pokemon-style)
   editMode?: boolean; // When true, disables player movement on click (for map editor)
   onTileClick?: (x: number, y: number) => void;
-  onEntityClick?: (entityId: string, entity: RoomEntity) => void;
-  onObjectClick?: (objectId: string, object: RoomObject) => void;
+  onEntityClick?: (entityId: string, entity: RoomEntity, screenPos?: { x: number; y: number }) => void;
+  onObjectClick?: (objectId: string, object: RoomObject, screenPos?: { x: number; y: number }) => void;
   onHover?: (info: HoverInfo | null) => void;
   onPlayerMoveComplete?: (x: number, y: number) => void;
 }
@@ -113,6 +118,18 @@ export class AIGameEngine {
   private isInitialized = false;
   private isDestroyed = false;
 
+  // Camera/Zoom
+  private currentZoom: number = 2.0; // Default Pokemon-style zoom
+  private targetZoom: number = 2.0;
+  private zoomAnimating: boolean = false;
+
+  // Tactical Battle System
+  private battleState: BattleState | null = null;
+  private battleOverlay: Container | null = null;
+  private preBattleZoom: number = 2.0;
+  private battleHighlightGraphics: Graphics[] = [];
+  private onBattleStateChange?: (state: BattleState | null) => void;
+
   constructor(config: AIGameEngineConfig) {
     this.config = config;
     this.app = new Application();
@@ -155,6 +172,11 @@ export class AIGameEngine {
     this.app.stage.addChild(this.worldContainer);
     this.app.stage.addChild(this.uiLayer);
 
+    // Apply initial zoom level (2.0 = Pokemon-style close-up)
+    this.currentZoom = this.config.zoom ?? 2.0;
+    this.targetZoom = this.currentZoom;
+    this.worldContainer.scale.set(this.currentZoom);
+
     // Setup click and hover handling
     this.app.stage.eventMode = 'static';
     this.app.stage.hitArea = this.app.screen;
@@ -196,7 +218,7 @@ export class AIGameEngine {
     // Check if clicked on entity
     for (const [id, entity] of this.entities) {
       if (entity.data.x === tileX && entity.data.y === tileY) {
-        this.config.onEntityClick?.(id, entity.data);
+        this.config.onEntityClick?.(id, entity.data, { x: event.global.x, y: event.global.y });
         return;
       }
     }
@@ -204,7 +226,7 @@ export class AIGameEngine {
     // Check if clicked on object
     for (const [id, obj] of this.objects) {
       if (obj.data.x === tileX && obj.data.y === tileY && obj.data.interactable) {
-        this.config.onObjectClick?.(id, obj.data);
+        this.config.onObjectClick?.(id, obj.data, { x: event.global.x, y: event.global.y });
         return;
       }
     }
@@ -544,11 +566,653 @@ export class AIGameEngine {
     const player = this.entities.get('player');
     if (!player) return;
 
-    const targetX = this.config.width / 2 - player.sprite.x;
-    const targetY = this.config.height / 2 - player.sprite.y;
+    // Account for zoom when centering - player position is in world space,
+    // but worldContainer position is in screen space (scaled by zoom)
+    const zoom = this.currentZoom;
+    const targetX = this.config.width / 2 - player.sprite.x * zoom;
+    const targetY = this.config.height / 2 - player.sprite.y * zoom;
 
+    // Smooth lerp toward target position
     this.worldContainer.x += (targetX - this.worldContainer.x) * 0.08;
     this.worldContainer.y += (targetY - this.worldContainer.y) * 0.08;
+
+    // Handle zoom animation if active
+    if (this.zoomAnimating && this.currentZoom !== this.targetZoom) {
+      const zoomDiff = this.targetZoom - this.currentZoom;
+      this.currentZoom += zoomDiff * 0.1;
+
+      // Snap if close enough
+      if (Math.abs(zoomDiff) < 0.01) {
+        this.currentZoom = this.targetZoom;
+        this.zoomAnimating = false;
+      }
+
+      this.worldContainer.scale.set(this.currentZoom);
+    }
+  }
+
+  // ============================================
+  // PUBLIC ZOOM API
+  // ============================================
+
+  /** Set zoom level (default 2.0 for Pokemon-style). Clamps between 0.5 and 4.0 */
+  public setZoom(level: number, animate: boolean = true): void {
+    this.targetZoom = Math.max(0.5, Math.min(4.0, level));
+
+    if (animate) {
+      this.zoomAnimating = true;
+    } else {
+      this.currentZoom = this.targetZoom;
+      this.worldContainer.scale.set(this.currentZoom);
+      this.zoomAnimating = false;
+    }
+  }
+
+  /** Get current zoom level */
+  public getZoom(): number {
+    return this.currentZoom;
+  }
+
+  /** Get default/configured zoom level */
+  public getDefaultZoom(): number {
+    return this.config.zoom ?? 2.0;
+  }
+
+  // ============================================
+  // TACTICAL BATTLE SYSTEM
+  // ============================================
+
+  /** Set callback for battle state changes */
+  public setOnBattleStateChange(callback: (state: BattleState | null) => void): void {
+    this.onBattleStateChange = callback;
+  }
+
+  /** Get current battle state */
+  public getBattleState(): BattleState | null {
+    return this.battleState;
+  }
+
+  /** Enter tactical battle mode */
+  public enterBattleMode(config: {
+    enemies: Array<{
+      entityId: string;
+      name: string;
+      hp: number;
+      maxHp: number;
+      ac: number;
+      damage: number;
+      gridX: number;
+      gridY: number;
+    }>;
+    followers?: Array<{
+      entityId: string;
+      name: string;
+      hp: number;
+      maxHp: number;
+      ac: number;
+      damage: number;
+    }>;
+    playerMovementRange?: number;
+    playerAttackRange?: number;
+  }): void {
+    if (this.battleState?.isActive) return;
+
+    const player = this.entities.get('player');
+    if (!player) return;
+
+    // Store current zoom and switch to tactical view
+    this.preBattleZoom = this.currentZoom;
+    this.setZoom(1.5, true); // Zoom out to show arena
+
+    // Calculate arena bounds (centered on player)
+    const arenaSize = 9;
+    const centerX = player.data.x;
+    const centerY = player.data.y;
+
+    // Create battle overlay container
+    this.battleOverlay = new Container();
+
+    // Darken area outside arena
+    this.createBattleVignette(centerX, centerY, arenaSize);
+
+    // Draw tactical grid
+    this.drawBattleGrid(centerX, centerY, arenaSize);
+
+    // Set up battle entities
+    const battleEntities: BattleEntity[] = [];
+
+    // Player
+    battleEntities.push({
+      entityId: 'player',
+      name: 'Player',
+      gridX: centerX,
+      gridY: centerY,
+      isPlayerControlled: true,
+      isFollower: false,
+      movementRange: config.playerMovementRange ?? 3,
+      attackRange: config.playerAttackRange ?? 1,
+      initiative: 10 + Math.floor(Math.random() * 10),
+      hp: player.data.hp ?? 100,
+      maxHp: player.data.maxHp ?? 100,
+      ac: 12,
+      damage: 8,
+      hasMovedThisTurn: false,
+      hasActedThisTurn: false,
+    });
+
+    // Followers (if any)
+    if (config.followers) {
+      for (const follower of config.followers) {
+        const entity = this.entities.get(follower.entityId);
+        if (entity) {
+          battleEntities.push({
+            entityId: follower.entityId,
+            name: follower.name,
+            gridX: entity.data.x,
+            gridY: entity.data.y,
+            isPlayerControlled: true, // Followers are player-controlled side
+            isFollower: true,
+            movementRange: 3,
+            attackRange: 1,
+            initiative: 5 + Math.floor(Math.random() * 10),
+            hp: follower.hp,
+            maxHp: follower.maxHp,
+            ac: follower.ac,
+            damage: follower.damage,
+            hasMovedThisTurn: false,
+            hasActedThisTurn: false,
+          });
+        }
+      }
+    }
+
+    // Enemies
+    for (const enemy of config.enemies) {
+      battleEntities.push({
+        entityId: enemy.entityId,
+        name: enemy.name,
+        gridX: enemy.gridX,
+        gridY: enemy.gridY,
+        isPlayerControlled: false,
+        isFollower: false,
+        movementRange: 3,
+        attackRange: 1,
+        initiative: 5 + Math.floor(Math.random() * 10),
+        hp: enemy.hp,
+        maxHp: enemy.maxHp,
+        ac: enemy.ac,
+        damage: enemy.damage,
+        hasMovedThisTurn: false,
+        hasActedThisTurn: false,
+      });
+    }
+
+    // Sort by initiative (descending)
+    battleEntities.sort((a, b) => b.initiative - a.initiative);
+
+    // Create battle state
+    this.battleState = {
+      isActive: true,
+      arenaCenter: { x: centerX, y: centerY },
+      arenaSize,
+      entities: battleEntities,
+      turnOrder: battleEntities.map((e) => e.entityId),
+      currentTurnIndex: 0,
+      selectedAction: 'none',
+      highlightedTiles: [],
+      combatLog: [
+        {
+          id: `log_${Date.now()}`,
+          timestamp: Date.now(),
+          type: 'narration',
+          text: 'Battle begins!',
+        },
+      ],
+    };
+
+    // Hide fog during battle
+    this.fogLayer.visible = false;
+
+    // Add overlay to world
+    this.worldContainer.addChild(this.battleOverlay);
+
+    // Notify listeners
+    this.onBattleStateChange?.(this.battleState);
+  }
+
+  private createBattleVignette(centerX: number, centerY: number, arenaSize: number): void {
+    if (!this.battleOverlay) return;
+
+    const vignette = new Graphics();
+    const halfSize = Math.floor(arenaSize / 2);
+    const tileSize = this.config.tileSize;
+
+    // Semi-transparent overlay for entire map
+    const roomWidth = (this.currentRoom?.width ?? 50) * tileSize;
+    const roomHeight = (this.currentRoom?.height ?? 50) * tileSize;
+
+    vignette.rect(-500, -500, roomWidth + 1000, roomHeight + 1000);
+    vignette.fill({ color: 0x000000, alpha: 0.6 });
+
+    // Cut out the arena area (brighter)
+    const arenaLeft = (centerX - halfSize) * tileSize;
+    const arenaTop = (centerY - halfSize) * tileSize;
+    const arenaWidth = arenaSize * tileSize;
+    const arenaHeight = arenaSize * tileSize;
+
+    vignette.rect(arenaLeft, arenaTop, arenaWidth, arenaHeight);
+    vignette.cut();
+
+    this.battleOverlay.addChild(vignette);
+  }
+
+  private drawBattleGrid(centerX: number, centerY: number, size: number): void {
+    if (!this.battleOverlay) return;
+
+    const halfSize = Math.floor(size / 2);
+    const tileSize = this.config.tileSize;
+
+    for (let dy = -halfSize; dy <= halfSize; dy++) {
+      for (let dx = -halfSize; dx <= halfSize; dx++) {
+        const gridX = centerX + dx;
+        const gridY = centerY + dy;
+
+        const tile = new Graphics();
+        const pixelX = gridX * tileSize;
+        const pixelY = gridY * tileSize;
+
+        // Tactical grid overlay
+        tile.rect(pixelX, pixelY, tileSize, tileSize);
+        tile.stroke({ width: 1, color: 0x4a6a8a, alpha: 0.4 });
+
+        this.battleOverlay.addChild(tile);
+      }
+    }
+  }
+
+  /** Show movement range for current entity */
+  public showBattleMovementRange(): void {
+    this.clearBattleHighlights();
+
+    if (!this.battleState) return;
+
+    const currentEntity = this.battleState.entities[this.battleState.currentTurnIndex];
+    if (!currentEntity.isPlayerControlled || currentEntity.isFollower) return;
+    if (currentEntity.hasMovedThisTurn) return;
+
+    const reachable = this.calculateReachableTiles(
+      currentEntity.gridX,
+      currentEntity.gridY,
+      currentEntity.movementRange
+    );
+
+    for (const tile of reachable) {
+      const highlight = new Graphics();
+      const pixelX = tile.x * this.config.tileSize;
+      const pixelY = tile.y * this.config.tileSize;
+
+      highlight.roundRect(pixelX + 3, pixelY + 3, this.config.tileSize - 6, this.config.tileSize - 6, 4);
+      highlight.fill({ color: 0x4488ff, alpha: 0.35 });
+      highlight.stroke({ width: 2, color: 0x4488ff, alpha: 0.6 });
+
+      this.battleHighlightGraphics.push(highlight);
+      this.battleOverlay?.addChild(highlight);
+    }
+
+    this.battleState.selectedAction = 'move';
+    this.onBattleStateChange?.(this.battleState);
+  }
+
+  /** Show attack range for current entity */
+  public showBattleAttackRange(): void {
+    this.clearBattleHighlights();
+
+    if (!this.battleState) return;
+
+    const currentEntity = this.battleState.entities[this.battleState.currentTurnIndex];
+    if (!currentEntity.isPlayerControlled || currentEntity.isFollower) return;
+    if (currentEntity.hasActedThisTurn) return;
+
+    const { gridX, gridY, attackRange } = currentEntity;
+
+    for (let dy = -attackRange; dy <= attackRange; dy++) {
+      for (let dx = -attackRange; dx <= attackRange; dx++) {
+        const dist = Math.abs(dx) + Math.abs(dy);
+        if (dist > 0 && dist <= attackRange) {
+          const targetX = gridX + dx;
+          const targetY = gridY + dy;
+
+          const hasEnemy = this.battleState.entities.some(
+            (e) => !e.isPlayerControlled && e.gridX === targetX && e.gridY === targetY && e.hp > 0
+          );
+
+          const highlight = new Graphics();
+          const pixelX = targetX * this.config.tileSize;
+          const pixelY = targetY * this.config.tileSize;
+
+          highlight.roundRect(pixelX + 3, pixelY + 3, this.config.tileSize - 6, this.config.tileSize - 6, 4);
+          highlight.fill({ color: hasEnemy ? 0xff4444 : 0xff8844, alpha: hasEnemy ? 0.4 : 0.25 });
+          highlight.stroke({ width: 2, color: hasEnemy ? 0xff4444 : 0xff8844, alpha: 0.6 });
+
+          this.battleHighlightGraphics.push(highlight);
+          this.battleOverlay?.addChild(highlight);
+        }
+      }
+    }
+
+    this.battleState.selectedAction = 'attack';
+    this.onBattleStateChange?.(this.battleState);
+  }
+
+  private clearBattleHighlights(): void {
+    for (const h of this.battleHighlightGraphics) {
+      this.battleOverlay?.removeChild(h);
+      h.destroy();
+    }
+    this.battleHighlightGraphics = [];
+
+    if (this.battleState) {
+      this.battleState.selectedAction = 'none';
+    }
+  }
+
+  /** Handle click on battle grid - returns action info for UI to process */
+  public handleBattleClick(gridX: number, gridY: number): {
+    action: 'move' | 'attack' | 'invalid';
+    targetId?: string;
+    toX?: number;
+    toY?: number;
+  } | null {
+    if (!this.battleState || !this.battleState.isActive) return null;
+
+    const currentEntity = this.battleState.entities[this.battleState.currentTurnIndex];
+    if (!currentEntity.isPlayerControlled || currentEntity.isFollower) return null;
+
+    if (this.battleState.selectedAction === 'move') {
+      const reachable = this.calculateReachableTiles(
+        currentEntity.gridX,
+        currentEntity.gridY,
+        currentEntity.movementRange
+      );
+
+      if (reachable.some((t) => t.x === gridX && t.y === gridY)) {
+        return { action: 'move', toX: gridX, toY: gridY };
+      }
+    }
+
+    if (this.battleState.selectedAction === 'attack') {
+      const target = this.battleState.entities.find(
+        (e) => !e.isPlayerControlled && e.gridX === gridX && e.gridY === gridY && e.hp > 0
+      );
+
+      if (target) {
+        const dist = Math.abs(gridX - currentEntity.gridX) + Math.abs(gridY - currentEntity.gridY);
+        if (dist <= currentEntity.attackRange) {
+          return { action: 'attack', targetId: target.entityId };
+        }
+      }
+    }
+
+    return { action: 'invalid' };
+  }
+
+  /** Move entity on battle grid */
+  public async battleMoveEntity(entityId: string, toX: number, toY: number): Promise<void> {
+    if (!this.battleState) return;
+
+    const battleEntity = this.battleState.entities.find((e) => e.entityId === entityId);
+    if (!battleEntity) return;
+
+    // Update rendered entity position
+    const renderedEntity = this.entities.get(entityId);
+    if (renderedEntity) {
+      const path = this.findBattlePath(battleEntity.gridX, battleEntity.gridY, toX, toY);
+      if (path.length > 0) {
+        renderedEntity.path = path;
+        renderedEntity.pathIndex = 0;
+        renderedEntity.moving = true;
+        renderedEntity.speed = 12;
+
+        // Wait for movement to complete
+        await new Promise<void>((resolve) => {
+          const check = () => {
+            if (!renderedEntity.moving) {
+              resolve();
+            } else {
+              requestAnimationFrame(check);
+            }
+          };
+          check();
+        });
+      }
+    }
+
+    // Update battle state
+    battleEntity.gridX = toX;
+    battleEntity.gridY = toY;
+    battleEntity.hasMovedThisTurn = true;
+
+    // Add to combat log
+    this.battleState.combatLog.push({
+      id: `log_${Date.now()}`,
+      timestamp: Date.now(),
+      type: 'move',
+      text: `${battleEntity.name} moves to (${toX}, ${toY})`,
+      actorId: entityId,
+    });
+
+    this.clearBattleHighlights();
+    this.onBattleStateChange?.(this.battleState);
+  }
+
+  /** Process attack in battle */
+  private processBattleAttack(data: {
+    attackerId: string;
+    targetId: string;
+    damage: number;
+    hit: boolean;
+    isCritical?: boolean;
+    targetHpAfter: number;
+  }): void {
+    if (!this.battleState) return;
+
+    const attacker = this.battleState.entities.find((e) => e.entityId === data.attackerId);
+    const target = this.battleState.entities.find((e) => e.entityId === data.targetId);
+
+    if (!attacker || !target) return;
+
+    // Update target HP
+    target.hp = data.targetHpAfter;
+
+    // Mark attacker as having acted
+    attacker.hasActedThisTurn = true;
+
+    // Show combat effect
+    this.showCombatEffect({
+      attackerId: data.attackerId,
+      targetId: data.targetId,
+      effectType: 'slash',
+      damage: data.hit ? data.damage : undefined,
+      isCritical: data.isCritical,
+      miss: !data.hit,
+    });
+
+    // Add to combat log
+    this.battleState.combatLog.push({
+      id: `log_${Date.now()}`,
+      timestamp: Date.now(),
+      type: data.hit ? (data.isCritical ? 'critical' : 'damage') : 'miss',
+      text: data.hit
+        ? `${attacker.name} hits ${target.name} for ${data.damage} damage${data.isCritical ? ' (CRITICAL!)' : ''}`
+        : `${attacker.name}'s attack misses ${target.name}`,
+      actorId: data.attackerId,
+      targetId: data.targetId,
+      value: data.damage,
+    });
+
+    this.clearBattleHighlights();
+    this.onBattleStateChange?.(this.battleState);
+
+    // Check for victory/defeat
+    this.checkBattleEnd();
+  }
+
+  /** End turn for current entity */
+  public endBattleTurn(): void {
+    if (!this.battleState) return;
+
+    // Reset current entity's turn flags
+    const current = this.battleState.entities[this.battleState.currentTurnIndex];
+
+    // Add turn end log
+    this.battleState.combatLog.push({
+      id: `log_${Date.now()}`,
+      timestamp: Date.now(),
+      type: 'turn',
+      text: `${current.name}'s turn ends`,
+      actorId: current.entityId,
+    });
+
+    // Advance to next living entity
+    let nextIndex = (this.battleState.currentTurnIndex + 1) % this.battleState.entities.length;
+    let attempts = 0;
+    while (this.battleState.entities[nextIndex].hp <= 0 && attempts < this.battleState.entities.length) {
+      nextIndex = (nextIndex + 1) % this.battleState.entities.length;
+      attempts++;
+    }
+
+    this.battleState.currentTurnIndex = nextIndex;
+
+    // Reset new entity's turn flags
+    const next = this.battleState.entities[nextIndex];
+    next.hasMovedThisTurn = false;
+    next.hasActedThisTurn = false;
+
+    this.battleState.combatLog.push({
+      id: `log_${Date.now()}`,
+      timestamp: Date.now(),
+      type: 'turn',
+      text: `${next.name}'s turn begins`,
+      actorId: next.entityId,
+    });
+
+    this.clearBattleHighlights();
+    this.onBattleStateChange?.(this.battleState);
+  }
+
+  private checkBattleEnd(): void {
+    if (!this.battleState) return;
+
+    const playerSide = this.battleState.entities.filter((e) => e.isPlayerControlled);
+    const enemySide = this.battleState.entities.filter((e) => !e.isPlayerControlled);
+
+    const playerAlive = playerSide.some((e) => e.hp > 0 && !e.isFollower); // Player specifically
+    const enemiesAlive = enemySide.some((e) => e.hp > 0);
+
+    if (!playerAlive) {
+      this.battleState.outcome = 'defeat';
+      this.onBattleStateChange?.(this.battleState);
+    } else if (!enemiesAlive) {
+      this.battleState.outcome = 'victory';
+      this.onBattleStateChange?.(this.battleState);
+    }
+  }
+
+  /** Exit battle mode */
+  public exitBattleMode(outcome: 'victory' | 'defeat' | 'fled'): void {
+    if (!this.battleState) return;
+
+    // Remove battle overlay
+    if (this.battleOverlay) {
+      this.worldContainer.removeChild(this.battleOverlay);
+      this.battleOverlay.destroy({ children: true });
+      this.battleOverlay = null;
+    }
+
+    // Clear highlights
+    this.clearBattleHighlights();
+
+    // Restore fog
+    this.fogLayer.visible = true;
+
+    // Restore zoom
+    this.setZoom(this.preBattleZoom, true);
+
+    // Clear state
+    this.battleState = null;
+    this.onBattleStateChange?.(null);
+  }
+
+  /** Calculate reachable tiles for movement using BFS */
+  private calculateReachableTiles(startX: number, startY: number, range: number): Position[] {
+    const reachable: Position[] = [];
+    const visited = new Set<string>();
+    const queue: Array<{ x: number; y: number; remaining: number }> = [
+      { x: startX, y: startY, remaining: range },
+    ];
+
+    while (queue.length > 0) {
+      const { x, y, remaining } = queue.shift()!;
+      const key = `${x},${y}`;
+
+      if (visited.has(key)) continue;
+      visited.add(key);
+
+      if (x !== startX || y !== startY) {
+        reachable.push({ x, y });
+      }
+
+      if (remaining > 0) {
+        const neighbors = [
+          { x: x - 1, y },
+          { x: x + 1, y },
+          { x, y: y - 1 },
+          { x, y: y + 1 },
+        ];
+
+        for (const n of neighbors) {
+          const nKey = `${n.x},${n.y}`;
+          if (!visited.has(nKey) && this.isBattleTileWalkable(n.x, n.y)) {
+            queue.push({ x: n.x, y: n.y, remaining: remaining - 1 });
+          }
+        }
+      }
+    }
+
+    return reachable;
+  }
+
+  private isBattleTileWalkable(x: number, y: number): boolean {
+    if (!this.currentRoom) return false;
+    const tileId = this.currentRoom.tiles[y]?.[x] ?? 0;
+    if (!this.isWalkableTile(tileId)) return false;
+
+    // Check for entities blocking
+    if (this.battleState) {
+      const blocked = this.battleState.entities.some((e) => e.gridX === x && e.gridY === y && e.hp > 0);
+      if (blocked) return false;
+    }
+
+    return true;
+  }
+
+  /** Simple pathfinding for battle movement */
+  private findBattlePath(fromX: number, fromY: number, toX: number, toY: number): Position[] {
+    // Simple A* or just direct path for now
+    const path: Position[] = [];
+    let currentX = fromX;
+    let currentY = fromY;
+
+    while (currentX !== toX || currentY !== toY) {
+      if (currentX < toX) currentX++;
+      else if (currentX > toX) currentX--;
+      else if (currentY < toY) currentY++;
+      else if (currentY > toY) currentY--;
+
+      path.push({ x: currentX, y: currentY });
+    }
+
+    return path;
   }
 
   // ============================================
@@ -588,6 +1252,18 @@ export class AIGameEngine {
         break;
       case 'cameraEffect':
         this.playCameraEffect(event.cameraEffect);
+        break;
+      case 'enterBattleMode':
+        this.enterBattleMode(event.enterBattleMode);
+        break;
+      case 'exitBattleMode':
+        this.exitBattleMode(event.exitBattleMode.outcome);
+        break;
+      case 'battleMove':
+        this.battleMoveEntity(event.battleMove.entityId, event.battleMove.toX, event.battleMove.toY);
+        break;
+      case 'battleAttack':
+        this.processBattleAttack(event.battleAttack);
         break;
     }
   }

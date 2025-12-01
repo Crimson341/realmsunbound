@@ -197,6 +197,7 @@ interface ChatMessage {
 // =============================================================================
 
 // Filter NPCs by relevance to current situation
+// IMPORTANT: Only include NPCs at current location to prevent cross-room NPC responses
 function filterNpcsByRelevance(
   npcs: NPC[],
   locations: Location[],
@@ -205,14 +206,7 @@ function filterNpcsByRelevance(
 ): { critical: NPC[]; relevant: NPC[]; background: NPC[] } {
   const critical: NPC[] = [];
   const relevant: NPC[] = [];
-  const background: NPC[] = [];
-
-  // Get current location's neighbor IDs for "nearby" filtering
-  const currentLocation = currentLocationId
-    ? locations.find((l) => l._id.toString() === currentLocationId)
-    : null;
-  const neighborIds = new Set<string>();
-  // Note: neighbors not in Location interface yet, would need to be added
+  // Background tier removed - was causing NPCs from other rooms to respond
 
   for (const npc of npcs) {
     // Skip dead NPCs for regular lists
@@ -220,33 +214,22 @@ function filterNpcsByRelevance(
       continue;
     }
 
-    // Critical: At current location OR essential
-    if (
-      (currentLocationId && npc.locationId?.toString() === currentLocationId) ||
-      npc.isEssential
-    ) {
+    // Critical: ONLY NPCs at current location
+    if (currentLocationId && npc.locationId?.toString() === currentLocationId) {
       critical.push(npc);
     }
-    // Relevant: Nearby locations or recruitable
-    else if (
-      npc.isRecruitable ||
-      (npc.locationId && neighborIds.has(npc.locationId.toString()))
-    ) {
+    // Relevant: Essential NPCs that the player should always know about (story-critical)
+    // These can be referenced but should not respond to dialogue in other rooms
+    else if (npc.isEssential) {
       relevant.push(npc);
     }
-    // Background: Everything else
-    else {
-      background.push(npc);
-    }
+    // All other NPCs are excluded - they're in different rooms and shouldn't respond
   }
-
-  // Limit background to prevent context bloat
-  const maxBackground = Math.max(0, maxNpcs - critical.length - relevant.length);
 
   return {
     critical,
-    relevant,
-    background: background.slice(0, maxBackground),
+    relevant: relevant.slice(0, Math.max(0, maxNpcs - critical.length)),
+    background: [], // Empty - no background NPCs to prevent cross-room responses
   };
 }
 
@@ -418,18 +401,16 @@ const generateWorldContext = (campaignData: CampaignData, playerState?: PlayerSt
     ${locationTiers.background.map((l) => formatLocation(l, '')).join('\n')}
     ` : ''}
 
-    === NPCs (Tiered by Relevance) ===
+    === NPCs ===
     ${npcTiers.critical.length > 0 ? `
-    NPCs AT CURRENT LOCATION / ESSENTIAL (HIGHEST PRIORITY):
+    NPCs AT CURRENT LOCATION (can speak and interact):
     ${npcTiers.critical.map(formatNpc).join('\n')}
-    ` : ''}
+    ` : 'No NPCs at current location.'}
     ${npcTiers.relevant.length > 0 ? `
-    NEARBY / RECRUITABLE NPCs:
+
+    ESSENTIAL NPCs (FOR REFERENCE ONLY - not present, cannot speak here):
     ${npcTiers.relevant.map(formatNpc).join('\n')}
-    ` : ''}
-    ${npcTiers.background.length > 0 ? `
-    OTHER KNOWN NPCs:
-    ${npcTiers.background.map(formatNpc).join('\n')}
+    NOTE: These NPCs are NOT at the current location. They cannot speak, respond, or interact. Only mention them if the player specifically asks about them.
     ` : ''}
 
     ${deadNpcs && deadNpcs.length > 0 ? `

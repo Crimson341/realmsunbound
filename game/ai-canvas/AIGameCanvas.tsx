@@ -8,11 +8,12 @@ export interface AIGameCanvasProps {
   width?: number;
   height?: number;
   tileSize?: number;
+  zoom?: number; // Default zoom level (2.0 for Pokemon-style)
   className?: string;
   editMode?: boolean; // When true, disables player movement on click (for map editor)
   onTileClick?: (x: number, y: number) => void;
-  onEntityClick?: (entityId: string, entity: RoomEntity) => void;
-  onObjectClick?: (objectId: string, object: RoomObject) => void;
+  onEntityClick?: (entityId: string, entity: RoomEntity, screenPos?: { x: number; y: number }) => void;
+  onObjectClick?: (objectId: string, object: RoomObject, screenPos?: { x: number; y: number }) => void;
   onHover?: (info: HoverInfo | null) => void;
   onReady?: () => void;
 }
@@ -26,6 +27,25 @@ export interface AIGameCanvasHandle {
   loadDemoRoom: () => void;
   movePlayer: (dx: number, dy: number) => void;
   setPlayerPosition: (x: number, y: number) => void;
+  // Zoom controls
+  setZoom: (level: number, animate?: boolean) => void;
+  getZoom: () => number;
+  getDefaultZoom: () => number;
+  // Battle controls
+  enterBattleMode: (config: {
+    enemies: Array<{ entityId: string; name: string; hp: number; maxHp: number; ac: number; damage: number; gridX: number; gridY: number }>;
+    followers?: Array<{ entityId: string; name: string; hp: number; maxHp: number; ac: number; damage: number }>;
+    playerMovementRange?: number;
+    playerAttackRange?: number;
+  }) => void;
+  exitBattleMode: (outcome: 'victory' | 'defeat' | 'fled') => void;
+  getBattleState: () => import('./types').BattleState | null;
+  showBattleMovementRange: () => void;
+  showBattleAttackRange: () => void;
+  handleBattleClick: (gridX: number, gridY: number) => { action: 'move' | 'attack' | 'invalid'; targetId?: string; toX?: number; toY?: number } | null;
+  battleMoveEntity: (entityId: string, toX: number, toY: number) => Promise<void>;
+  endBattleTurn: () => void;
+  setOnBattleStateChange: (callback: (state: import('./types').BattleState | null) => void) => void;
 }
 
 export const AIGameCanvas = forwardRef<AIGameCanvasHandle, AIGameCanvasProps>(
@@ -34,6 +54,7 @@ export const AIGameCanvas = forwardRef<AIGameCanvasHandle, AIGameCanvasProps>(
       width = 640,
       height = 480,
       tileSize = 32,
+      zoom = 2.0, // Pokemon-style zoom
       className = '',
       editMode = false,
       onTileClick,
@@ -59,6 +80,7 @@ export const AIGameCanvas = forwardRef<AIGameCanvasHandle, AIGameCanvasProps>(
         width,
         height,
         tileSize,
+        zoom,
         editMode,
         onTileClick,
         onEntityClick,
@@ -156,6 +178,44 @@ export const AIGameCanvas = forwardRef<AIGameCanvasHandle, AIGameCanvasProps>(
         },
         setPlayerPosition: (x: number, y: number) => {
           engineRef.current?.movePlayerTo(x, y);
+        },
+        // Zoom controls
+        setZoom: (level: number, animate: boolean = true) => {
+          engineRef.current?.setZoom(level, animate);
+        },
+        getZoom: () => {
+          return engineRef.current?.getZoom() ?? 2.0;
+        },
+        getDefaultZoom: () => {
+          return engineRef.current?.getDefaultZoom() ?? 2.0;
+        },
+        // Battle controls
+        enterBattleMode: (config) => {
+          engineRef.current?.enterBattleMode(config);
+        },
+        exitBattleMode: (outcome) => {
+          engineRef.current?.exitBattleMode(outcome);
+        },
+        getBattleState: () => {
+          return engineRef.current?.getBattleState() ?? null;
+        },
+        showBattleMovementRange: () => {
+          engineRef.current?.showBattleMovementRange();
+        },
+        showBattleAttackRange: () => {
+          engineRef.current?.showBattleAttackRange();
+        },
+        handleBattleClick: (gridX, gridY) => {
+          return engineRef.current?.handleBattleClick(gridX, gridY) ?? null;
+        },
+        battleMoveEntity: async (entityId, toX, toY) => {
+          await engineRef.current?.battleMoveEntity(entityId, toX, toY);
+        },
+        endBattleTurn: () => {
+          engineRef.current?.endBattleTurn();
+        },
+        setOnBattleStateChange: (callback) => {
+          engineRef.current?.setOnBattleStateChange(callback);
         },
       }),
       []

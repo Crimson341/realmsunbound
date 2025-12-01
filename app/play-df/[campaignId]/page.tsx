@@ -52,6 +52,14 @@ import {
     CombatRoll,
     CombatLogEntry,
     CombatAbility,
+    // Persuasion System
+    PersuasionPanel,
+    PersuasionState,
+    PersuasionApproach,
+    // Tactical Battle System
+    TacticalBattleOverlay,
+    TacticalBattleState,
+    TacticalBattleEntity,
 } from '../../../components/GameUI';
 import { AIGameCanvas, AIGameCanvasHandle, parseAIGameEvents, createEventProcessor } from '../../../game/ai-canvas/AIGameCanvas';
 import { HoverInfo } from '../../../game/ai-canvas/AIGameEngine';
@@ -65,6 +73,17 @@ import {
     getStatModifier,
     CombatState as EngineCombatState,
     DiceType,
+    // Tactical combat
+    initializeTacticalCombat,
+    processTacticalAttack,
+    processTacticalDefend,
+    processTacticalMove,
+    advanceTacticalTurn,
+    getCurrentCombatant,
+    determineTacticalAIAction,
+    getValidTargets,
+    TacticalCombatState,
+    TacticalCombatant,
 } from '../../../game/combat/CombatEngine';
 
 // --- TYPES ---
@@ -523,6 +542,7 @@ export default function PlayDFPage() {
     // --- HOVER & CONTEXT MENU STATE ---
     const [hoverInfo, setHoverInfo] = useState<HoverInfo | null>(null);
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+    const [chatInputTarget, setChatInputTarget] = useState<{ name: string; x: number; y: number } | null>(null);
 
     // --- STATE SAVING ---
     const saveGameState = useCallback(async (updates: {
@@ -555,6 +575,21 @@ export default function PlayDFPage() {
     const [engineState, setEngineState] = useState<EngineCombatState | null>(null);
     const [isProcessingCombat, setIsProcessingCombat] = useState(false);
     const [activeDiceRoll, setActiveDiceRoll] = useState<CombatRoll | null>(null);
+
+    // --- TACTICAL BATTLE STATE (Multi-combatant) ---
+    const [tacticalBattleState, setTacticalBattleState] = useState<TacticalCombatState | null>(null);
+    const [tacticalUIState, setTacticalUIState] = useState<TacticalBattleState | null>(null);
+
+    // --- PERSUASION STATE ---
+    const [persuasionState, setPersuasionState] = useState<PersuasionState | null>(null);
+    const [persuasionTargetNpc, setPersuasionTargetNpc] = useState<any>(null);
+
+    // Persuasion mutation
+    const attemptPersuasionMutation = useMutation(api.camp.attemptPersuasion);
+    const getPersuasionStatus = useQuery(
+        api.camp.getPersuasionStatus,
+        persuasionTargetNpc ? { npcId: persuasionTargetNpc._id } : "skip"
+    );
 
     // Convert engine state to UI state for display
     const syncCombatUIState = useCallback((engine: EngineCombatState, abilities: CombatAbility[]) => {
@@ -613,6 +648,37 @@ export default function PlayDFPage() {
             currentRoll: undefined,
         };
         return uiState;
+    }, []);
+
+    // Convert tactical combat engine state to UI state
+    const syncTacticalUIState = useCallback((engine: TacticalCombatState) => {
+        const currentCombatant = engine.combatants[engine.currentCombatantIndex];
+        const uiState: TacticalBattleState = {
+            entities: engine.combatants.map(c => ({
+                id: c.id,
+                name: c.name,
+                type: c.type,
+                hp: c.stats.hp,
+                maxHp: c.stats.maxHp,
+                ac: c.stats.ac,
+                initiative: c.initiative,
+                gridX: c.gridX,
+                gridY: c.gridY,
+                isCurrentTurn: c.id === currentCombatant?.id,
+                portrait: c.portrait,
+            })),
+            currentEntityIndex: engine.currentCombatantIndex,
+            turn: engine.turn,
+            phase: currentCombatant?.type === 'player' ? 'selectAction' :
+                   currentCombatant?.type === 'follower' ? 'enemyTurn' : 'enemyTurn',
+            combatLog: engine.log.map(entry => ({
+                id: entry.id,
+                text: entry.text,
+                type: entry.type as any,
+                timestamp: entry.timestamp,
+            })),
+        };
+        setTacticalUIState(uiState);
     }, []);
 
     // Initialize combat - ALGORITHMIC (no AI)
@@ -1695,39 +1761,87 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
         let aiResponseContent = "";
         let aiChoices: string[] | undefined;
 
-        await streamNarrative(
-            payload,
-            (delta) => {
-                aiResponseContent += delta;
+        // Retry logic for AI calls
+        const MAX_RETRIES = 3;
+        let retryCount = 0;
+        let lastError: Error | null = null;
+
+        const attemptAICall = async (): Promise<boolean> => {
+            return new Promise((resolve) => {
+                let callSucceeded = true;
+
+                streamNarrative(
+                    payload,
+                    (delta) => {
+                        aiResponseContent += delta;
+                        setMessages(prev => {
+                            const last = prev[prev.length - 1];
+                            if (last?.role === 'model') {
+                                return [...prev.slice(0, -1), { ...last, content: last.content + delta }];
+                            }
+                            return [...prev, { role: 'model', content: delta }];
+                        });
+                    },
+                    (gameData) => {
+                        handleGameData(gameData);
+                        // Extract just text strings for database storage (validator expects string[])
+                        if (gameData.choices) {
+                            aiChoices = gameData.choices.map((c: any) => typeof c === 'string' ? c : c.text || c.action || c.label || '').filter(Boolean);
+                        }
+                    },
+                    handleMapEvents,
+                    (dialogueData) => {
+                        // Handle dialogue data from AI
+                        handleDialogue(dialogueData);
+                    },
+                    (err) => {
+                        console.error(`AI Error (attempt ${retryCount + 1}/${MAX_RETRIES}):`, err);
+                        lastError = err;
+                        callSucceeded = false;
+                    }
+                ).then(() => {
+                    resolve(callSucceeded);
+                }).catch((err) => {
+                    console.error(`AI stream error (attempt ${retryCount + 1}/${MAX_RETRIES}):`, err);
+                    lastError = err;
+                    resolve(false);
+                });
+            });
+        };
+
+        // Retry loop
+        while (retryCount < MAX_RETRIES) {
+            const success = await attemptAICall();
+            if (success && aiResponseContent.length > 0) {
+                break; // Success, exit loop
+            }
+
+            retryCount++;
+            if (retryCount < MAX_RETRIES) {
+                console.log(`[PlayDF] Retrying AI call (${retryCount}/${MAX_RETRIES})...`);
+                // Reset response content for retry
+                aiResponseContent = "";
+                // Remove any partial model message
                 setMessages(prev => {
                     const last = prev[prev.length - 1];
-                    if (last?.role === 'model') {
-                        return [...prev.slice(0, -1), { ...last, content: last.content + delta }];
+                    if (last?.role === 'model' && !last.content.trim()) {
+                        return prev.slice(0, -1);
                     }
-                    return [...prev, { role: 'model', content: delta }];
+                    return prev;
                 });
-            },
-            (gameData) => {
-                handleGameData(gameData);
-                // Extract just text strings for database storage (validator expects string[])
-                if (gameData.choices) {
-                    aiChoices = gameData.choices.map((c: any) => typeof c === 'string' ? c : c.text || c.action || c.label || '').filter(Boolean);
-                }
-            },
-            handleMapEvents,
-            (dialogueData) => {
-                // Handle dialogue data from AI
-                handleDialogue(dialogueData);
-            },
-            (err) => {
-                console.error("AI Error:", err);
-                setMessages(prev => [...prev, {
-                    role: 'model',
-                    content: "The realm grows silent... Try again."
-                }]);
-                setIsLoading(false);
+                // Small delay before retry
+                await new Promise(r => setTimeout(r, 1000));
             }
-        );
+        }
+
+        // If all retries failed, show error message
+        if (retryCount >= MAX_RETRIES && (!aiResponseContent || aiResponseContent.length === 0)) {
+            console.error("All AI retries failed:", lastError);
+            setMessages(prev => [...prev, {
+                role: 'model',
+                content: "The realm grows silent... The magic falters. Please try again."
+            }]);
+        }
 
         if (playerId && aiResponseContent) {
             saveMessage({
@@ -1762,15 +1876,26 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
     }, []);
 
     // Entity click: show action context menu
-    const handleEntityClick = useCallback((entityId: string, entity: RoomEntity) => {
-        const pos = canvasRef.current?.getPlayerPosition() || { x: 0, y: 0 };
-        const screenX = (entity.x - pos.x + 10) * 32 + 100; // Approximate screen position
-        const screenY = (entity.y - pos.y + 8) * 32 + 50;
+    const handleEntityClick = useCallback((entityId: string, entity: RoomEntity, screenPos?: { x: number; y: number }) => {
+        // Use actual screen click position if available, otherwise fallback to calculation
+        let screenX: number, screenY: number;
+        if (screenPos) {
+            screenX = screenPos.x;
+            screenY = screenPos.y;
+        } else {
+            const pos = canvasRef.current?.getPlayerPosition() || { x: 0, y: 0 };
+            screenX = (entity.x - pos.x + 10) * 32 + 100;
+            screenY = (entity.y - pos.y + 8) * 32 + 50;
+        }
+
+        // Clamp to screen bounds with some padding
+        const maxX = (typeof window !== 'undefined' ? window.innerWidth : 1920) - 200;
+        const maxY = (typeof window !== 'undefined' ? window.innerHeight : 1080) - 200;
 
         setContextMenu({
             show: true,
-            x: Math.min(screenX, 400),
-            y: Math.min(screenY, 400),
+            x: Math.max(10, Math.min(screenX, maxX)),
+            y: Math.max(10, Math.min(screenY, maxY)),
             type: 'entity',
             id: entityId,
             name: entity.name,
@@ -1779,7 +1904,7 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
     }, []);
 
     // Object click: show action context menu or handle exit directly
-    const handleObjectClick = useCallback((objectId: string, object: RoomObject) => {
+    const handleObjectClick = useCallback((objectId: string, object: RoomObject, screenPos?: { x: number; y: number }) => {
         // Check if this is an exit object
         if (object.exit?.toLocation) {
             // Direct transition - no menu needed
@@ -1787,9 +1912,16 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
             return;
         }
 
-        const pos = canvasRef.current?.getPlayerPosition() || { x: 0, y: 0 };
-        const screenX = (object.x - pos.x + 10) * 32 + 100;
-        const screenY = (object.y - pos.y + 8) * 32 + 50;
+        // Use actual screen click position if available
+        let screenX: number, screenY: number;
+        if (screenPos) {
+            screenX = screenPos.x;
+            screenY = screenPos.y;
+        } else {
+            const pos = canvasRef.current?.getPlayerPosition() || { x: 0, y: 0 };
+            screenX = (object.x - pos.x + 10) * 32 + 100;
+            screenY = (object.y - pos.y + 8) * 32 + 50;
+        }
 
         // Check if object ID suggests an exit
         const exitPatterns = /^(sign|exit|door|gate|path)_?(to_?)?(.+)$/i;
@@ -1797,10 +1929,14 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
         const isExit = !!(match && match[3]);
         const exitLocation = isExit ? match[3].replace(/_/g, ' ') : undefined;
 
+        // Clamp to screen bounds with some padding
+        const maxX = (typeof window !== 'undefined' ? window.innerWidth : 1920) - 200;
+        const maxY = (typeof window !== 'undefined' ? window.innerHeight : 1080) - 200;
+
         setContextMenu({
             show: true,
-            x: Math.min(screenX, 400),
-            y: Math.min(screenY, 400),
+            x: Math.max(10, Math.min(screenX, maxX)),
+            y: Math.max(10, Math.min(screenY, maxY)),
             type: 'object',
             id: objectId,
             name: object.label || objectId.replace(/_/g, ' '),
@@ -2012,28 +2148,6 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
                                 </div>
                             </div>
                         </div>
-
-                        {/* Right: Quick Action Input (minimal) */}
-                        <div className="pointer-events-auto bg-slate-950/80 backdrop-blur-sm rounded-xl p-3 border border-purple-500/20 flex items-center gap-2">
-                            <input
-                                type="text"
-                                value={input}
-                                onChange={(e) => setInput(e.target.value)}
-                                onKeyDown={handleKeyDown}
-                                placeholder="What do you do?"
-                                className="w-64 bg-slate-800/50 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 border border-transparent focus:border-purple-500/30"
-                                disabled={isLoading}
-                            />
-                            <motion.button
-                                onClick={() => handleSendMessage()}
-                                disabled={isLoading || !input.trim()}
-                                whileHover={{ scale: 1.05 }}
-                                whileTap={{ scale: 0.95 }}
-                                className="p-2.5 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-900 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                <Send size={16} />
-                            </motion.button>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -2106,6 +2220,139 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
                         isLoading={isLoading}
                         onClose={() => setCombatState(null)}
                         activeDiceRoll={activeDiceRoll}
+                    />
+                )}
+
+                {/* === TACTICAL BATTLE OVERLAY (Multi-combatant) === */}
+                {tacticalUIState && (
+                    <TacticalBattleOverlay
+                        state={tacticalUIState}
+                        onAction={(action) => {
+                            if (!tacticalBattleState) return;
+
+                            if (action === 'move') {
+                                // Show movement range on canvas
+                                canvasRef.current?.showBattleMovementRange();
+                                setTacticalUIState(prev => prev ? { ...prev, phase: 'selectMove' } : null);
+                            } else if (action === 'attack') {
+                                // Show attack range on canvas
+                                canvasRef.current?.showBattleAttackRange();
+                                setTacticalUIState(prev => prev ? { ...prev, phase: 'selectAttack' } : null);
+                            } else if (action === 'defend') {
+                                // Process defend action
+                                const current = getCurrentCombatant(tacticalBattleState);
+                                if (current) {
+                                    const { newState, narration } = processTacticalDefend(tacticalBattleState, current.id);
+                                    setTacticalBattleState(newState);
+                                    // Update UI state
+                                    syncTacticalUIState(newState);
+                                    // Advance turn
+                                    const advancedState = advanceTacticalTurn(newState);
+                                    setTacticalBattleState(advancedState);
+                                    syncTacticalUIState(advancedState);
+                                }
+                            }
+                        }}
+                        onEndTurn={() => {
+                            if (!tacticalBattleState) return;
+                            const advancedState = advanceTacticalTurn(tacticalBattleState);
+                            setTacticalBattleState(advancedState);
+                            syncTacticalUIState(advancedState);
+                        }}
+                        onFlee={() => {
+                            // Handle flee from tactical combat
+                            canvasRef.current?.exitBattleMode('fled');
+                            setTacticalBattleState(null);
+                            setTacticalUIState(null);
+                            setGameContext('explore');
+                        }}
+                        isLoading={isProcessingCombat}
+                        movementRange={3}
+                        attackRange={1}
+                    />
+                )}
+
+                {/* === PERSUASION PANEL === */}
+                {persuasionState && (
+                    <PersuasionPanel
+                        state={persuasionState}
+                        charisma={(() => {
+                            try {
+                                const parsed = JSON.parse(data?.character?.stats || '{}');
+                                return parsed.charisma || parsed.CHA || 10;
+                            } catch {
+                                return 10;
+                            }
+                        })()}
+                        onAttempt={async (approach: PersuasionApproach) => {
+                            if (!persuasionTargetNpc || !playerId) return;
+
+                            // Get player charisma
+                            let playerCharisma = 10;
+                            try {
+                                const parsed = JSON.parse(data?.character?.stats || '{}');
+                                playerCharisma = parsed.charisma || parsed.CHA || 10;
+                            } catch { /* use default */ }
+
+                            try {
+                                const result = await attemptPersuasionMutation({
+                                    campaignId,
+                                    playerId,
+                                    npcId: persuasionTargetNpc._id,
+                                    playerCharisma,
+                                    approach,
+                                });
+
+                                if (!result.success) {
+                                    // Handle error or exhausted attempts
+                                    if (result.exhausted) {
+                                        setPersuasionState(prev => prev ? {
+                                            ...prev,
+                                            attempts: 5,
+                                            goldCost: result.goldCost ?? prev.goldCost,
+                                        } : null);
+                                    }
+                                    return;
+                                }
+
+                                // Update persuasion state with result
+                                setPersuasionState(prev => prev ? {
+                                    ...prev,
+                                    progress: result.newProgress ?? prev.progress,
+                                    attempts: result.attemptsUsed ?? prev.attempts,
+                                    cooldownRemaining: 30, // 30 second cooldown
+                                    lastRollResult: {
+                                        roll: result.roll ?? 0,
+                                        modifier: (result.charismaMod ?? 0) + (result.approachMod ?? 0),
+                                        total: result.totalScore ?? 0,
+                                        success: result.progressGained ? result.progressGained > 15 : false,
+                                        progressGained: result.progressGained ?? 0,
+                                    },
+                                } : null);
+
+                                // Check if persuasion succeeded
+                                if (result.persuaded) {
+                                    addNotification('achievement', 'Follower Recruited!', `${persuasionTargetNpc.name} has joined your party!`);
+                                    setTimeout(() => {
+                                        setPersuasionState(null);
+                                        setPersuasionTargetNpc(null);
+                                    }, 2000);
+                                }
+                            } catch (err) {
+                                console.error('[Persuasion] Error:', err);
+                            }
+                        }}
+                        onGoldRecruit={() => {
+                            // Gold recruitment is handled separately via existing recruit mutation
+                            setPersuasionState(null);
+                            setPersuasionTargetNpc(null);
+                        }}
+                        onClose={() => {
+                            setPersuasionState(null);
+                            setPersuasionTargetNpc(null);
+                        }}
+                        isLoading={isLoading}
+                        playerGold={gold}
                     />
                 )}
 
@@ -2429,13 +2676,25 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
                         {contextMenu.type === 'entity' && (
                             <>
                                 {!contextMenu.hostile && (
-                                    <button
-                                        onClick={() => handleContextMenuAction('talk')}
-                                        className="w-full px-4 py-2.5 text-left text-sm hover:bg-purple-500/20 text-slate-200 flex items-center gap-3 transition-colors"
-                                    >
-                                        <MessageSquare size={16} className="text-cyan-400" />
-                                        Talk
-                                    </button>
+                                    <>
+                                        <button
+                                            onClick={() => handleContextMenuAction('talk')}
+                                            className="w-full px-4 py-2.5 text-left text-sm hover:bg-purple-500/20 text-slate-200 flex items-center gap-3 transition-colors"
+                                        >
+                                            <MessageSquare size={16} className="text-cyan-400" />
+                                            Talk
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setChatInputTarget({ name: contextMenu.name, x: contextMenu.x, y: contextMenu.y });
+                                                setContextMenu(null);
+                                            }}
+                                            className="w-full px-4 py-2.5 text-left text-sm hover:bg-green-500/20 text-slate-200 flex items-center gap-3 transition-colors"
+                                        >
+                                            <Send size={16} className="text-green-400" />
+                                            Say something...
+                                        </button>
+                                    </>
                                 )}
                                 <button
                                     onClick={() => handleContextMenuAction('attack')}
@@ -2491,6 +2750,59 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
                         >
                             Cancel
                         </button>
+                    </div>
+                </div>
+            )}
+
+            {/* === CHAT INPUT POPUP (appears during interactions) === */}
+            {chatInputTarget && (
+                <div
+                    className="fixed z-50 bg-slate-900/98 backdrop-blur-sm border border-slate-700 rounded-xl shadow-2xl overflow-hidden"
+                    style={{ left: chatInputTarget.x, top: chatInputTarget.y }}
+                >
+                    <div className="px-4 py-3 border-b border-slate-700 bg-slate-800/50 flex items-center justify-between">
+                        <span className="font-medium text-amber-400">Say to {chatInputTarget.name}</span>
+                        <button
+                            onClick={() => setChatInputTarget(null)}
+                            className="text-slate-500 hover:text-slate-300"
+                        >
+                            <X size={14} />
+                        </button>
+                    </div>
+                    <div className="p-3 flex items-center gap-2">
+                        <input
+                            type="text"
+                            value={input}
+                            onChange={(e) => setInput(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && input.trim()) {
+                                    handleSendMessage(`I say to ${chatInputTarget.name}: "${input}"`);
+                                    setInput('');
+                                    setChatInputTarget(null);
+                                } else if (e.key === 'Escape') {
+                                    setChatInputTarget(null);
+                                }
+                            }}
+                            placeholder="What do you say?"
+                            className="w-64 bg-slate-800/50 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 border border-transparent focus:border-purple-500/30"
+                            disabled={isLoading}
+                            autoFocus
+                        />
+                        <motion.button
+                            onClick={() => {
+                                if (input.trim()) {
+                                    handleSendMessage(`I say to ${chatInputTarget.name}: "${input}"`);
+                                    setInput('');
+                                    setChatInputTarget(null);
+                                }
+                            }}
+                            disabled={isLoading || !input.trim()}
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            className="p-2.5 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-900 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            <Send size={16} />
+                        </motion.button>
                     </div>
                 </div>
             )}

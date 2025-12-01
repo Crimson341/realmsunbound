@@ -447,22 +447,22 @@ export const shouldCampBeAttacked = query({
             .query("bounties")
             .withIndex("by_player", (q) => q.eq("playerId", args.playerId))
             .collect();
-        
+
         const activeBounties = bounties.filter(
             (b) => b.campaignId === args.campaignId && b.status === "active"
         );
-        
+
         const totalBounty = activeBounties.reduce((sum, b) => sum + b.amount, 0);
-        
+
         // Higher bounty = higher chance of camp being attacked
         // 1000+ gold: 5% chance per game day
         // 2000+ gold: 15% chance
         let attackChance = 0;
         if (totalBounty >= 2000) attackChance = 0.15;
         else if (totalBounty >= 1000) attackChance = 0.05;
-        
+
         const random = Math.random();
-        
+
         return {
             totalBounty,
             attackChance,
@@ -472,4 +472,256 @@ export const shouldCampBeAttacked = query({
     },
 });
 
+// --- PERSUASION SYSTEM ---
+
+// Get persuasion status for an NPC
+export const getPersuasionStatus = query({
+    args: {
+        npcId: v.id("npcs"),
+    },
+    handler: async (ctx, args) => {
+        const npc = await ctx.db.get(args.npcId);
+        if (!npc) return null;
+        if (!npc.isRecruitable) return null;
+        if (npc.isDead) return null;
+
+        // Calculate difficulty based on NPC attitude if not set
+        let difficulty = npc.persuasionDifficulty;
+        if (difficulty === undefined) {
+            const attitude = npc.attitude?.toLowerCase() ?? "neutral";
+            if (attitude === "friendly") difficulty = 30;
+            else if (attitude === "neutral") difficulty = 50;
+            else if (attitude === "suspicious") difficulty = 70;
+            else if (attitude === "hostile") difficulty = 90;
+            else difficulty = 50;
+        }
+
+        return {
+            npcId: npc._id,
+            npcName: npc.name,
+            npcAttitude: npc.attitude,
+            npcRole: npc.role,
+            difficulty,
+            progress: npc.persuasionProgress ?? 0,
+            attemptsUsed: npc.persuasionAttempts ?? 0,
+            maxAttempts: 5,
+            isOnCooldown: (npc.persuasionCooldown ?? 0) > Date.now(),
+            cooldownEndsAt: npc.persuasionCooldown ?? 0,
+            goldAlternative: npc.recruitCost ?? 100,
+            canBePersuaded: true,
+        };
+    },
+});
+
+// Attempt to persuade an NPC
+export const attemptPersuasion = mutation({
+    args: {
+        campaignId: v.id("campaigns"),
+        playerId: v.string(),
+        npcId: v.id("npcs"),
+        playerCharisma: v.number(),
+        approach: v.string(), // 'friendly' | 'logical' | 'emotional' | 'intimidate'
+    },
+    handler: async (ctx, args) => {
+        const npc = await ctx.db.get(args.npcId);
+        if (!npc) return { success: false, error: "NPC not found" };
+        if (!npc.isRecruitable) return { success: false, error: "Cannot be recruited" };
+        if (npc.isDead) return { success: false, error: "NPC is dead" };
+
+        const cooldown = npc.persuasionCooldown ?? 0;
+        if (cooldown > Date.now()) {
+            return { success: false, error: "NPC needs time to think", cooldownEnds: cooldown };
+        }
+
+        const attempts = (npc.persuasionAttempts ?? 0) + 1;
+        if (attempts > 5) {
+            return {
+                success: false,
+                error: "Persuasion attempts exhausted. You can still recruit with gold.",
+                exhausted: true,
+                goldCost: npc.recruitCost ?? 100,
+            };
+        }
+
+        // Calculate difficulty based on NPC attitude if not set
+        let difficulty = npc.persuasionDifficulty;
+        if (difficulty === undefined) {
+            const attitude = npc.attitude?.toLowerCase() ?? "neutral";
+            if (attitude === "friendly") difficulty = 30;
+            else if (attitude === "neutral") difficulty = 50;
+            else if (attitude === "suspicious") difficulty = 70;
+            else if (attitude === "hostile") difficulty = 90;
+            else difficulty = 50;
+        }
+
+        const currentProgress = npc.persuasionProgress ?? 0;
+
+        // Base roll (d100)
+        const roll = Math.floor(Math.random() * 100) + 1;
+
+        // Charisma modifier: +3 per point above 10, -3 per point below
+        const charismaMod = Math.floor((args.playerCharisma - 10) * 3);
+
+        // Approach effectiveness based on NPC attitude
+        let approachMod = 0;
+        const attitude = npc.attitude?.toLowerCase() ?? "neutral";
+
+        if (attitude === "friendly") {
+            if (args.approach === "friendly") approachMod = 20;
+            else if (args.approach === "emotional") approachMod = 15;
+            else if (args.approach === "logical") approachMod = 5;
+            else if (args.approach === "intimidate") approachMod = -15;
+        } else if (attitude === "neutral") {
+            if (args.approach === "logical") approachMod = 15;
+            else if (args.approach === "friendly") approachMod = 10;
+            else if (args.approach === "emotional") approachMod = 5;
+            else if (args.approach === "intimidate") approachMod = 0;
+        } else if (attitude === "suspicious") {
+            if (args.approach === "logical") approachMod = 10;
+            else if (args.approach === "intimidate") approachMod = 5;
+            else if (args.approach === "friendly") approachMod = -5;
+            else if (args.approach === "emotional") approachMod = -10;
+        } else if (attitude === "hostile") {
+            if (args.approach === "intimidate") approachMod = 15;
+            else if (args.approach === "logical") approachMod = 5;
+            else if (args.approach === "friendly") approachMod = -10;
+            else if (args.approach === "emotional") approachMod = -15;
+        }
+
+        // Diminishing returns penalty for repeated attempts
+        const attemptPenalty = (attempts - 1) * 8;
+
+        // Calculate total score
+        const totalScore = roll + charismaMod + approachMod - attemptPenalty;
+
+        // Progress gained (even failures add some progress)
+        const progressGained = Math.max(5, Math.floor(totalScore / 3));
+        const newProgress = Math.min(100, currentProgress + progressGained);
+
+        // Check for success (progress >= difficulty)
+        const persuaded = newProgress >= difficulty;
+
+        // Update NPC
+        await ctx.db.patch(args.npcId, {
+            persuasionAttempts: attempts,
+            persuasionProgress: persuaded ? 0 : newProgress, // Reset on success
+            persuasionCooldown: persuaded ? 0 : Date.now() + 30000, // 30 second cooldown
+        });
+
+        // Determine response level for UI
+        let responseLevel: "very_positive" | "positive" | "neutral" | "negative";
+        if (totalScore >= 80) responseLevel = "very_positive";
+        else if (totalScore >= 50) responseLevel = "positive";
+        else if (totalScore >= 20) responseLevel = "neutral";
+        else responseLevel = "negative";
+
+        return {
+            success: true,
+            persuaded,
+            roll,
+            charismaMod,
+            approachMod,
+            attemptPenalty,
+            totalScore,
+            progressGained,
+            newProgress,
+            difficulty,
+            attemptsUsed: attempts,
+            attemptsRemaining: 5 - attempts,
+            responseLevel,
+            message: persuaded
+                ? `${npc.name} has decided to join you!`
+                : newProgress >= difficulty - 15
+                ? `${npc.name} seems almost convinced...`
+                : `${npc.name} is considering your words.`,
+        };
+    },
+});
+
+// Complete recruitment after successful persuasion
+export const recruitViaPersuasion = mutation({
+    args: {
+        campaignId: v.id("campaigns"),
+        playerId: v.string(),
+        npcId: v.id("npcs"),
+        role: v.optional(v.string()),
+    },
+    handler: async (ctx, args) => {
+        const npc = await ctx.db.get(args.npcId);
+        if (!npc) return { success: false, message: "NPC not found" };
+        if (npc.isDead) return { success: false, message: "NPC is dead" };
+        if (!npc.isRecruitable) return { success: false, message: "NPC cannot be recruited" };
+
+        // Get player's camp
+        const camps = await ctx.db
+            .query("playerCamps")
+            .withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId))
+            .collect();
+
+        const camp = camps.find((c) => c.playerId === args.playerId);
+        if (!camp) {
+            return { success: false, message: "You don't have a camp. Establish one first!" };
+        }
+
+        if (camp.followers.length >= 10) {
+            return { success: false, message: "Your camp is at maximum capacity." };
+        }
+
+        if (camp.followers.some((f) => f.npcId === args.npcId)) {
+            return { success: false, message: `${npc.name} is already at your camp.` };
+        }
+
+        // Find position
+        const existingPositions = camp.followers.map((f) => ({
+            x: f.positionX || 0,
+            y: f.positionY || 0,
+        }));
+        const newPosition = findAvailablePosition(existingPositions);
+
+        // Add follower (no gold cost since persuaded)
+        const updatedFollowers = [
+            ...camp.followers,
+            {
+                npcId: args.npcId,
+                role: args.role || "follower",
+                joinedAt: Date.now(),
+                positionX: newPosition.x,
+                positionY: newPosition.y,
+            },
+        ];
+
+        await ctx.db.patch(camp._id, {
+            followers: updatedFollowers,
+        });
+
+        // Reset persuasion state and update location
+        await ctx.db.patch(args.npcId, {
+            persuasionProgress: 0,
+            persuasionAttempts: 0,
+            persuasionCooldown: 0,
+            locationId: camp.locationId,
+        });
+
+        return {
+            success: true,
+            message: `${npc.name} has joined your camp through persuasion!`,
+            goldSpent: 0,
+        };
+    },
+});
+
+// Reset persuasion progress (for testing or if player leaves and returns)
+export const resetPersuasion = mutation({
+    args: {
+        npcId: v.id("npcs"),
+    },
+    handler: async (ctx, args) => {
+        await ctx.db.patch(args.npcId, {
+            persuasionProgress: 0,
+            persuasionAttempts: 0,
+            persuasionCooldown: 0,
+        });
+        return { success: true };
+    },
+});
 

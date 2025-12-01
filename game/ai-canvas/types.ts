@@ -498,7 +498,11 @@ export type AIGameEvent =
   | InteractObjectEvent
   | CombatEffectEvent
   | CameraEffectEvent
-  | TransitionLocationEvent;
+  | TransitionLocationEvent
+  | EnterBattleModeEvent
+  | ExitBattleModeEvent
+  | BattleMoveEvent
+  | BattleAttackEvent;
 
 // ============================================
 // ENGINE STATE
@@ -578,4 +582,120 @@ export function getLightColor(objectType: number): number {
     default:
       return 0xffffff;
   }
+}
+
+// ============================================
+// TACTICAL BATTLE SYSTEM TYPES
+// ============================================
+
+/** Entity participating in tactical combat */
+export interface BattleEntity {
+  entityId: string;
+  name: string;
+  gridX: number;
+  gridY: number;
+  isPlayerControlled: boolean; // Player or follower
+  isFollower: boolean; // Is this a recruited follower
+  movementRange: number;
+  attackRange: number;
+  initiative: number;
+  hp: number;
+  maxHp: number;
+  ac: number;
+  damage: number;
+  hasMovedThisTurn: boolean;
+  hasActedThisTurn: boolean;
+}
+
+/** Tile highlight for movement/attack ranges */
+export interface BattleHighlight {
+  x: number;
+  y: number;
+  type: 'movement' | 'attack' | 'target' | 'ally';
+}
+
+/** Current state of tactical battle */
+export interface BattleState {
+  isActive: boolean;
+  arenaCenter: Position;
+  arenaSize: number; // 9x9 default
+  entities: BattleEntity[];
+  turnOrder: string[]; // Entity IDs in initiative order
+  currentTurnIndex: number;
+  selectedAction: 'none' | 'move' | 'attack' | 'ability';
+  highlightedTiles: BattleHighlight[];
+  combatLog: BattleCombatLogEntry[];
+  outcome?: 'victory' | 'defeat' | 'fled';
+}
+
+/** Combat log entry for battle UI */
+export interface BattleCombatLogEntry {
+  id: string;
+  timestamp: number;
+  type: 'damage' | 'heal' | 'miss' | 'critical' | 'status' | 'move' | 'turn' | 'narration';
+  text: string;
+  actorId?: string;
+  targetId?: string;
+  value?: number;
+}
+
+/** Event to enter tactical battle mode */
+export interface EnterBattleModeEvent {
+  type: 'enterBattleMode';
+  enterBattleMode: {
+    enemies: Array<{
+      entityId: string;
+      name: string;
+      hp: number;
+      maxHp: number;
+      ac: number;
+      damage: number;
+      gridX: number;
+      gridY: number;
+    }>;
+    followers?: Array<{
+      entityId: string;
+      name: string;
+      hp: number;
+      maxHp: number;
+      ac: number;
+      damage: number;
+    }>;
+    playerMovementRange?: number;
+    playerAttackRange?: number;
+  };
+}
+
+/** Event to exit tactical battle mode */
+export interface ExitBattleModeEvent {
+  type: 'exitBattleMode';
+  exitBattleMode: {
+    outcome: 'victory' | 'defeat' | 'fled';
+    xpGained?: number;
+    goldGained?: number;
+    itemsGained?: string[];
+  };
+}
+
+/** Event for entity movement in battle */
+export interface BattleMoveEvent {
+  type: 'battleMove';
+  battleMove: {
+    entityId: string;
+    toX: number;
+    toY: number;
+  };
+}
+
+/** Event for attack in battle */
+export interface BattleAttackEvent {
+  type: 'battleAttack';
+  battleAttack: {
+    attackerId: string;
+    targetId: string;
+    damage: number;
+    hit: boolean;
+    isCritical?: boolean;
+    targetHpAfter: number;
+  };
 }

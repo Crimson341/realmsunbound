@@ -715,3 +715,568 @@ export function initializeCombat(
         ],
     };
 }
+
+// ============================================
+// MULTI-COMBATANT TACTICAL COMBAT SYSTEM
+// ============================================
+
+export type CombatantType = 'player' | 'follower' | 'enemy';
+
+export interface TacticalCombatant {
+    id: string;
+    name: string;
+    type: CombatantType;
+    stats: CombatantStats;
+    gridX: number;
+    gridY: number;
+    initiative: number;
+    isDefending: boolean;
+    hasMoved: boolean;
+    hasActed: boolean;
+    behavior?: EnemyBehavior;
+    portrait?: string;
+}
+
+export interface TacticalCombatState {
+    isActive: boolean;
+    turn: number;
+    combatants: TacticalCombatant[];
+    currentCombatantIndex: number;
+    initiativeOrder: string[]; // Array of combatant IDs in initiative order
+    log: CombatLogEntry[];
+    outcome?: 'victory' | 'defeat' | 'fled';
+    arenaCenter: { x: number; y: number };
+    arenaSize: number;
+}
+
+/**
+ * Roll initiative for a combatant (d20 + DEX modifier)
+ */
+export function rollInitiative(dexMod: number): { roll: DiceRollResult; total: number } {
+    const roll = rollD20();
+    return {
+        roll,
+        total: roll.total + dexMod,
+    };
+}
+
+/**
+ * Initialize tactical combat with multiple combatants
+ */
+export function initializeTacticalCombat(
+    player: {
+        id: string;
+        name: string;
+        hp: number;
+        maxHp: number;
+        ac: number;
+        stats: { str: number; dex: number; con: number; int: number; wis: number; cha: number };
+        weaponDamage?: DiceType;
+        gridX: number;
+        gridY: number;
+        portrait?: string;
+    },
+    followers: Array<{
+        id: string;
+        name: string;
+        hp: number;
+        maxHp: number;
+        ac: number;
+        attackBonus: number;
+        damageBonus: number;
+        damageDice?: DiceType;
+        dexMod: number;
+        gridX: number;
+        gridY: number;
+        portrait?: string;
+    }>,
+    enemies: Array<{
+        id: string;
+        name: string;
+        hp: number;
+        maxHp: number;
+        ac: number;
+        attackBonus?: number;
+        damageBonus?: number;
+        damageDice?: DiceType;
+        dexMod?: number;
+        behavior?: EnemyBehavior;
+        gridX: number;
+        gridY: number;
+        portrait?: string;
+    }>,
+    arenaCenter: { x: number; y: number },
+    arenaSize: number = 9
+): TacticalCombatState {
+    const combatants: TacticalCombatant[] = [];
+    const initiativeRolls: Array<{ id: string; total: number }> = [];
+
+    // Add player
+    const playerDexMod = getStatModifier(player.stats.dex);
+    const playerStrMod = getStatModifier(player.stats.str);
+    const playerInitiative = rollInitiative(playerDexMod);
+    combatants.push({
+        id: player.id,
+        name: player.name,
+        type: 'player',
+        stats: {
+            name: player.name,
+            hp: player.hp,
+            maxHp: player.maxHp,
+            ac: player.ac,
+            attackBonus: playerStrMod + 2,
+            damageBonus: playerStrMod,
+            damageDice: player.weaponDamage || 'd6',
+            damageDiceCount: 1,
+            dexMod: playerDexMod,
+        },
+        gridX: player.gridX,
+        gridY: player.gridY,
+        initiative: playerInitiative.total,
+        isDefending: false,
+        hasMoved: false,
+        hasActed: false,
+        portrait: player.portrait,
+    });
+    initiativeRolls.push({ id: player.id, total: playerInitiative.total });
+
+    // Add followers
+    for (const follower of followers) {
+        const followerInitiative = rollInitiative(follower.dexMod);
+        combatants.push({
+            id: follower.id,
+            name: follower.name,
+            type: 'follower',
+            stats: {
+                name: follower.name,
+                hp: follower.hp,
+                maxHp: follower.maxHp,
+                ac: follower.ac,
+                attackBonus: follower.attackBonus,
+                damageBonus: follower.damageBonus,
+                damageDice: follower.damageDice || 'd6',
+                damageDiceCount: 1,
+                dexMod: follower.dexMod,
+            },
+            gridX: follower.gridX,
+            gridY: follower.gridY,
+            initiative: followerInitiative.total,
+            isDefending: false,
+            hasMoved: false,
+            hasActed: false,
+            portrait: follower.portrait,
+        });
+        initiativeRolls.push({ id: follower.id, total: followerInitiative.total });
+    }
+
+    // Add enemies
+    for (const enemy of enemies) {
+        const enemyDexMod = enemy.dexMod ?? 1;
+        const enemyInitiative = rollInitiative(enemyDexMod);
+        combatants.push({
+            id: enemy.id,
+            name: enemy.name,
+            type: 'enemy',
+            stats: {
+                name: enemy.name,
+                hp: enemy.hp,
+                maxHp: enemy.maxHp,
+                ac: enemy.ac,
+                attackBonus: enemy.attackBonus ?? 3,
+                damageBonus: enemy.damageBonus ?? 2,
+                damageDice: enemy.damageDice || 'd6',
+                damageDiceCount: 1,
+                dexMod: enemyDexMod,
+            },
+            gridX: enemy.gridX,
+            gridY: enemy.gridY,
+            initiative: enemyInitiative.total,
+            isDefending: false,
+            hasMoved: false,
+            hasActed: false,
+            behavior: enemy.behavior || 'balanced',
+            portrait: enemy.portrait,
+        });
+        initiativeRolls.push({ id: enemy.id, total: enemyInitiative.total });
+    }
+
+    // Sort by initiative (highest first)
+    initiativeRolls.sort((a, b) => b.total - a.total);
+    const initiativeOrder = initiativeRolls.map(r => r.id);
+
+    // Find first combatant's index
+    const firstCombatantId = initiativeOrder[0];
+    const currentCombatantIndex = combatants.findIndex(c => c.id === firstCombatantId);
+
+    return {
+        isActive: true,
+        turn: 1,
+        combatants,
+        currentCombatantIndex,
+        initiativeOrder,
+        log: [
+            {
+                id: `log_${Date.now()}`,
+                turn: 0,
+                actor: 'system',
+                type: 'narration',
+                text: `Tactical combat begins! ${enemies.length} enemies vs ${1 + followers.length} allies!`,
+                timestamp: Date.now(),
+            },
+        ],
+        arenaCenter,
+        arenaSize,
+    };
+}
+
+/**
+ * Process an attack between any two combatants in tactical combat
+ */
+export function processTacticalAttack(
+    state: TacticalCombatState,
+    attackerId: string,
+    defenderId: string
+): {
+    newState: TacticalCombatState;
+    result: AttackResult;
+    narration: string;
+} {
+    const attacker = state.combatants.find(c => c.id === attackerId);
+    const defender = state.combatants.find(c => c.id === defenderId);
+
+    if (!attacker || !defender) {
+        throw new Error(`Invalid attacker or defender: ${attackerId} -> ${defenderId}`);
+    }
+
+    // Apply defending bonus if defender is defending
+    const defenderWithBonus = {
+        ...defender.stats,
+        ac: defender.stats.ac + (defender.isDefending ? 2 : 0),
+    };
+
+    const result = performAttack(attacker.stats, defenderWithBonus);
+    const narration = generateAttackNarration(attacker.name, defender.name, result, 'their weapon');
+
+    // Update state
+    const newCombatants = state.combatants.map(c => {
+        if (c.id === defenderId && result.hit) {
+            return {
+                ...c,
+                stats: {
+                    ...c.stats,
+                    hp: Math.max(0, c.stats.hp - (result.totalDamage || 0)),
+                },
+                isDefending: false, // Clear defending after being attacked
+            };
+        }
+        if (c.id === attackerId) {
+            return {
+                ...c,
+                hasActed: true,
+            };
+        }
+        return c;
+    });
+
+    // Check for victory/defeat
+    const playerAlive = newCombatants.some(c => c.type === 'player' && c.stats.hp > 0);
+    const enemiesAlive = newCombatants.some(c => c.type === 'enemy' && c.stats.hp > 0);
+
+    let outcome: 'victory' | 'defeat' | undefined;
+    if (!playerAlive) outcome = 'defeat';
+    else if (!enemiesAlive) outcome = 'victory';
+
+    const newLog: CombatLogEntry[] = [
+        ...state.log,
+        {
+            id: `log_${Date.now()}`,
+            turn: state.turn,
+            actor: attacker.type === 'player' ? 'player' : 'enemy',
+            type: result.isCritical ? 'crit' : result.hit ? 'attack' : result.isDodged ? 'dodge' : 'miss',
+            text: narration,
+            roll: result.attackRoll,
+            damage: result.totalDamage,
+            timestamp: Date.now(),
+        },
+    ];
+
+    return {
+        newState: {
+            ...state,
+            combatants: newCombatants,
+            log: newLog,
+            outcome,
+        },
+        result,
+        narration,
+    };
+}
+
+/**
+ * Process a defend action for a combatant
+ */
+export function processTacticalDefend(
+    state: TacticalCombatState,
+    combatantId: string
+): {
+    newState: TacticalCombatState;
+    narration: string;
+} {
+    const combatant = state.combatants.find(c => c.id === combatantId);
+    if (!combatant) {
+        throw new Error(`Invalid combatant: ${combatantId}`);
+    }
+
+    const narration = `${combatant.name} takes a defensive stance (+2 AC).`;
+
+    const newCombatants = state.combatants.map(c => {
+        if (c.id === combatantId) {
+            return {
+                ...c,
+                isDefending: true,
+                hasActed: true,
+            };
+        }
+        return c;
+    });
+
+    const newLog: CombatLogEntry[] = [
+        ...state.log,
+        {
+            id: `log_${Date.now()}`,
+            turn: state.turn,
+            actor: combatant.type === 'player' ? 'player' : 'enemy',
+            type: 'defend',
+            text: narration,
+            timestamp: Date.now(),
+        },
+    ];
+
+    return {
+        newState: {
+            ...state,
+            combatants: newCombatants,
+            log: newLog,
+        },
+        narration,
+    };
+}
+
+/**
+ * Move a combatant to a new grid position
+ */
+export function processTacticalMove(
+    state: TacticalCombatState,
+    combatantId: string,
+    toX: number,
+    toY: number
+): {
+    newState: TacticalCombatState;
+    path: Array<{ x: number; y: number }>;
+} {
+    const combatant = state.combatants.find(c => c.id === combatantId);
+    if (!combatant) {
+        throw new Error(`Invalid combatant: ${combatantId}`);
+    }
+
+    const path = [{ x: combatant.gridX, y: combatant.gridY }, { x: toX, y: toY }];
+
+    const newCombatants = state.combatants.map(c => {
+        if (c.id === combatantId) {
+            return {
+                ...c,
+                gridX: toX,
+                gridY: toY,
+                hasMoved: true,
+            };
+        }
+        return c;
+    });
+
+    return {
+        newState: {
+            ...state,
+            combatants: newCombatants,
+        },
+        path,
+    };
+}
+
+/**
+ * Advance to the next combatant in initiative order
+ */
+export function advanceTacticalTurn(state: TacticalCombatState): TacticalCombatState {
+    // Find current position in initiative order
+    const currentCombatant = state.combatants[state.currentCombatantIndex];
+    const currentInitiativeIndex = state.initiativeOrder.indexOf(currentCombatant.id);
+
+    // Find next living combatant in initiative order
+    let nextInitiativeIndex = (currentInitiativeIndex + 1) % state.initiativeOrder.length;
+    let newTurn = state.turn;
+
+    // If we wrapped around, increment turn
+    if (nextInitiativeIndex === 0) {
+        newTurn++;
+    }
+
+    // Skip dead combatants
+    let nextCombatantId = state.initiativeOrder[nextInitiativeIndex];
+    let nextCombatant = state.combatants.find(c => c.id === nextCombatantId);
+    let loopCount = 0;
+
+    while (nextCombatant && nextCombatant.stats.hp <= 0 && loopCount < state.initiativeOrder.length) {
+        nextInitiativeIndex = (nextInitiativeIndex + 1) % state.initiativeOrder.length;
+        if (nextInitiativeIndex === 0) {
+            newTurn++;
+        }
+        nextCombatantId = state.initiativeOrder[nextInitiativeIndex];
+        nextCombatant = state.combatants.find(c => c.id === nextCombatantId);
+        loopCount++;
+    }
+
+    const newCurrentIndex = state.combatants.findIndex(c => c.id === nextCombatantId);
+
+    // Reset hasMoved and hasActed for the new combatant, clear defending for all at turn start
+    const newCombatants = state.combatants.map(c => {
+        if (c.id === nextCombatantId) {
+            return {
+                ...c,
+                hasMoved: false,
+                hasActed: false,
+            };
+        }
+        return c;
+    });
+
+    return {
+        ...state,
+        turn: newTurn,
+        currentCombatantIndex: newCurrentIndex,
+        combatants: newCombatants,
+    };
+}
+
+/**
+ * Get the current combatant
+ */
+export function getCurrentCombatant(state: TacticalCombatState): TacticalCombatant | null {
+    return state.combatants[state.currentCombatantIndex] || null;
+}
+
+/**
+ * Calculate Manhattan distance between two grid positions
+ */
+export function gridDistance(x1: number, y1: number, x2: number, y2: number): number {
+    return Math.abs(x2 - x1) + Math.abs(y2 - y1);
+}
+
+/**
+ * Check if a combatant can attack another (within range)
+ */
+export function canAttack(
+    attacker: TacticalCombatant,
+    target: TacticalCombatant,
+    attackRange: number = 1
+): boolean {
+    if (target.stats.hp <= 0) return false;
+    const distance = gridDistance(attacker.gridX, attacker.gridY, target.gridX, target.gridY);
+    return distance <= attackRange;
+}
+
+/**
+ * Get all valid attack targets for a combatant
+ */
+export function getValidTargets(
+    state: TacticalCombatState,
+    attackerId: string,
+    attackRange: number = 1
+): TacticalCombatant[] {
+    const attacker = state.combatants.find(c => c.id === attackerId);
+    if (!attacker) return [];
+
+    return state.combatants.filter(c => {
+        if (c.id === attackerId) return false;
+        if (c.stats.hp <= 0) return false;
+        // Enemies can attack player/followers, player/followers can attack enemies
+        if (attacker.type === 'enemy' && c.type === 'enemy') return false;
+        if (attacker.type !== 'enemy' && c.type !== 'enemy') return false;
+        return canAttack(attacker, c, attackRange);
+    });
+}
+
+/**
+ * Determine AI action for enemy or follower
+ */
+export function determineTacticalAIAction(
+    state: TacticalCombatState,
+    combatantId: string,
+    movementRange: number = 3,
+    attackRange: number = 1
+): {
+    action: 'move' | 'attack' | 'defend';
+    targetId?: string;
+    moveToX?: number;
+    moveToY?: number;
+} {
+    const combatant = state.combatants.find(c => c.id === combatantId);
+    if (!combatant) return { action: 'defend' };
+
+    // Get potential targets
+    const isEnemy = combatant.type === 'enemy';
+    const targets = state.combatants.filter(c =>
+        c.stats.hp > 0 &&
+        c.id !== combatantId &&
+        (isEnemy ? c.type !== 'enemy' : c.type === 'enemy')
+    );
+
+    if (targets.length === 0) return { action: 'defend' };
+
+    // Check if can attack any target
+    const validTargets = getValidTargets(state, combatantId, attackRange);
+    if (validTargets.length > 0 && !combatant.hasActed) {
+        // Attack the lowest HP target
+        validTargets.sort((a, b) => a.stats.hp - b.stats.hp);
+        return { action: 'attack', targetId: validTargets[0].id };
+    }
+
+    // If can't attack, try to move closer to nearest target
+    if (!combatant.hasMoved) {
+        // Find nearest target
+        let nearestTarget = targets[0];
+        let nearestDistance = gridDistance(combatant.gridX, combatant.gridY, nearestTarget.gridX, nearestTarget.gridY);
+
+        for (const target of targets) {
+            const dist = gridDistance(combatant.gridX, combatant.gridY, target.gridX, target.gridY);
+            if (dist < nearestDistance) {
+                nearestDistance = dist;
+                nearestTarget = target;
+            }
+        }
+
+        // Calculate best move toward target
+        const dx = nearestTarget.gridX - combatant.gridX;
+        const dy = nearestTarget.gridY - combatant.gridY;
+
+        // Move up to movementRange tiles toward target
+        let moveX = combatant.gridX;
+        let moveY = combatant.gridY;
+
+        if (Math.abs(dx) > Math.abs(dy)) {
+            moveX += Math.sign(dx) * Math.min(Math.abs(dx), movementRange);
+        } else {
+            moveY += Math.sign(dy) * Math.min(Math.abs(dy), movementRange);
+        }
+
+        // Check if target tile is occupied
+        const occupied = state.combatants.some(c =>
+            c.stats.hp > 0 && c.gridX === moveX && c.gridY === moveY
+        );
+
+        if (!occupied && (moveX !== combatant.gridX || moveY !== combatant.gridY)) {
+            return { action: 'move', moveToX: moveX, moveToY: moveY };
+        }
+    }
+
+    // Default to defend if can't do anything else
+    return { action: 'defend' };
+}

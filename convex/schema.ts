@@ -264,6 +264,13 @@ export default defineSchema({
     isRecruitable: v.optional(v.boolean()), // Can be recruited to player camp
     recruitCost: v.optional(v.number()), // Gold cost to recruit
     loyalty: v.optional(v.number()), // 0-100, affects if they'll leave/betray
+
+    // --- PERSUASION SYSTEM ---
+    persuasionDifficulty: v.optional(v.number()), // 1-100, how hard to convince (based on personality)
+    persuasionProgress: v.optional(v.number()), // Current accumulated persuasion progress
+    persuasionAttempts: v.optional(v.number()), // Number of attempts used (max 5)
+    persuasionCooldown: v.optional(v.number()), // Timestamp when can try again
+
     // --- 2D GAME VISUAL SYSTEM ---
     gridX: v.optional(v.number()),           // Position on tilemap X
     gridY: v.optional(v.number()),           // Position on tilemap Y

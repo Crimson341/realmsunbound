@@ -2540,7 +2540,7 @@ interface PlayerHUDProps {
     className?: string;
 }
 
-export const PlayerHUD: React.FC<PlayerHUDProps> = ({
+export const PlayerHUD: React.FC<PlayerHUDProps & { defaultInventoryOpen?: boolean }> = ({
     character,
     playerState,
     inventory,
@@ -2550,8 +2550,9 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
     onEquipItem,
     onDropItem,
     className = '',
+    defaultInventoryOpen = true, // Default to showing inventory when panel opens
 }) => {
-    const [showInventory, setShowInventory] = useState(false);
+    const [showInventory, setShowInventory] = useState(defaultInventoryOpen);
     const [showCharacterSheet, setShowCharacterSheet] = useState(false);
 
     // Keyboard shortcuts
@@ -3326,6 +3327,629 @@ export const DialogueManager: React.FC<DialogueManagerProps> = ({
                     <InteractionPrompt {...interactionPrompt} />
                 )}
             </AnimatePresence>
+        </>
+    );
+};
+
+// ============================================
+// PERSUASION PANEL - Follower Recruitment UI
+// ============================================
+
+export interface PersuasionState {
+    npcId: string;
+    npcName: string;
+    npcPortrait?: string;
+    difficulty: number; // 1-100
+    progress: number; // Current progress toward success
+    attempts: number; // Number of attempts made (max 5)
+    maxAttempts: number; // Usually 5
+    cooldownRemaining?: number; // Seconds until next attempt
+    goldCost?: number; // Fallback gold cost after max attempts
+    lastRollResult?: {
+        roll: number;
+        modifier: number;
+        total: number;
+        success: boolean;
+        progressGained: number;
+    };
+}
+
+export type PersuasionApproach = 'friendly' | 'logical' | 'emotional' | 'intimidate';
+
+interface PersuasionPanelProps {
+    state: PersuasionState;
+    charisma: number;
+    onAttempt: (approach: PersuasionApproach) => void;
+    onGoldRecruit?: () => void;
+    onClose: () => void;
+    isLoading: boolean;
+    playerGold?: number;
+}
+
+const approachStyles = {
+    friendly: {
+        icon: '😊',
+        label: 'Friendly',
+        description: 'Appeal to their better nature',
+        color: 'emerald',
+        gradient: 'from-emerald-900/80 to-slate-900/90',
+        border: 'border-emerald-500/30',
+        text: 'text-emerald-300',
+    },
+    logical: {
+        icon: '🤔',
+        label: 'Logical',
+        description: 'Present a rational argument',
+        color: 'blue',
+        gradient: 'from-blue-900/80 to-slate-900/90',
+        border: 'border-blue-500/30',
+        text: 'text-blue-300',
+    },
+    emotional: {
+        icon: '💗',
+        label: 'Emotional',
+        description: 'Connect on a personal level',
+        color: 'pink',
+        gradient: 'from-pink-900/80 to-slate-900/90',
+        border: 'border-pink-500/30',
+        text: 'text-pink-300',
+    },
+    intimidate: {
+        icon: '😠',
+        label: 'Intimidate',
+        description: 'Use force of personality',
+        color: 'red',
+        gradient: 'from-red-900/80 to-slate-900/90',
+        border: 'border-red-500/30',
+        text: 'text-red-300',
+    },
+};
+
+export const PersuasionPanel: React.FC<PersuasionPanelProps> = ({
+    state,
+    charisma,
+    onAttempt,
+    onGoldRecruit,
+    onClose,
+    isLoading,
+    playerGold = 0,
+}) => {
+    const progressPercent = Math.min(100, (state.progress / state.difficulty) * 100);
+    const attemptsRemaining = state.maxAttempts - state.attempts;
+    const canAttempt = attemptsRemaining > 0 && !state.cooldownRemaining && progressPercent < 100;
+    const charismaModifier = Math.floor((charisma - 10) / 2);
+    const showGoldFallback = attemptsRemaining === 0 && progressPercent < 100 && state.goldCost;
+    const canAffordGold = playerGold >= (state.goldCost || 0);
+
+    return (
+        <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50"
+        >
+            <div className="bg-slate-950/95 backdrop-blur-md border border-purple-500/40 rounded-2xl p-6 shadow-2xl min-w-[420px] max-w-[500px]">
+                <GlowingBorder color="purple" intensity="low" />
+                <RuneCorners color="purple" />
+
+                {/* Header */}
+                <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-600 to-violet-800 flex items-center justify-center text-2xl">
+                            {state.npcPortrait || '👤'}
+                        </div>
+                        <div>
+                            <h3 className="text-white font-bold font-serif text-lg">{state.npcName}</h3>
+                            <p className="text-purple-400 text-xs uppercase tracking-widest">Persuasion</p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={onClose}
+                        className="p-2 text-slate-500 hover:text-white transition-colors rounded-lg hover:bg-slate-800/50"
+                    >
+                        <X size={18} />
+                    </button>
+                </div>
+
+                {/* Progress Bar */}
+                <div className="mb-4">
+                    <div className="flex justify-between text-xs mb-1.5">
+                        <span className="text-slate-400">Progress</span>
+                        <span className="text-purple-400 font-mono">{Math.floor(progressPercent)}%</span>
+                    </div>
+                    <div className="h-4 bg-slate-800/80 rounded-full overflow-hidden border border-slate-700/50">
+                        <motion.div
+                            className="h-full bg-gradient-to-r from-purple-600 via-violet-500 to-purple-400"
+                            animate={{ width: `${progressPercent}%` }}
+                            transition={{ duration: 0.4 }}
+                        />
+                    </div>
+                    <div className="flex justify-between text-xs mt-1.5">
+                        <span className="text-slate-500">Difficulty: {state.difficulty}</span>
+                        <span className={attemptsRemaining > 2 ? 'text-emerald-400' : attemptsRemaining > 0 ? 'text-amber-400' : 'text-red-400'}>
+                            {attemptsRemaining} attempts left
+                        </span>
+                    </div>
+                </div>
+
+                {/* Charisma Info */}
+                <div className="flex items-center gap-2 mb-4 p-2 bg-slate-900/50 rounded-lg border border-slate-700/30">
+                    <Sparkles size={14} className="text-pink-400" />
+                    <span className="text-slate-400 text-sm">Your Charisma:</span>
+                    <span className="text-pink-300 font-bold">{charisma}</span>
+                    <span className="text-slate-500">(</span>
+                    <span className={charismaModifier >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+                        {charismaModifier >= 0 ? '+' : ''}{charismaModifier}
+                    </span>
+                    <span className="text-slate-500">modifier)</span>
+                </div>
+
+                {/* Last Roll Result */}
+                <AnimatePresence>
+                    {state.lastRollResult && (
+                        <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="mb-4 p-3 bg-slate-900/50 rounded-lg border border-slate-700/30"
+                        >
+                            <div className="flex items-center justify-between">
+                                <span className="text-slate-400 text-sm">Last roll:</span>
+                                <div className="flex items-center gap-2">
+                                    <span className="font-mono text-white">
+                                        {state.lastRollResult.roll} + {state.lastRollResult.modifier} = {state.lastRollResult.total}
+                                    </span>
+                                    {state.lastRollResult.success ? (
+                                        <span className="text-emerald-400 text-sm font-bold">+{state.lastRollResult.progressGained}!</span>
+                                    ) : (
+                                        <span className="text-red-400 text-sm">Failed</span>
+                                    )}
+                                </div>
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                {/* Success State */}
+                {progressPercent >= 100 && (
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="text-center py-4"
+                    >
+                        <motion.div
+                            animate={{ scale: [1, 1.1, 1], rotate: [0, 5, -5, 0] }}
+                            transition={{ duration: 0.5 }}
+                            className="text-4xl mb-2"
+                        >
+                            🎉
+                        </motion.div>
+                        <h4 className="text-emerald-400 font-bold text-lg mb-1">Persuasion Successful!</h4>
+                        <p className="text-slate-400 text-sm">{state.npcName} has agreed to join you!</p>
+                    </motion.div>
+                )}
+
+                {/* Cooldown Message */}
+                {state.cooldownRemaining && state.cooldownRemaining > 0 && (
+                    <div className="text-center py-2 mb-4 bg-amber-900/20 rounded-lg border border-amber-500/30">
+                        <span className="text-amber-400 text-sm">
+                            Wait {state.cooldownRemaining}s before next attempt...
+                        </span>
+                    </div>
+                )}
+
+                {/* Approach Buttons */}
+                {canAttempt && (
+                    <div className="grid grid-cols-2 gap-3 mb-4">
+                        {(Object.keys(approachStyles) as PersuasionApproach[]).map((approach) => {
+                            const style = approachStyles[approach];
+                            return (
+                                <motion.button
+                                    key={approach}
+                                    whileHover={{ scale: 1.02 }}
+                                    whileTap={{ scale: 0.98 }}
+                                    onClick={() => onAttempt(approach)}
+                                    disabled={isLoading}
+                                    className={`
+                                        relative p-3 rounded-xl border ${style.border}
+                                        bg-gradient-to-br ${style.gradient}
+                                        disabled:opacity-50 disabled:cursor-not-allowed
+                                        transition-all duration-200 hover:shadow-lg
+                                        group
+                                    `}
+                                >
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <span className="text-lg">{style.icon}</span>
+                                        <span className={`font-semibold ${style.text}`}>{style.label}</span>
+                                    </div>
+                                    <p className="text-xs text-slate-400 text-left">{style.description}</p>
+                                </motion.button>
+                            );
+                        })}
+                    </div>
+                )}
+
+                {/* Gold Fallback */}
+                {showGoldFallback && onGoldRecruit && (
+                    <div className="border-t border-slate-700/50 pt-4 mt-4">
+                        <p className="text-center text-slate-400 text-sm mb-3">
+                            Persuasion failed. Offer gold instead?
+                        </p>
+                        <motion.button
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
+                            onClick={onGoldRecruit}
+                            disabled={!canAffordGold || isLoading}
+                            className={`
+                                w-full py-3 px-4 rounded-xl border
+                                ${canAffordGold
+                                    ? 'bg-gradient-to-br from-amber-900/80 to-slate-900/90 border-amber-500/40 hover:border-amber-400/60'
+                                    : 'bg-slate-900/50 border-slate-700/50'
+                                }
+                                disabled:opacity-50 disabled:cursor-not-allowed
+                                transition-all duration-200
+                            `}
+                        >
+                            <div className="flex items-center justify-center gap-2">
+                                <HandCoins className={canAffordGold ? 'text-amber-400' : 'text-slate-500'} size={18} />
+                                <span className={canAffordGold ? 'text-amber-300 font-semibold' : 'text-slate-500'}>
+                                    Recruit for {state.goldCost} gold
+                                </span>
+                            </div>
+                            {!canAffordGold && (
+                                <p className="text-xs text-red-400 mt-1">Not enough gold ({playerGold} / {state.goldCost})</p>
+                            )}
+                        </motion.button>
+                    </div>
+                )}
+            </div>
+        </motion.div>
+    );
+};
+
+// ============================================
+// TACTICAL BATTLE OVERLAY - Multi-Combatant Turn-Based UI
+// ============================================
+
+export interface TacticalBattleEntity {
+    id: string;
+    name: string;
+    type: 'player' | 'follower' | 'enemy';
+    hp: number;
+    maxHp: number;
+    ac: number;
+    initiative: number;
+    gridX: number;
+    gridY: number;
+    isCurrentTurn?: boolean;
+    portrait?: string;
+    statusEffects?: string[];
+}
+
+export interface TacticalBattleState {
+    entities: TacticalBattleEntity[];
+    currentEntityIndex: number;
+    turn: number;
+    phase: 'selectAction' | 'selectMove' | 'selectAttack' | 'animating' | 'enemyTurn';
+    selectedAction?: 'move' | 'attack' | 'defend' | 'ability' | 'flee';
+    combatLog: Array<{ id: string; text: string; type: 'attack' | 'damage' | 'miss' | 'crit' | 'info'; timestamp: number }>;
+}
+
+interface TacticalBattleOverlayProps {
+    state: TacticalBattleState;
+    onAction: (action: 'move' | 'attack' | 'defend' | 'ability' | 'flee') => void;
+    onEndTurn: () => void;
+    onFlee: () => void;
+    isLoading: boolean;
+    movementRange?: number;
+    attackRange?: number;
+}
+
+export const TacticalBattleOverlay: React.FC<TacticalBattleOverlayProps> = ({
+    state,
+    onAction,
+    onEndTurn,
+    onFlee,
+    isLoading,
+    movementRange = 3,
+    attackRange = 1,
+}) => {
+    const currentEntity = state.entities[state.currentEntityIndex];
+    const isPlayerControlled = currentEntity?.type === 'player';
+    const playerEntity = state.entities.find(e => e.type === 'player');
+    const followers = state.entities.filter(e => e.type === 'follower');
+    const enemies = state.entities.filter(e => e.type === 'enemy' && e.hp > 0);
+
+    // Sort entities by initiative for turn order display
+    const sortedEntities = [...state.entities].sort((a, b) => b.initiative - a.initiative);
+
+    return (
+        <>
+            {/* Turn Order Bar - Top Center */}
+            <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="fixed top-4 left-1/2 -translate-x-1/2 z-50"
+            >
+                <div className="bg-slate-950/95 backdrop-blur-md border border-red-500/40 rounded-xl px-4 py-3 shadow-2xl">
+                    <div className="flex items-center gap-1 mb-2">
+                        <Swords size={14} className="text-red-400" />
+                        <span className="text-xs text-red-400 font-bold uppercase tracking-widest">Turn {state.turn}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {sortedEntities.map((entity) => {
+                            const isActive = entity.id === currentEntity?.id;
+                            const isDead = entity.hp <= 0;
+                            const bgColor = entity.type === 'player' ? 'from-emerald-600 to-green-700'
+                                : entity.type === 'follower' ? 'from-blue-600 to-cyan-700'
+                                : 'from-red-600 to-rose-700';
+
+                            return (
+                                <motion.div
+                                    key={entity.id}
+                                    animate={isActive ? { scale: [1, 1.1, 1], y: [-2, 2, -2] } : { scale: 1, y: 0 }}
+                                    transition={{ duration: 1, repeat: isActive ? Infinity : 0 }}
+                                    className={`relative ${isDead ? 'opacity-30' : ''}`}
+                                >
+                                    <div className={`
+                                        w-10 h-10 rounded-lg bg-gradient-to-br ${bgColor}
+                                        flex items-center justify-center text-lg
+                                        border-2 ${isActive ? 'border-yellow-400 shadow-lg shadow-yellow-400/30' : 'border-transparent'}
+                                        ${isDead ? 'grayscale' : ''}
+                                    `}>
+                                        {entity.portrait || (entity.type === 'player' ? '⚔️' : entity.type === 'follower' ? '🛡️' : '👹')}
+                                    </div>
+                                    {/* HP indicator */}
+                                    <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-8 h-1 bg-slate-800 rounded-full overflow-hidden">
+                                        <div
+                                            className={`h-full ${entity.type === 'enemy' ? 'bg-red-500' : 'bg-emerald-500'}`}
+                                            style={{ width: `${(entity.hp / entity.maxHp) * 100}%` }}
+                                        />
+                                    </div>
+                                    {/* Initiative number */}
+                                    <div className="absolute -top-1 -right-1 w-4 h-4 bg-slate-900 rounded-full text-[10px] text-slate-400 flex items-center justify-center border border-slate-700">
+                                        {entity.initiative}
+                                    </div>
+                                </motion.div>
+                            );
+                        })}
+                    </div>
+                </div>
+            </motion.div>
+
+            {/* Current Turn Indicator */}
+            {currentEntity && (
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="fixed top-24 left-1/2 -translate-x-1/2 z-50"
+                >
+                    <div className={`
+                        px-4 py-2 rounded-lg text-sm font-bold
+                        ${isPlayerControlled
+                            ? 'bg-emerald-900/80 border border-emerald-500/40 text-emerald-300'
+                            : currentEntity.type === 'follower'
+                            ? 'bg-blue-900/80 border border-blue-500/40 text-blue-300'
+                            : 'bg-red-900/80 border border-red-500/40 text-red-300'
+                        }
+                    `}>
+                        {currentEntity.name}&apos;s Turn
+                        {state.phase === 'selectAction' && isPlayerControlled && ' - Choose Action'}
+                        {state.phase === 'selectMove' && ' - Select Destination'}
+                        {state.phase === 'selectAttack' && ' - Select Target'}
+                        {state.phase === 'animating' && ' - ...'}
+                        {state.phase === 'enemyTurn' && ' - Thinking...'}
+                    </div>
+                </motion.div>
+            )}
+
+            {/* Action Bar - Bottom Center (only when player's turn) */}
+            {isPlayerControlled && state.phase === 'selectAction' && (
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50"
+                >
+                    <div className="bg-slate-950/95 backdrop-blur-md border border-slate-700/50 rounded-2xl p-4 shadow-2xl">
+                        <div className="flex items-center gap-3">
+                            {/* Move */}
+                            <motion.button
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                onClick={() => onAction('move')}
+                                disabled={isLoading}
+                                className="flex flex-col items-center gap-1 px-6 py-3 rounded-xl bg-gradient-to-br from-blue-900/80 to-slate-900/90 border border-blue-500/30 hover:border-blue-400/60 disabled:opacity-50 transition-all"
+                            >
+                                <Footprints className="text-blue-400" size={24} />
+                                <span className="text-blue-300 text-sm font-semibold">Move</span>
+                                <span className="text-xs text-slate-500">{movementRange} tiles</span>
+                            </motion.button>
+
+                            {/* Attack */}
+                            <motion.button
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                onClick={() => onAction('attack')}
+                                disabled={isLoading}
+                                className="flex flex-col items-center gap-1 px-6 py-3 rounded-xl bg-gradient-to-br from-red-900/80 to-slate-900/90 border border-red-500/30 hover:border-red-400/60 disabled:opacity-50 transition-all"
+                            >
+                                <Swords className="text-red-400" size={24} />
+                                <span className="text-red-300 text-sm font-semibold">Attack</span>
+                                <span className="text-xs text-slate-500">{attackRange} range</span>
+                            </motion.button>
+
+                            {/* Defend */}
+                            <motion.button
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                onClick={() => onAction('defend')}
+                                disabled={isLoading}
+                                className="flex flex-col items-center gap-1 px-6 py-3 rounded-xl bg-gradient-to-br from-cyan-900/80 to-slate-900/90 border border-cyan-500/30 hover:border-cyan-400/60 disabled:opacity-50 transition-all"
+                            >
+                                <Shield className="text-cyan-400" size={24} />
+                                <span className="text-cyan-300 text-sm font-semibold">Defend</span>
+                                <span className="text-xs text-slate-500">+2 AC</span>
+                            </motion.button>
+
+                            {/* Ability */}
+                            <motion.button
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                onClick={() => onAction('ability')}
+                                disabled={isLoading}
+                                className="flex flex-col items-center gap-1 px-6 py-3 rounded-xl bg-gradient-to-br from-purple-900/80 to-slate-900/90 border border-purple-500/30 hover:border-purple-400/60 disabled:opacity-50 transition-all"
+                            >
+                                <Zap className="text-purple-400" size={24} />
+                                <span className="text-purple-300 text-sm font-semibold">Ability</span>
+                                <span className="text-xs text-slate-500">Special</span>
+                            </motion.button>
+
+                            <div className="w-px h-16 bg-slate-700/50 mx-2" />
+
+                            {/* End Turn */}
+                            <motion.button
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                onClick={onEndTurn}
+                                disabled={isLoading}
+                                className="flex flex-col items-center gap-1 px-6 py-3 rounded-xl bg-gradient-to-br from-amber-900/80 to-slate-900/90 border border-amber-500/30 hover:border-amber-400/60 disabled:opacity-50 transition-all"
+                            >
+                                <Target className="text-amber-400" size={24} />
+                                <span className="text-amber-300 text-sm font-semibold">End Turn</span>
+                            </motion.button>
+
+                            {/* Flee */}
+                            <motion.button
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                onClick={onFlee}
+                                disabled={isLoading}
+                                className="flex flex-col items-center gap-1 px-6 py-3 rounded-xl bg-gradient-to-br from-slate-800/80 to-slate-900/90 border border-slate-600/30 hover:border-slate-500/60 disabled:opacity-50 transition-all"
+                            >
+                                <Wind className="text-slate-400" size={24} />
+                                <span className="text-slate-300 text-sm font-semibold">Flee</span>
+                            </motion.button>
+                        </div>
+                    </div>
+                </motion.div>
+            )}
+
+            {/* Combat Log - Right Side */}
+            <motion.div
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="fixed right-4 top-40 bottom-24 w-72 z-40"
+            >
+                <div className="h-full bg-slate-950/90 backdrop-blur-md border border-slate-700/50 rounded-xl overflow-hidden">
+                    <div className="px-3 py-2 border-b border-slate-700/50 bg-slate-900/50">
+                        <span className="text-xs text-slate-400 font-bold uppercase tracking-widest">Combat Log</span>
+                    </div>
+                    <div className="p-3 h-[calc(100%-36px)] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+                        <div className="space-y-2">
+                            {state.combatLog.slice(-20).map((entry) => (
+                                <div key={entry.id} className={`text-xs ${
+                                    entry.type === 'crit' ? 'text-yellow-400 font-bold' :
+                                    entry.type === 'damage' ? 'text-red-400' :
+                                    entry.type === 'miss' ? 'text-slate-500' :
+                                    entry.type === 'attack' ? 'text-orange-400' :
+                                    'text-slate-400'
+                                }`}>
+                                    {entry.text}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </motion.div>
+
+            {/* Party Status - Left Side */}
+            <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="fixed left-4 top-40 z-40 w-64"
+            >
+                <div className="bg-slate-950/90 backdrop-blur-md border border-slate-700/50 rounded-xl overflow-hidden">
+                    <div className="px-3 py-2 border-b border-slate-700/50 bg-slate-900/50">
+                        <span className="text-xs text-slate-400 font-bold uppercase tracking-widest">Party</span>
+                    </div>
+                    <div className="p-3 space-y-3">
+                        {/* Player */}
+                        {playerEntity && (
+                            <div className={`p-2 rounded-lg ${playerEntity.id === currentEntity?.id ? 'bg-emerald-900/30 border border-emerald-500/30' : 'bg-slate-900/50'}`}>
+                                <div className="flex items-center gap-2 mb-1">
+                                    <div className="w-6 h-6 rounded bg-gradient-to-br from-emerald-600 to-green-700 flex items-center justify-center text-sm">
+                                        {playerEntity.portrait || '⚔️'}
+                                    </div>
+                                    <span className="text-white text-sm font-semibold flex-1 truncate">{playerEntity.name}</span>
+                                    <span className="text-xs text-slate-500">AC {playerEntity.ac}</span>
+                                </div>
+                                <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                                    <div
+                                        className="h-full bg-gradient-to-r from-emerald-500 to-green-400 transition-all duration-300"
+                                        style={{ width: `${(playerEntity.hp / playerEntity.maxHp) * 100}%` }}
+                                    />
+                                </div>
+                                <div className="text-xs text-slate-500 mt-1">{playerEntity.hp} / {playerEntity.maxHp} HP</div>
+                            </div>
+                        )}
+
+                        {/* Followers */}
+                        {followers.map(follower => (
+                            <div
+                                key={follower.id}
+                                className={`p-2 rounded-lg ${follower.id === currentEntity?.id ? 'bg-blue-900/30 border border-blue-500/30' : 'bg-slate-900/50'} ${follower.hp <= 0 ? 'opacity-50' : ''}`}
+                            >
+                                <div className="flex items-center gap-2 mb-1">
+                                    <div className="w-6 h-6 rounded bg-gradient-to-br from-blue-600 to-cyan-700 flex items-center justify-center text-sm">
+                                        {follower.portrait || '🛡️'}
+                                    </div>
+                                    <span className="text-white text-sm font-semibold flex-1 truncate">{follower.name}</span>
+                                    <span className="text-xs text-slate-500">AC {follower.ac}</span>
+                                </div>
+                                <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                                    <div
+                                        className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 transition-all duration-300"
+                                        style={{ width: `${(follower.hp / follower.maxHp) * 100}%` }}
+                                    />
+                                </div>
+                                <div className="text-xs text-slate-500 mt-1">{follower.hp} / {follower.maxHp} HP</div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Enemies */}
+                {enemies.length > 0 && (
+                    <div className="mt-4 bg-slate-950/90 backdrop-blur-md border border-red-500/30 rounded-xl overflow-hidden">
+                        <div className="px-3 py-2 border-b border-red-500/30 bg-red-900/20">
+                            <span className="text-xs text-red-400 font-bold uppercase tracking-widest">Enemies</span>
+                        </div>
+                        <div className="p-3 space-y-3">
+                            {enemies.map(enemy => (
+                                <div
+                                    key={enemy.id}
+                                    className={`p-2 rounded-lg ${enemy.id === currentEntity?.id ? 'bg-red-900/30 border border-red-500/30' : 'bg-slate-900/50'}`}
+                                >
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <div className="w-6 h-6 rounded bg-gradient-to-br from-red-600 to-rose-700 flex items-center justify-center text-sm">
+                                            {enemy.portrait || '👹'}
+                                        </div>
+                                        <span className="text-white text-sm font-semibold flex-1 truncate">{enemy.name}</span>
+                                        <span className="text-xs text-slate-500">AC {enemy.ac}</span>
+                                    </div>
+                                    <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                                        <div
+                                            className="h-full bg-gradient-to-r from-red-500 to-rose-400 transition-all duration-300"
+                                            style={{ width: `${(enemy.hp / enemy.maxHp) * 100}%` }}
+                                        />
+                                    </div>
+                                    <div className="text-xs text-slate-500 mt-1">{enemy.hp} / {enemy.maxHp} HP</div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </motion.div>
         </>
     );
 };

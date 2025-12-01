@@ -490,6 +490,16 @@ export default function PlayDFPage() {
     const [activeNpc, setActiveNpc] = useState<string | null>(null);
     const [notifications, setNotifications] = useState<Array<{ id: string; type: NotificationType; title: string; message?: string }>>([]);
 
+    // --- ADD NOTIFICATION (must be defined early, used by processAITurnIfNeeded) ---
+    const addNotification = useCallback((type: NotificationType, title: string, message?: string) => {
+        const id = generateId();
+        setNotifications(prev => [...prev, { id, type, title, message }]);
+    }, []);
+
+    const removeNotification = useCallback((id: string) => {
+        setNotifications(prev => prev.filter(n => n.id !== id));
+    }, []);
+
     // --- LOAD MESSAGES FROM DB ---
     useEffect(() => {
         if (savedMessages && !messagesInitialized) {
@@ -681,29 +691,22 @@ export default function PlayDFPage() {
         setTacticalUIState(uiState);
     }, []);
 
-    // Initialize combat - ALGORITHMIC (no AI)
+    // Ref for AI turn processing (needed for circular dependency)
+    const processAITurnIfNeededRef = useRef<((state: TacticalCombatState) => void) | null>(null);
+
+    // Initialize combat - TACTICAL TURN-BASED SYSTEM
     const initiateCombat = useCallback((enemyData: {
         name: string;
         hp: number;
         maxHp: number;
         ac: number;
         type?: string;
+        entityId?: string;
     }) => {
         // Clear dialogue when combat starts
         setDialogueState(null);
         setCurrentChoices([]);
         setGameContext('combat');
-
-        // Build player abilities from spells/abilities
-        const playerAbilities: CombatAbility[] = (data?.spells || []).slice(0, 6).map((spell: any, i: number) => ({
-            id: `ability_${i}`,
-            name: spell.name,
-            description: spell.description,
-            type: spell.type === 'attack' ? 'attack' : 'spell' as const,
-            energyCost: spell.manaCost || spell.energyCost || 0,
-            damage: spell.damage || undefined,
-            icon: spell.type === 'attack' ? '⚔️' : '✨',
-        }));
 
         // Get player stats (stored as JSON string)
         const character = data?.character;
@@ -741,39 +744,142 @@ export default function PlayDFPage() {
         const weapon = (playerInventory || []).find((i: any) => i.equippedSlot === 'weapon') as any;
         const weaponDamage: DiceType = weapon?.damageDice || 'd6';
 
-        // Get mana from game state if available
-        const playerMana = playerGameState?.energy || 20;
-        const playerMaxMana = playerGameState?.maxEnergy || 20;
+        // Get player position from canvas
+        const playerPos = canvasRef.current?.getPlayerPosition() || { x: 5, y: 5 };
 
-        // Initialize the combat engine
-        const engine = initCombatEngine(
+        // Position enemy adjacent to player (1 tile away)
+        const enemyGridX = playerPos.x + 2;
+        const enemyGridY = playerPos.y;
+
+        // Initialize tactical combat with the new system
+        const tacticalState = initializeTacticalCombat(
             {
+                id: 'player',
                 name: character?.name || 'Hero',
                 hp,
                 maxHp,
-                mp: playerMana,
-                maxMp: playerMaxMana,
-                stats,
                 ac: playerAC,
+                stats,
                 weaponDamage,
-                weaponDamageCount: 1,
-                equippedWeapon: weapon?.name || 'Fists',
+                gridX: playerPos.x,
+                gridY: playerPos.y,
             },
-            {
+            [], // No followers for now (can add later from camp data)
+            [
+                {
+                    id: enemyData.entityId || `enemy_${Date.now()}`,
+                    name: enemyData.name,
+                    hp: enemyData.hp,
+                    maxHp: enemyData.maxHp,
+                    ac: enemyData.ac,
+                    attackBonus: Math.floor(enemyData.hp / 10) + 2,
+                    damageBonus: Math.floor(enemyData.hp / 15) + 1,
+                    damageDice: 'd6',
+                    dexMod: 1,
+                    behavior: 'balanced',
+                    gridX: enemyGridX,
+                    gridY: enemyGridY,
+                },
+            ],
+            { x: playerPos.x, y: playerPos.y },
+            9 // Arena size
+        );
+
+        // Set the tactical combat state
+        setTacticalBattleState(tacticalState);
+        syncTacticalUIState(tacticalState);
+
+        // Enter battle mode on the canvas (visual effects)
+        canvasRef.current?.enterBattleMode({
+            enemies: [{
+                entityId: enemyData.entityId || `enemy_${Date.now()}`,
                 name: enemyData.name,
                 hp: enemyData.hp,
                 maxHp: enemyData.maxHp,
                 ac: enemyData.ac,
-                attackBonus: Math.floor(enemyData.hp / 10) + 2, // Scale with HP
-                damageBonus: Math.floor(enemyData.hp / 15) + 1,
-                damageDice: 'd6',
-                behavior: 'balanced',
-            }
-        );
+                damage: Math.floor(enemyData.hp / 15) + 1,
+                gridX: enemyGridX,
+                gridY: enemyGridY,
+            }],
+            playerMovementRange: 3,
+            playerAttackRange: 1,
+        });
 
-        setEngineState(engine);
-        setCombatState(syncCombatUIState(engine, playerAbilities));
-    }, [data, hp, maxHp, playerInventory, playerGameState, syncCombatUIState]);
+        console.log('[PlayDF] Tactical combat initialized:', tacticalState);
+
+        // Check if enemy goes first (higher initiative)
+        const firstCombatant = getCurrentCombatant(tacticalState);
+        if (firstCombatant && firstCombatant.type !== 'player') {
+            // Enemy goes first - process AI turn after a short delay
+            setTimeout(() => {
+                processAITurnIfNeededRef.current?.(tacticalState);
+            }, 500);
+        }
+    }, [data, hp, maxHp, playerInventory, syncTacticalUIState]);
+
+    // Ref for tactical combat end handler (defined later when addXp is available)
+    const handleTacticalCombatEndRef = useRef<((outcome: 'victory' | 'defeat' | 'fled') => void) | null>(null);
+
+    // Process AI turn for enemies/followers
+    const processAITurnIfNeeded = useCallback((state: TacticalCombatState) => {
+        const current = getCurrentCombatant(state);
+        if (!current) return;
+
+        // Only process AI for non-player controlled entities
+        if (current.type === 'player') {
+            // Player's turn - update phase to select action
+            setTacticalUIState(prev => prev ? { ...prev, phase: 'selectAction' } : null);
+            return;
+        }
+
+        // Mark as enemy/follower turn
+        setTacticalUIState(prev => prev ? { ...prev, phase: 'enemyTurn' } : null);
+        setIsProcessingCombat(true);
+
+        // Process AI turn with a delay for visual effect
+        setTimeout(() => {
+            const aiAction = determineTacticalAIAction(state, current.id, 3, 1);
+            let newState = state;
+
+            if (aiAction.action === 'attack' && aiAction.targetId) {
+                const result = processTacticalAttack(state, current.id, aiAction.targetId);
+                newState = result.newState;
+                addNotification(result.result.hit ? 'warning' : 'info', current.name, result.narration);
+            } else if (aiAction.action === 'move' && aiAction.moveToX !== undefined && aiAction.moveToY !== undefined) {
+                const result = processTacticalMove(state, current.id, aiAction.moveToX, aiAction.moveToY);
+                newState = result.newState;
+                // Animate movement on canvas
+                canvasRef.current?.battleMoveEntity(current.id, aiAction.moveToX, aiAction.moveToY);
+            } else if (aiAction.action === 'defend') {
+                const result = processTacticalDefend(state, current.id);
+                newState = result.newState;
+            }
+
+            // Check for combat end
+            if (newState.outcome) {
+                setIsProcessingCombat(false);
+                handleTacticalCombatEndRef.current?.(newState.outcome);
+                return;
+            }
+
+            // Advance to next turn
+            const advancedState = advanceTacticalTurn(newState);
+            setTacticalBattleState(advancedState);
+            syncTacticalUIState(advancedState);
+            setIsProcessingCombat(false);
+
+            // Recursively process if next combatant is also AI
+            const nextCombatant = getCurrentCombatant(advancedState);
+            if (nextCombatant && nextCombatant.type !== 'player') {
+                processAITurnIfNeeded(advancedState);
+            } else {
+                setTacticalUIState(prev => prev ? { ...prev, phase: 'selectAction' } : null);
+            }
+        }, 800);
+    }, [addNotification, syncTacticalUIState]);
+
+    // Assign to ref for use in initiateCombat
+    processAITurnIfNeededRef.current = processAITurnIfNeeded;
 
     // Ref to hold handleCombatEnd (defined later) - avoids circular dependency
     const handleCombatEndRef = useRef<((outcome: 'victory' | 'defeat' | 'fled', finalPlayerHp: number) => void) | null>(null);
@@ -1100,15 +1206,37 @@ export default function PlayDFPage() {
         setActiveNpc(dialogueData.activeNpc || null);
     }, []);
 
-    // --- ADD NOTIFICATION ---
-    const addNotification = useCallback((type: NotificationType, title: string, message?: string) => {
-        const id = generateId();
-        setNotifications(prev => [...prev, { id, type, title, message }]);
-    }, []);
+    // --- TACTICAL COMBAT END HANDLER (must be after addXp and addNotification) ---
+    const handleTacticalCombatEnd = useCallback((outcome: 'victory' | 'defeat' | 'fled') => {
+        // Exit battle mode on canvas
+        canvasRef.current?.exitBattleMode(outcome);
 
-    const removeNotification = useCallback((id: string) => {
-        setNotifications(prev => prev.filter(n => n.id !== id));
-    }, []);
+        // Clear tactical state
+        setTacticalBattleState(null);
+        setTacticalUIState(null);
+        setGameContext('explore');
+
+        if (outcome === 'victory') {
+            // Award XP and loot
+            addXp(50); // Base XP for victory
+            addNotification('achievement', 'Victory!', 'Gained 50 XP');
+            setScreenEffect('levelup');
+        } else if (outcome === 'defeat') {
+            // Player died
+            setShowDeathOverlay(true);
+            const xpLost = Math.floor(xp * 0.1);
+            setDeathXpLost(xpLost);
+            setHp(Math.floor(maxHp * 0.5)); // Respawn with 50% HP
+            if (xpLost > 0) addXp(-xpLost);
+
+            setTimeout(() => {
+                setShowDeathOverlay(false);
+            }, 3000);
+        }
+    }, [addXp, addNotification, xp, maxHp]);
+
+    // Assign to ref for use in processAITurnIfNeeded
+    handleTacticalCombatEndRef.current = handleTacticalCombatEnd;
 
     // --- COMBAT END HANDLER (must be after addXp and addNotification) ---
     const handleCombatEnd = useCallback(async (outcome: 'victory' | 'defeat' | 'fled', finalPlayerHp: number) => {
@@ -2242,14 +2370,35 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
                                 // Process defend action
                                 const current = getCurrentCombatant(tacticalBattleState);
                                 if (current) {
-                                    const { newState, narration } = processTacticalDefend(tacticalBattleState, current.id);
-                                    setTacticalBattleState(newState);
-                                    // Update UI state
-                                    syncTacticalUIState(newState);
-                                    // Advance turn
+                                    const { newState } = processTacticalDefend(tacticalBattleState, current.id);
+                                    // Advance turn and process AI if needed
                                     const advancedState = advanceTacticalTurn(newState);
                                     setTacticalBattleState(advancedState);
                                     syncTacticalUIState(advancedState);
+                                    // Process AI turn if next combatant is enemy
+                                    processAITurnIfNeeded(advancedState);
+                                }
+                            } else if (action === 'ability') {
+                                // TODO: Show ability selection panel
+                                // For now, treat like a powerful attack
+                                const current = getCurrentCombatant(tacticalBattleState);
+                                if (current) {
+                                    const validTargets = getValidTargets(tacticalBattleState, current.id, 2); // Extended range for abilities
+                                    if (validTargets.length > 0) {
+                                        const target = validTargets[0];
+                                        const { newState } = processTacticalAttack(tacticalBattleState, current.id, target.id);
+                                        // Check for combat end
+                                        if (newState.outcome) {
+                                            handleTacticalCombatEndRef.current?.(newState.outcome);
+                                            return;
+                                        }
+                                        const advancedState = advanceTacticalTurn(newState);
+                                        setTacticalBattleState(advancedState);
+                                        syncTacticalUIState(advancedState);
+                                        processAITurnIfNeeded(advancedState);
+                                    } else {
+                                        addNotification('warning', 'No targets in range!');
+                                    }
                                 }
                             }
                         }}
@@ -2258,6 +2407,7 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
                             const advancedState = advanceTacticalTurn(tacticalBattleState);
                             setTacticalBattleState(advancedState);
                             syncTacticalUIState(advancedState);
+                            processAITurnIfNeeded(advancedState);
                         }}
                         onFlee={() => {
                             // Handle flee from tactical combat

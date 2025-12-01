@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { Id } from '@/convex/_generated/dataModel';
-import { TilemapEditor, TilemapSaveData } from '@/components/TilemapEditor';
+import { TilemapEditor, TilemapSaveData, ConditionOption } from '@/components/TilemapEditor';
 import { Loader2, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 
@@ -18,9 +18,14 @@ export default function LocationLayoutEditor() {
   // Fetch data
   const campaignData = useQuery(api.forge.getCampaignDetails, { campaignId });
   const locationTemplate = useQuery(api.mapGenerator.getLocationTemplate, { locationId });
+  const conditions = useQuery(api.conditions.getConditions, { campaignId });
 
   // Mutations
   const saveTemplate = useMutation(api.mapGenerator.saveLocationTemplate);
+  const createConditionMutation = useMutation(api.conditions.createCondition);
+  const updateConditionMutation = useMutation(api.conditions.updateCondition);
+  const deleteConditionMutation = useMutation(api.conditions.deleteCondition);
+  const toggleConditionMutation = useMutation(api.conditions.toggleCondition);
 
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
@@ -97,6 +102,56 @@ export default function LocationLayoutEditor() {
     router.push(`/forge/campaign/${campaignId}`);
   };
 
+  // Condition handlers
+  const handleCreateCondition = async (condition: {
+    name: string;
+    description?: string;
+    trigger: string;
+    triggerContext?: string;
+    rules: string;
+    thenActions: string;
+    elseActions?: string;
+    priority?: number;
+  }) => {
+    await createConditionMutation({
+      campaignId,
+      name: condition.name,
+      description: condition.description,
+      trigger: condition.trigger,
+      triggerContext: condition.triggerContext,
+      rules: condition.rules,
+      thenActions: condition.thenActions,
+      elseActions: condition.elseActions,
+      priority: condition.priority,
+    });
+  };
+
+  const handleUpdateCondition = async (
+    conditionId: Id<"conditions">,
+    updates: Partial<ConditionOption>
+  ) => {
+    await updateConditionMutation({
+      conditionId,
+      name: updates.name,
+      description: updates.description,
+      trigger: updates.trigger,
+      triggerContext: updates.triggerContext,
+      rules: updates.rules,
+      thenActions: updates.thenActions,
+      elseActions: updates.elseActions,
+      priority: updates.priority,
+      isActive: updates.isActive,
+    });
+  };
+
+  const handleDeleteCondition = async (conditionId: Id<"conditions">) => {
+    await deleteConditionMutation({ conditionId });
+  };
+
+  const handleToggleCondition = async (conditionId: Id<"conditions">) => {
+    await toggleConditionMutation({ conditionId });
+  };
+
   // Loading state - wait for all queries including the template
   // locationTemplate is undefined while loading, null if no template exists, or the actual data
   if (!campaignData || !location || locationTemplate === undefined) {
@@ -169,8 +224,36 @@ export default function LocationLayoutEditor() {
           _id: l!._id,
           name: l!.name,
         }))}
+        items={(campaignData?.items || []).map(i => ({
+          _id: i._id,
+          name: i.name,
+        }))}
+        abilities={(campaignData?.spells || []).map(s => ({
+          _id: s._id,
+          name: s.name,
+        }))}
+        factions={(campaignData?.factions || []).map(f => ({
+          _id: f._id,
+          name: f.name,
+        }))}
+        conditions={(conditions || []).map(c => ({
+          _id: c._id,
+          name: c.name,
+          description: c.description,
+          trigger: c.trigger,
+          triggerContext: c.triggerContext,
+          rules: c.rules,
+          thenActions: c.thenActions,
+          elseActions: c.elseActions,
+          priority: c.priority,
+          isActive: c.isActive,
+        }))}
         onSave={handleSave}
         onClose={handleClose}
+        onCreateCondition={handleCreateCondition}
+        onUpdateCondition={handleUpdateCondition}
+        onDeleteCondition={handleDeleteCondition}
+        onToggleCondition={handleToggleCondition}
       />
     </div>
   );

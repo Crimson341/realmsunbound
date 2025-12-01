@@ -8,6 +8,7 @@ import { TilePalette } from './TilePalette';
 import { EntityPalette } from './EntityPalette';
 import { ObjectPalette } from './ObjectPalette';
 import { ConfigPanel } from './ConfigPanel';
+import { ConditionsPalette } from './ConditionsPalette';
 import { ToolBar, Tool } from './ToolBar';
 import { PropertiesPanel } from './PropertiesPanel';
 import { Save, Undo, Redo, Play, Pencil } from 'lucide-react';
@@ -41,9 +42,28 @@ export interface TilemapEditorProps {
   shops: ShopOption[];
   quests: QuestOption[];
   neighborLocations: NeighborLocationOption[];
+  // Conditions data
+  items?: ItemOption[];
+  abilities?: AbilityOption[];
+  factions?: FactionOption[];
+  conditions?: ConditionOption[];
   // Callbacks
   onSave: (data: TilemapSaveData) => Promise<void>;
   onClose?: () => void;
+  // Condition callbacks
+  onCreateCondition?: (condition: {
+    name: string;
+    description?: string;
+    trigger: string;
+    triggerContext?: string;
+    rules: string;
+    thenActions: string;
+    elseActions?: string;
+    priority?: number;
+  }) => Promise<void>;
+  onUpdateCondition?: (id: Id<"conditions">, updates: Partial<ConditionOption>) => Promise<void>;
+  onDeleteCondition?: (id: Id<"conditions">) => Promise<void>;
+  onToggleCondition?: (id: Id<"conditions">) => Promise<void>;
 }
 
 export interface NPCOption {
@@ -79,6 +99,34 @@ export interface QuestOption {
   status: string;
 }
 
+export interface ItemOption {
+  _id: Id<"items">;
+  name: string;
+}
+
+export interface AbilityOption {
+  _id: Id<"spells">;
+  name: string;
+}
+
+export interface FactionOption {
+  _id: Id<"factions">;
+  name: string;
+}
+
+export interface ConditionOption {
+  _id: Id<"conditions">;
+  name: string;
+  description?: string;
+  trigger: string;
+  triggerContext?: string;
+  rules: string;
+  thenActions: string;
+  elseActions?: string;
+  priority: number;
+  isActive: boolean;
+}
+
 export interface TilemapSaveData {
   width: number;
   height: number;
@@ -94,7 +142,7 @@ export interface TilemapSaveData {
   ambience: string;
 }
 
-type PaletteTab = 'tiles' | 'entities' | 'objects' | 'transitions' | 'config';
+type PaletteTab = 'tiles' | 'entities' | 'objects' | 'transitions' | 'conditions' | 'config';
 
 interface HistoryState {
   tiles: number[][];
@@ -137,8 +185,16 @@ export function TilemapEditor({
   shops,
   quests,
   neighborLocations,
+  items = [],
+  abilities = [],
+  factions = [],
+  conditions = [],
   onSave,
   onClose,
+  onCreateCondition,
+  onUpdateCondition,
+  onDeleteCondition,
+  onToggleCondition,
 }: TilemapEditorProps) {
   // ============================================
   // STATE
@@ -767,12 +823,12 @@ export function TilemapEditor({
         {!isPlayMode && (
           <div className="w-64 border-r border-zinc-800 bg-zinc-900 flex flex-col overflow-hidden">
             {/* Palette Tabs */}
-            <div className="flex border-b border-zinc-800">
-              {(['tiles', 'entities', 'objects', 'transitions', 'config'] as PaletteTab[]).map((tab) => (
+            <div className="flex border-b border-zinc-800 overflow-x-auto scrollbar-hide">
+              {(['tiles', 'entities', 'objects', 'transitions', 'conditions', 'config'] as PaletteTab[]).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
-                  className={`flex-1 px-2 py-2 text-xs font-medium capitalize ${
+                  className={`px-3 py-2 text-xs font-medium capitalize whitespace-nowrap shrink-0 ${
                     activeTab === tab
                       ? 'bg-zinc-800 text-amber-500 border-b-2 border-amber-500'
                       : 'text-zinc-400 hover:text-zinc-200'
@@ -830,6 +886,27 @@ export function TilemapEditor({
                       </button>
                     ))
                   )}
+                </div>
+              )}
+              {activeTab === 'conditions' && onCreateCondition && onDeleteCondition && onToggleCondition && (
+                <ConditionsPalette
+                  locationId={locationId}
+                  conditions={conditions}
+                  items={items}
+                  quests={quests}
+                  npcs={npcs}
+                  abilities={abilities}
+                  locations={neighborLocations}
+                  factions={factions}
+                  onCreate={onCreateCondition}
+                  onUpdate={onUpdateCondition || (async () => {})}
+                  onDelete={onDeleteCondition}
+                  onToggle={onToggleCondition}
+                />
+              )}
+              {activeTab === 'conditions' && !onCreateCondition && (
+                <div className="text-sm text-zinc-500 italic text-center py-4">
+                  Conditions not available. Save the layout first.
                 </div>
               )}
               {activeTab === 'config' && (
@@ -905,6 +982,12 @@ export function TilemapEditor({
               spawnY={spawnY}
               lighting={lighting}
               ambience={ambience}
+              conditions={conditions.map(c => ({
+                _id: c._id,
+                name: c.name,
+                trigger: c.trigger,
+                isActive: c.isActive,
+              }))}
               onUpdateLighting={setLighting}
               onUpdateAmbience={setAmbience}
               onUpdateEntity={updateEntity}

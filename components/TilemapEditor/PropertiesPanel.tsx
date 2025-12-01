@@ -1,9 +1,17 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
+import { Id } from '@/convex/_generated/dataModel';
 import { PlacedEntity, PlacedObject, Transition, EntityBehavior } from '@/game/procedural/types';
-import { Trash2, Sun, Moon, Cloud } from 'lucide-react';
+import { Trash2, Sun, Moon, Cloud, Zap, Plus, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { AmbienceType, LightingLevel } from '@/game/ai-canvas/types';
+
+export interface ConditionSummary {
+  _id: Id<"conditions">;
+  name: string;
+  trigger: string;
+  isActive: boolean;
+}
 
 interface PropertiesPanelProps {
   selectedItem: {
@@ -17,6 +25,7 @@ interface PropertiesPanelProps {
   spawnY: number;
   lighting: string;
   ambience: string;
+  conditions?: ConditionSummary[];
   onUpdateLighting: (lighting: string) => void;
   onUpdateAmbience: (ambience: string) => void;
   onUpdateEntity: (id: string, updates: Partial<PlacedEntity>) => void;
@@ -53,12 +62,16 @@ export function PropertiesPanel({
   spawnY,
   lighting,
   ambience,
+  conditions = [],
   onUpdateLighting,
   onUpdateAmbience,
   onUpdateEntity,
   onUpdateObject,
   onDelete,
 }: PropertiesPanelProps) {
+  const [showConditionPicker, setShowConditionPicker] = useState(false);
+  const [conditionsExpanded, setConditionsExpanded] = useState(true);
+
   // Find selected item data
   const selectedEntity = selectedItem?.type === 'entity'
     ? entities.find(e => e.id === selectedItem.id)
@@ -69,6 +82,39 @@ export function PropertiesPanel({
   const selectedTransition = selectedItem?.type === 'transition'
     ? transitions.find(t => t.id === selectedItem.id)
     : null;
+
+  // Get attached conditions for the selected item
+  const attachedConditionIds = selectedEntity?.conditionIds || selectedObject?.conditionIds || [];
+  const attachedConditions = conditions.filter(c =>
+    attachedConditionIds.includes(c._id)
+  );
+  const availableConditions = conditions.filter(c =>
+    !attachedConditionIds.includes(c._id)
+  );
+
+  // Handle adding a condition
+  const handleAddCondition = (conditionId: Id<"conditions">) => {
+    const newConditionIds = [...attachedConditionIds, conditionId];
+    if (selectedEntity) {
+      onUpdateEntity(selectedEntity.id, { conditionIds: newConditionIds });
+    } else if (selectedObject) {
+      onUpdateObject(selectedObject.id, { conditionIds: newConditionIds });
+    }
+    setShowConditionPicker(false);
+  };
+
+  // Handle removing a condition
+  const handleRemoveCondition = (conditionId: Id<"conditions">) => {
+    const newConditionIds = attachedConditionIds.filter(id => id !== conditionId);
+    if (selectedEntity) {
+      onUpdateEntity(selectedEntity.id, { conditionIds: newConditionIds });
+    } else if (selectedObject) {
+      onUpdateObject(selectedObject.id, { conditionIds: newConditionIds });
+    }
+  };
+
+  // Check if conditions can be attached to this item
+  const canAttachConditions = selectedEntity || selectedObject;
 
   return (
     <div className="space-y-4">
@@ -259,6 +305,117 @@ export function PropertiesPanel({
                 </div>
               )}
             </>
+          )}
+
+          {/* Conditions Section (for entities and objects) */}
+          {canAttachConditions && conditions.length > 0 && (
+            <div className="border-t border-zinc-800 pt-3">
+              <button
+                onClick={() => setConditionsExpanded(!conditionsExpanded)}
+                className="w-full flex items-center justify-between text-xs font-medium text-zinc-400 hover:text-zinc-300"
+              >
+                <span className="flex items-center gap-1.5">
+                  <Zap className="w-3.5 h-3.5" />
+                  Conditions ({attachedConditions.length})
+                </span>
+                {conditionsExpanded ? (
+                  <ChevronUp className="w-4 h-4" />
+                ) : (
+                  <ChevronDown className="w-4 h-4" />
+                )}
+              </button>
+
+              {conditionsExpanded && (
+                <div className="mt-2 space-y-2">
+                  {/* Attached Conditions */}
+                  {attachedConditions.length > 0 ? (
+                    <div className="space-y-1">
+                      {attachedConditions.map((condition) => (
+                        <div
+                          key={condition._id}
+                          className={`flex items-center justify-between p-2 rounded text-xs ${
+                            condition.isActive
+                              ? 'bg-amber-600/20 border border-amber-600/40'
+                              : 'bg-zinc-800/50 border border-zinc-700'
+                          }`}
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className={`font-medium truncate ${condition.isActive ? 'text-amber-400' : 'text-zinc-400'}`}>
+                              {condition.name}
+                            </div>
+                            <div className="text-[10px] text-zinc-500 truncate">
+                              {condition.trigger.replace(/_/g, ' ')}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handleRemoveCondition(condition._id)}
+                            className="ml-2 p-1 text-zinc-500 hover:text-red-400 transition-colors"
+                            title="Remove condition"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-zinc-600 italic">
+                      No conditions attached
+                    </p>
+                  )}
+
+                  {/* Add Condition Button/Picker */}
+                  {availableConditions.length > 0 && (
+                    <div className="relative">
+                      <button
+                        onClick={() => setShowConditionPicker(!showConditionPicker)}
+                        className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded text-xs text-zinc-400 transition-colors"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        Attach Condition
+                      </button>
+
+                      {showConditionPicker && (
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded shadow-lg z-10 max-h-40 overflow-y-auto">
+                          {availableConditions.map((condition) => (
+                            <button
+                              key={condition._id}
+                              onClick={() => handleAddCondition(condition._id)}
+                              className="w-full text-left px-3 py-2 text-xs hover:bg-zinc-800 border-b border-zinc-800 last:border-b-0"
+                            >
+                              <div className={`font-medium ${condition.isActive ? 'text-amber-400' : 'text-zinc-400'}`}>
+                                {condition.name}
+                              </div>
+                              <div className="text-[10px] text-zinc-500">
+                                {condition.trigger.replace(/_/g, ' ')}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {availableConditions.length === 0 && attachedConditionIds.length === conditions.length && (
+                    <p className="text-[10px] text-zinc-600 italic text-center">
+                      All conditions attached
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Note when no conditions exist */}
+          {canAttachConditions && conditions.length === 0 && (
+            <div className="border-t border-zinc-800 pt-3">
+              <div className="flex items-center gap-1.5 text-xs text-zinc-500">
+                <Zap className="w-3.5 h-3.5" />
+                <span>No conditions available</span>
+              </div>
+              <p className="text-[10px] text-zinc-600 mt-1">
+                Create conditions in the Conditions tab first
+              </p>
+            </div>
           )}
 
           {/* Transition Properties */}

@@ -624,7 +624,7 @@ export default function CampaignManager() {
                     {/* OVERVIEW TAB */}
                     {activeTab === 'overview' && (
                         <div className="space-y-6">
-                            <div className="bg-white border border-[#D4AF37]/20 rounded-[2rem] p-8 shadow-lg relative overflow-hidden">
+                            <div className={`border border-[#D4AF37]/20 rounded-[2rem] p-8 shadow-lg relative overflow-hidden ${dark ? 'bg-[#1a1d2e]' : 'bg-white'}`}>
                                 <div className="absolute top-0 right-0 w-32 h-32 bg-[#D4AF37]/5 rounded-bl-full -mr-8 -mt-8" />
                                 <h2 className="text-3xl font-bold text-[#43485C] mb-4 flex items-center gap-3">
                                     <Crown size={28} className="text-[#D4AF37]" />
@@ -667,7 +667,7 @@ export default function CampaignManager() {
                                             ).filter(Boolean) || [];
 
                                             return (
-                                                <div key={loc._id} className="bg-white border border-[#D4AF37]/10 rounded-2xl p-6 hover:border-[#D4AF37]/30 transition-all group">
+                                                <div key={loc._id} className={`border border-[#D4AF37]/10 rounded-2xl p-6 hover:border-[#D4AF37]/30 transition-all group ${dark ? 'bg-[#1a1d2e]' : 'bg-white'}`}>
                                                     <div className="flex justify-between items-start">
                                                         <div>
                                                             <h4 className="font-bold text-[#43485C] text-lg group-hover:text-[#D4AF37] transition-colors">{loc.name}</h4>
@@ -742,13 +742,13 @@ export default function CampaignManager() {
                                         })}
                                     </div>
                                 ) : (
-                                    <div className="bg-white border border-[#D4AF37]/10 rounded-2xl p-8 text-center text-[#43485C]/50 italic font-sans">
+                                    <div className={`border border-[#D4AF37]/10 rounded-2xl p-8 text-center italic font-sans ${dark ? 'bg-[#1a1d2e] text-zinc-500' : 'bg-white text-[#43485C]/50'}`}>
                                         No locations yet. Create your first location to build your world!
                                     </div>
                                 )}
                             </div>
-                            <div className="bg-white border border-[#D4AF37]/20 rounded-2xl p-6 h-fit shadow-lg">
-                                <h3 className="text-lg font-bold text-[#43485C] mb-6 border-b border-[#D4AF37]/10 pb-4">Add Location</h3>
+                            <div className={`border border-[#D4AF37]/20 rounded-2xl p-6 h-fit shadow-lg ${dark ? 'bg-[#1a1d2e]' : 'bg-white'}`}>
+                                <h3 className={`text-lg font-bold mb-6 border-b border-[#D4AF37]/10 pb-4 ${dark ? 'text-zinc-200' : 'text-[#43485C]'}`}>Add Location</h3>
                                 <form onSubmit={handleCreateLocation} className="space-y-4">
                                     <Input label="Name" placeholder="The Whispering Woods" value={locName} onChange={(e: any) => setLocName(e.target.value)} required />
                                     <div className="space-y-1">
@@ -818,14 +818,14 @@ export default function CampaignManager() {
                                 <h3 className="text-xl font-bold text-[#43485C] mb-4 flex items-center gap-2">
                                     <Scroll className="text-[#D4AF37]" /> Active Quests
                                 </h3>
-                                <div className="bg-white border border-[#D4AF37]/10 rounded-2xl p-8 text-center text-[#43485C]/50 italic font-sans">
+                                <div className={`border border-[#D4AF37]/10 rounded-2xl p-8 text-center italic font-sans ${dark ? 'bg-[#1a1d2e] text-zinc-500' : 'bg-white text-[#43485C]/50'}`}>
                                     Visualization of existing quests coming soon to the archives.
                                 </div>
                             </div>
 
                             {/* Create Quest Form */}
-                            <div className="bg-white border border-[#D4AF37]/20 rounded-2xl p-6 h-fit shadow-lg">
-                                <h3 className="text-lg font-bold text-[#43485C] mb-6 border-b border-[#D4AF37]/10 pb-4">Add New Quest</h3>
+                            <div className={`border border-[#D4AF37]/20 rounded-2xl p-6 h-fit shadow-lg ${dark ? 'bg-[#1a1d2e]' : 'bg-white'}`}>
+                                <h3 className={`text-lg font-bold mb-6 border-b border-[#D4AF37]/10 pb-4 ${dark ? 'text-zinc-200' : 'text-[#43485C]'}`}>Add New Quest</h3>
                                 <form onSubmit={handleCreateQuest} className="space-y-4">
                                     <Input label="Title" placeholder="Retrieve the Ancient Relic" value={questTitle} onChange={(e: any) => setQuestTitle(e.target.value)} required />
 
@@ -926,14 +926,14 @@ export default function CampaignManager() {
                                     <Users className="text-[#D4AF37]" /> Inhabitants
                                 </h3>
                                 {npcs?.length === 0 ? (
-                                    <div className="text-center py-12 border-2 border-dashed border-[#D4AF37]/20 rounded-2xl bg-white/50">
+                                    <div className={`text-center py-12 border-2 border-dashed border-[#D4AF37]/20 rounded-2xl ${dark ? 'bg-[#1a1d2e]/50' : 'bg-white/50'}`}>
                                         <Users className="mx-auto text-[#D4AF37]/50 mb-2" size={32} />
-                                        <p className="text-[#43485C]/50 font-sans">No NPCs populated yet.</p>
+                                        <p className={`${dark ? 'text-zinc-500' : 'text-[#43485C]/50'} font-sans`}>No NPCs populated yet.</p>
                                     </div>
                                 ) : (
                                     <div className="grid sm:grid-cols-2 gap-4">
                                         {npcs?.map((npc) => (
-                                            <div key={npc._id} className="bg-white border border-[#D4AF37]/10 p-5 rounded-2xl hover:shadow-md transition-all group">
+                                            <div key={npc._id} className={`border border-[#D4AF37]/10 p-5 rounded-2xl hover:shadow-md transition-all group ${dark ? 'bg-[#1a1d2e]' : 'bg-white'}`}>
                                                 <div className="flex justify-between items-start mb-2">
                                                     <h4 className="font-bold text-[#43485C] group-hover:text-[#D4AF37] transition-colors">{npc.name}</h4>
                                                     <span className={`text-[10px] px-2 py-1 rounded-full font-bold uppercase tracking-wider ${npc.attitude === 'Hostile' ? 'bg-red-100 text-red-500' :
@@ -950,7 +950,7 @@ export default function CampaignManager() {
                             </div>
 
                             {/* Create NPC Form */}
-                            <div className="bg-white border border-[#D4AF37]/20 rounded-2xl p-6 h-fit shadow-lg">
+                            <div className={`border border-[#D4AF37]/20 rounded-2xl p-6 h-fit shadow-lg ${dark ? 'bg-[#1a1d2e]' : 'bg-white'}`}>
                                 <h3 className="text-lg font-bold text-[#43485C] mb-6 border-b border-[#D4AF37]/10 pb-4">Add NPC</h3>
                                 <form onSubmit={handleCreateNPC} className="space-y-4">
                                     <Input label="Name" placeholder="Garrick the Guard" value={npcName} onChange={(e: any) => setNpcName(e.target.value)} required />
@@ -994,7 +994,7 @@ export default function CampaignManager() {
                     {activeTab === 'items' && (
                         <div className="space-y-8">
                             {/* Rarity Color Picker */}
-                            <div className="bg-white rounded-[2rem] border border-[#D4AF37]/20 p-8 shadow-sm">
+                            <div className={`rounded-[2rem] border border-[#D4AF37]/20 p-8 shadow-sm ${dark ? 'bg-[#1a1d2e]' : 'bg-white'}`}>
                                 <div className="flex items-center justify-between mb-6">
                                     <div className="flex items-center gap-2">
                                         <Palette className="text-[#D4AF37]" />
@@ -1032,8 +1032,8 @@ export default function CampaignManager() {
                             </div>
 
                             {/* Create Item Form */}
-                            <div className="bg-white rounded-[2rem] border border-[#D4AF37]/20 p-8 shadow-lg relative overflow-hidden">
-                                 <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-transparent via-[#D4AF37]/30 to-transparent" />
+                            <div className={`rounded-[2rem] border border-[#D4AF37]/20 p-8 shadow-lg relative overflow-hidden ${dark ? 'bg-[#1a1d2e]' : 'bg-white'}`}>
+                                <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-transparent via-[#D4AF37]/30 to-transparent" />
                                 <h3 className="text-xl font-bold mb-8 flex items-center gap-2 text-[#43485C]">
                                     <Package className="text-[#D4AF37]" />
                                     Forge Item
@@ -1139,7 +1139,7 @@ export default function CampaignManager() {
                             </div>
 
                             {/* Items List */}
-                            <div className="bg-white rounded-[2rem] border border-[#D4AF37]/20 p-8">
+                            <div className={`rounded-[2rem] border border-[#D4AF37]/20 p-8 ${dark ? 'bg-[#1a1d2e]' : 'bg-white'}`}>
                                 <h3 className="text-xl font-bold mb-6 flex items-center gap-2 text-[#43485C]">
                                     <Package className="text-[#D4AF37]" />
                                     Campaign Items ({items?.length || 0})
@@ -1162,12 +1162,12 @@ export default function CampaignManager() {
                                                 )}
                                                 <div className="pt-3 border-t border-[#D4AF37]/10 space-y-2">
                                                     {item.effects && (
-                                                        <div className="text-xs text-[#43485C]/80 bg-white border border-[#D4AF37]/10 rounded-lg p-2">
+                                                        <div className={`text-xs border border-[#D4AF37]/10 rounded-lg p-2 ${dark ? 'bg-zinc-800 text-zinc-300' : 'bg-white text-[#43485C]/80'}`}>
                                                             <span className="font-bold text-[#D4AF37]">Effects:</span> {item.effects}
                                                         </div>
                                                     )}
                                                     {item.specialAbilities && (
-                                                        <div className="text-xs text-[#43485C]/80 bg-white border border-[#D4AF37]/10 rounded-lg p-2">
+                                                        <div className={`text-xs border border-[#D4AF37]/10 rounded-lg p-2 ${dark ? 'bg-zinc-800 text-zinc-300' : 'bg-white text-[#43485C]/80'}`}>
                                                             <span className="font-bold text-[#D4AF37]">Special:</span> {item.specialAbilities}
                                                         </div>
                                                     )}
@@ -1197,14 +1197,14 @@ export default function CampaignManager() {
                                 </p>
 
                                 {!spells || spells.length === 0 ? (
-                                    <div className="text-center py-12 border-2 border-dashed border-[#D4AF37]/20 rounded-2xl bg-white/50">
+                                    <div className={`text-center py-12 border-2 border-dashed border-[#D4AF37]/20 rounded-2xl ${dark ? 'bg-[#1a1d2e]/50' : 'bg-white/50'}`}>
                                         <Sparkles className="mx-auto text-[#D4AF37]/50 mb-2" size={32} />
-                                        <p className="text-[#43485C]/50 font-sans">No abilities yet. Create your first one!</p>
+                                        <p className={`${dark ? 'text-zinc-500' : 'text-[#43485C]/50'} font-sans`}>No abilities yet. Create your first one!</p>
                                     </div>
                                 ) : (
                                     <div className="grid gap-4">
                                         {spells.map((spell: any) => (
-                                            <div key={spell._id} className="bg-white border border-[#D4AF37]/10 rounded-2xl p-5 hover:border-[#D4AF37]/30 transition-all">
+                                            <div key={spell._id} className={`border border-[#D4AF37]/10 rounded-2xl p-5 hover:border-[#D4AF37]/30 transition-all ${dark ? 'bg-[#1a1d2e]' : 'bg-white'}`}>
                                                 <div className="flex justify-between items-start">
                                                     <div className="flex items-start gap-3">
                                                         {spell.iconEmoji && (
@@ -1220,10 +1220,10 @@ export default function CampaignManager() {
                                                                 )}
                                                                 {spell.rarity && (
                                                                     <span className={`text-xs uppercase tracking-wider font-bold px-2 py-0.5 rounded-full ${
-                                                                        spell.rarity === 'legendary' || spell.rarity === 'S-Rank' ? 'bg-yellow-100 text-yellow-600' :
-                                                                        spell.rarity === 'rare' || spell.rarity === 'A-Rank' ? 'bg-purple-100 text-purple-600' :
-                                                                        spell.rarity === 'uncommon' || spell.rarity === 'B-Rank' ? 'bg-blue-100 text-blue-600' :
-                                                                        'bg-gray-100 text-gray-600'
+                                                                        spell.rarity === 'legendary' || spell.rarity === 'S-Rank' ? `${dark ? 'bg-yellow-900/50 text-yellow-400' : 'bg-yellow-100 text-yellow-600'}` :
+                                                                        spell.rarity === 'rare' || spell.rarity === 'A-Rank' ? `${dark ? 'bg-purple-900/50 text-purple-400' : 'bg-purple-100 text-purple-600'}` :
+                                                                        spell.rarity === 'uncommon' || spell.rarity === 'B-Rank' ? `${dark ? 'bg-blue-900/50 text-blue-400' : 'bg-blue-100 text-blue-600'}` :
+                                                                        `${dark ? 'bg-zinc-700 text-zinc-400' : 'bg-gray-100 text-gray-600'}`
                                                                     }`}>
                                                                         {spell.rarity}
                                                                     </span>
@@ -1271,7 +1271,7 @@ export default function CampaignManager() {
                             </div>
 
                             {/* Create Ability Form */}
-                            <div className="bg-white border border-[#D4AF37]/20 rounded-2xl p-6 h-fit shadow-lg sticky top-4">
+                            <div className={`border border-[#D4AF37]/20 rounded-2xl p-6 h-fit shadow-lg sticky top-4 ${dark ? 'bg-[#1a1d2e]' : 'bg-white'}`}>
                                 <h3 className="text-lg font-bold text-[#43485C] mb-6 border-b border-[#D4AF37]/10 pb-4 flex items-center gap-2">
                                     <Sparkles className="text-[#D4AF37]" size={18} />
                                     Create Ability
@@ -1529,7 +1529,7 @@ export default function CampaignManager() {
                     {/* MONSTERS TAB */}
                     {activeTab === 'monsters' && (
                         <div className="space-y-8">
-                            <div className="bg-white rounded-[2rem] border border-[#D4AF37]/20 p-8 shadow-lg">
+                            <div className={`rounded-[2rem] border border-[#D4AF37]/20 p-8 shadow-lg ${dark ? 'bg-[#1a1d2e]' : 'bg-white'}`}>
                                 <h3 className="text-xl font-bold mb-6 flex items-center gap-2 text-[#43485C]">
                                     <Skull className="text-red-400" />
                                     Create Monster
@@ -1593,16 +1593,16 @@ export default function CampaignManager() {
                                     <Store className="text-[#D4AF37]" /> Shops ({campaignShops?.length || 0})
                                 </h3>
                                 {!campaignShops || campaignShops.length === 0 ? (
-                                    <div className="text-center py-12 border-2 border-dashed border-[#D4AF37]/20 rounded-2xl bg-white/50">
+                                    <div className={`text-center py-12 border-2 border-dashed border-[#D4AF37]/20 rounded-2xl ${dark ? 'bg-[#1a1d2e]/50' : 'bg-white/50'}`}>
                                         <Store className="mx-auto text-[#D4AF37]/50 mb-2" size={32} />
-                                        <p className="text-[#43485C]/50 font-sans">No shops yet. Create your first shop!</p>
+                                        <p className={`${dark ? 'text-zinc-500' : 'text-[#43485C]/50'} font-sans`}>No shops yet. Create your first shop!</p>
                                     </div>
                                 ) : (
                                     <div className="grid gap-4">
                                         {campaignShops.map((shop) => (
                                             <div
                                                 key={shop._id}
-                                                className={`bg-white border rounded-2xl p-5 cursor-pointer transition-all ${
+                                                className={`border rounded-2xl p-5 cursor-pointer transition-all ${dark ? 'bg-[#1a1d2e]' : 'bg-white'} ${
                                                     selectedShopId === shop._id
                                                         ? 'border-[#D4AF37] shadow-lg'
                                                         : 'border-[#D4AF37]/10 hover:border-[#D4AF37]/30'
@@ -1640,7 +1640,7 @@ export default function CampaignManager() {
 
                                 {/* Shop Inventory Editor */}
                                 {selectedShopId && (
-                                    <div className="bg-white border border-[#D4AF37]/20 rounded-2xl p-6 mt-6 shadow-lg">
+                                    <div className={`border border-[#D4AF37]/20 rounded-2xl p-6 mt-6 shadow-lg ${dark ? 'bg-[#1a1d2e]' : 'bg-white'}`}>
                                         <h3 className="text-lg font-bold text-[#43485C] mb-4 border-b border-[#D4AF37]/10 pb-4">
                                             Edit Shop Inventory
                                         </h3>
@@ -1730,7 +1730,7 @@ export default function CampaignManager() {
                             </div>
 
                             {/* Create Shop Form */}
-                            <div className="bg-white border border-[#D4AF37]/20 rounded-2xl p-6 h-fit shadow-lg">
+                            <div className={`border border-[#D4AF37]/20 rounded-2xl p-6 h-fit shadow-lg ${dark ? 'bg-[#1a1d2e]' : 'bg-white'}`}>
                                 <h3 className="text-lg font-bold text-[#43485C] mb-6 border-b border-[#D4AF37]/10 pb-4">Create Shop</h3>
                                 <form onSubmit={handleCreateShop} className="space-y-4">
                                     <Input label="Shop Name" placeholder="The Rusty Sword" value={shopName} onChange={(e: any) => setShopName(e.target.value)} required />
@@ -1860,9 +1860,9 @@ export default function CampaignManager() {
                                     Create if-else rules that control game logic. For example: &quot;IF player is from Hidden Leaf village THEN block entry to Sand Village ANBU HQ&quot;.
                                 </p>
                                 {!campaignConditions || campaignConditions.length === 0 ? (
-                                    <div className="text-center py-12 border-2 border-dashed border-[#D4AF37]/20 rounded-2xl bg-white/50">
+                                    <div className={`text-center py-12 border-2 border-dashed border-[#D4AF37]/20 rounded-2xl ${dark ? 'bg-[#1a1d2e]/50' : 'bg-white/50'}`}>
                                         <GitBranch className="mx-auto text-[#D4AF37]/50 mb-2" size={32} />
-                                        <p className="text-[#43485C]/50 font-sans">No conditions yet. Create your first rule!</p>
+                                        <p className={`${dark ? 'text-zinc-500' : 'text-[#43485C]/50'} font-sans`}>No conditions yet. Create your first rule!</p>
                                     </div>
                                 ) : (
                                     <div className="grid gap-4">
@@ -1884,20 +1884,20 @@ export default function CampaignManager() {
                                             return (
                                                 <div
                                                     key={condition._id}
-                                                    className={`bg-white border rounded-2xl p-5 transition-all ${
+                                                    className={`border rounded-2xl p-5 transition-all ${dark ? 'bg-[#1a1d2e]' : 'bg-white'} ${
                                                         condition.isActive
                                                             ? 'border-[#D4AF37]/30 hover:border-[#D4AF37]/50'
-                                                            : 'border-gray-200 opacity-60'
+                                                            : `${dark ? 'border-zinc-700' : 'border-gray-200'} opacity-60`
                                                     }`}
                                                 >
                                                     <div className="flex justify-between items-start">
                                                         <div className="flex-1">
                                                             <div className="flex items-center gap-2">
-                                                                <h4 className="font-bold text-[#43485C] text-lg">{condition.name}</h4>
+                                                                <h4 className={`font-bold text-lg ${dark ? 'text-zinc-200' : 'text-[#43485C]'}`}>{condition.name}</h4>
                                                                 <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
                                                                     condition.isActive
-                                                                        ? 'bg-emerald-100 text-emerald-600'
-                                                                        : 'bg-gray-100 text-gray-500'
+                                                                        ? `${dark ? 'bg-emerald-900/50 text-emerald-400' : 'bg-emerald-100 text-emerald-600'}`
+                                                                        : `${dark ? 'bg-zinc-700 text-zinc-400' : 'bg-gray-100 text-gray-500'}`
                                                                 }`}>
                                                                     {condition.isActive ? 'Active' : 'Disabled'}
                                                                 </span>
@@ -1954,7 +1954,7 @@ export default function CampaignManager() {
                             </div>
 
                             {/* Create Condition Form */}
-                            <div className="bg-white border border-[#D4AF37]/20 rounded-2xl p-6 h-fit shadow-lg">
+                            <div className={`border border-[#D4AF37]/20 rounded-2xl p-6 h-fit shadow-lg ${dark ? 'bg-[#1a1d2e]' : 'bg-white'}`}>
                                 <h3 className="text-lg font-bold text-[#43485C] mb-6 border-b border-[#D4AF37]/10 pb-4">Create Condition</h3>
                                 <form onSubmit={handleCreateCondition} className="space-y-4">
                                     <Input label="Rule Name" placeholder="Block Hidden Leaf from Sand HQ" value={conditionName} onChange={(e: any) => setConditionName(e.target.value)} required />
@@ -2535,7 +2535,7 @@ export default function CampaignManager() {
                     )}
 
                     {activeTab === 'players' && (
-                        <div className="text-center py-20 bg-white rounded-[2rem] border border-[#D4AF37]/20 shadow-sm">
+                        <div className={`text-center py-20 rounded-[2rem] border border-[#D4AF37]/20 shadow-sm ${dark ? 'bg-[#1a1d2e]' : 'bg-white'}`}>
                             <Users className="mx-auto text-[#D4AF37]/50 mb-4" size={48} />
                             <h3 className="text-xl font-bold text-[#43485C]">Player Management</h3>
                             <p className="text-[#43485C]/50 max-w-md mx-auto mt-2 font-sans">

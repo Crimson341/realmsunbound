@@ -37,6 +37,7 @@ export interface PlacedEntity {
   questId?: Id<"quests">;               // Quest this entity gives or is related to
   lootTable?: LootItem[];               // Items dropped when killed (for monsters)
   color?: string;                       // Custom hex color for circle (e.g., "#ff5500")
+  conditionIds?: Id<"conditions">[];    // Conditions attached to this entity (trigger on interact, etc.)
 }
 
 // Object placed on the map by creator in Forge editor
@@ -53,6 +54,7 @@ export interface PlacedObject {
   shopId?: Id<"shops">;                 // Links to shop if this is a shop counter
   label?: string;                       // Display name for tooltips
   questId?: Id<"quests">;               // Quest this object is related to (e.g., quest item in chest)
+  conditionIds?: Id<"conditions">[];    // Conditions attached to this object (trigger on interact, etc.)
 }
 
 // Transition to another location (exit points)

@@ -25,6 +25,7 @@ export interface AIGameCanvasHandle {
   getEntity: (entityId: string) => RoomEntity | undefined;
   loadDemoRoom: () => void;
   movePlayer: (dx: number, dy: number) => void;
+  setPlayerPosition: (x: number, y: number) => void;
 }
 
 export const AIGameCanvas = forwardRef<AIGameCanvasHandle, AIGameCanvasProps>(
@@ -152,6 +153,9 @@ export const AIGameCanvas = forwardRef<AIGameCanvasHandle, AIGameCanvasProps>(
             const newY = pos.y + dy;
             engineRef.current?.movePlayerTo(newX, newY);
           }
+        },
+        setPlayerPosition: (x: number, y: number) => {
+          engineRef.current?.movePlayerTo(x, y);
         },
       }),
       []

@@ -276,7 +276,7 @@ const FeaturedRealm = ({ campaign, dark }: { campaign: Campaign; dark: boolean }
                     {campaign.description}
                 </p>
                 <div className="flex items-center gap-4 flex-wrap">
-                    <Link href={`/play/${campaign._id}`}>
+                    <Link href={`/play-df/${campaign._id}`}>
                         <button className={`px-8 py-4 rounded-full font-bold text-sm uppercase tracking-widest transition-colors flex items-center gap-2 ${
                             dark
                                 ? 'bg-[#D4AF37] text-[#0f1119] hover:bg-[#eac88f]'

@@ -83,7 +83,7 @@ export default function FeaturesPage() {
                                             <div className="flex items-center gap-1 text-amber-400 text-xs font-bold">
                                                 <Star size={12} fill="currentColor" /> New
                                             </div>
-                                            <Link href={`/play/${campaign._id}`} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded transition-colors flex items-center gap-2">
+                                            <Link href={`/play-df/${campaign._id}`} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded transition-colors flex items-center gap-2">
                                                 <Play size={12} fill="currentColor" />
                                                 ENTER REALM
                                             </Link>

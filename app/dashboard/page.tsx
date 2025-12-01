@@ -608,7 +608,7 @@ const HeroCard = ({ hero, dark }: { hero: HeroCharacter; dark: boolean }) => {
     const statEntries = Object.entries(parsedStats).slice(0, 4);
 
     return (
-        <Link href={hero.campaignId ? `/play/${hero.campaignId}` : '#'}>
+        <Link href={hero.campaignId ? `/play-df/${hero.campaignId}` : '#'}>
             <motion.div
                 className={`group relative overflow-hidden rounded-3xl transition-all duration-300 ${
                     dark
@@ -725,7 +725,7 @@ const HeroCard = ({ hero, dark }: { hero: HeroCharacter; dark: boolean }) => {
 };
 
 const AdventureCard = ({ campaign, dark }: { campaign: Campaign; dark: boolean }) => (
-    <Link href={`/play/${campaign._id}`}>
+    <Link href={`/play-df/${campaign._id}`}>
         <motion.div
             className={`flex items-center gap-4 p-4 rounded-2xl transition-all group ${
                 dark

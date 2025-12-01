@@ -275,6 +275,87 @@ export const createCrimeRumor = mutation({
     },
 });
 
+// --- PLAYER DEATH SYSTEM ---
+// XP penalty on death with level floor
+
+// Calculate XP threshold for a given level
+// Formula: level * (level - 1) * 50
+// Level 1: 0, Level 2: 100, Level 3: 300, Level 4: 600, etc.
+function getXpThresholdForLevel(level: number): number {
+    return level * (level - 1) * 50;
+}
+
+// Handle player death - deduct 10% XP (floored at current level), reset HP
+export const handlePlayerDeath = mutation({
+    args: {
+        campaignId: v.id("campaigns"),
+    },
+    handler: async (ctx, args) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) throw new Error("Unauthorized");
+
+        // Get current player state
+        const playerState = await ctx.db
+            .query("playerGameState")
+            .withIndex("by_campaign_and_player", (q) =>
+                q.eq("campaignId", args.campaignId).eq("playerId", identity.tokenIdentifier)
+            )
+            .first();
+
+        if (!playerState) {
+            // No player state exists - return defaults without penalty
+            return {
+                xpLost: 0,
+                newXp: 0,
+                spawnX: 5,
+                spawnY: 5,
+            };
+        }
+
+        // Calculate XP penalty (10% of current XP)
+        const currentXp = playerState.xp || 0;
+        const currentLevel = playerState.level || 1;
+        const xpPenalty = Math.floor(currentXp * 0.1);
+
+        // Floor at current level's minimum XP (can't lose levels)
+        const levelMinXp = getXpThresholdForLevel(currentLevel);
+        const newXp = Math.max(currentXp - xpPenalty, levelMinXp);
+
+        // Get current location for spawn point
+        let spawnX = 5; // Default spawn
+        let spawnY = 5;
+
+        if (playerState.currentLocationId) {
+            const location = await ctx.db.get(playerState.currentLocationId);
+            if (location?.spawnPoints) {
+                try {
+                    const spawnData = JSON.parse(location.spawnPoints);
+                    if (spawnData.player) {
+                        spawnX = spawnData.player.x ?? 5;
+                        spawnY = spawnData.player.y ?? 5;
+                    }
+                } catch {
+                    // Use defaults
+                }
+            }
+        }
+
+        // Update player state: reset HP, deduct XP
+        await ctx.db.patch(playerState._id, {
+            hp: playerState.maxHp || 20,
+            xp: newXp,
+            lastPlayed: Date.now(),
+        });
+
+        return {
+            xpLost: currentXp - newXp,
+            newXp,
+            spawnX,
+            spawnY,
+        };
+    },
+});
+
 // --- NPC KNOWLEDGE SYSTEM ---
 // Determines what an NPC knows based on location, faction, and rumors
 

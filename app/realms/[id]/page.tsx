@@ -148,7 +148,7 @@ export default function RealmDetailsPage() {
 
                         {/* CTA */}
                         <div className="mt-6">
-                            <Link href={`/play/${campaignId}`}>
+                            <Link href={`/play-df/${campaignId}`}>
                                 <button className={`px-8 py-4 rounded-full font-bold text-sm uppercase tracking-widest transition-all flex items-center gap-2 shadow-xl hover:shadow-2xl hover:-translate-y-1 ${
                                     dark
                                         ? 'bg-[#D4AF37] text-[#0f1119] hover:bg-[#eac88f]'
@@ -552,7 +552,7 @@ export default function RealmDetailsPage() {
 
             {/* Floating CTA */}
             <div className={`fixed bottom-8 right-8 z-40`}>
-                <Link href={`/play/${campaignId}`}>
+                <Link href={`/play-df/${campaignId}`}>
                     <button className={`px-6 py-3 rounded-full font-bold text-sm uppercase tracking-widest shadow-2xl flex items-center gap-2 hover:-translate-y-1 transition-all ${
                         dark
                             ? 'bg-[#D4AF37] text-[#0f1119] hover:bg-[#eac88f]'

@@ -366,7 +366,7 @@ export default function RealmDetailsModal({ campaign, isOpen, onClose }: RealmDe
                                                     </div>
                                                     <p className={`font-bold text-lg mb-1 ${dark ? 'text-[#e8e6e3]' : 'text-stone-900'}`}>The Realm is Quiet</p>
                                                     <p className={`text-sm mb-6 ${dark ? 'text-gray-500' : 'text-stone-500'}`}>No adventurers have set foot here... yet.</p>
-                                                    <Link href={`/play/${campaign._id}`}>
+                                                    <Link href={`/play-df/${campaign._id}`}>
                                                         <button className={`text-xs font-bold uppercase tracking-widest hover:underline ${dark ? 'text-[#D4AF37]' : 'text-indigo-600'}`}>
                                                             Be the First Hero
                                                         </button>
@@ -388,7 +388,7 @@ export default function RealmDetailsModal({ campaign, isOpen, onClose }: RealmDe
                                     <p className={`text-xs font-bold uppercase tracking-widest mb-0.5 ${dark ? 'text-gray-500' : 'text-stone-400'}`}>Your Journey</p>
                                     <p className={`text-sm font-bold ${dark ? 'text-[#e8e6e3]' : 'text-stone-900'}`}>Ready to embark?</p>
                                 </div>
-                                <Link href={`/play/${campaign._id}`} className="w-full sm:w-auto">
+                                <Link href={`/play-df/${campaign._id}`} className="w-full sm:w-auto">
                                     <button className={`w-full px-10 py-4 rounded-full font-bold text-sm uppercase tracking-widest transition-all flex items-center justify-center gap-3 shadow-xl hover:shadow-2xl hover:-translate-y-1 active:translate-y-0 ${
                                         dark 
                                             ? 'bg-[#D4AF37] hover:bg-[#eac88f] text-[#0f1119] shadow-[#D4AF37]/20 hover:shadow-[#D4AF37]/30' 

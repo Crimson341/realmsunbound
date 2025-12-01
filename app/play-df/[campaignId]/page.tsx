@@ -438,6 +438,7 @@ export default function PlayDFPage() {
     // Player game state
     const playerGameState = useQuery(api.world.getPlayerGameState, { campaignId });
     const updatePlayerGameState = useMutation(api.world.updatePlayerGameState);
+    const handlePlayerDeathMutation = useMutation(api.world.handlePlayerDeath);
 
     const playerId = data?.character?.userId || "";
 
@@ -500,6 +501,8 @@ export default function PlayDFPage() {
     const [level, setLevel] = useState(1);
     const [gameContext, setGameContext] = useState<GameContext>('explore');
     const [gold, setGold] = useState(0);
+    const [showDeathOverlay, setShowDeathOverlay] = useState(false);
+    const [deathXpLost, setDeathXpLost] = useState(0);
 
     // --- LOAD GAME STATE FROM DATABASE ---
     useEffect(() => {
@@ -1042,7 +1045,7 @@ export default function PlayDFPage() {
     }, []);
 
     // --- COMBAT END HANDLER (must be after addXp and addNotification) ---
-    const handleCombatEnd = useCallback((outcome: 'victory' | 'defeat' | 'fled', finalPlayerHp: number) => {
+    const handleCombatEnd = useCallback(async (outcome: 'victory' | 'defeat' | 'fled', finalPlayerHp: number) => {
         // Update player HP from combat
         setHp(finalPlayerHp);
         saveGameState({ hp: finalPlayerHp });
@@ -1053,20 +1056,56 @@ export default function PlayDFPage() {
             addXp(xpGained);
             addNotification('achievement', 'Victory!', `Gained ${xpGained} XP`);
             setScreenEffect('levelup');
+
+            // Clear combat after delay
+            setTimeout(() => {
+                setCombatState(null);
+                setEngineState(null);
+                setGameContext('explore');
+            }, 2000);
         } else if (outcome === 'defeat') {
-            addNotification('warning', 'Defeated!', 'You have fallen in battle...');
+            // Player died - show death overlay and apply XP penalty
             setScreenEffect('damage');
+            setShowDeathOverlay(true);
+
+            try {
+                // Call death mutation to deduct XP and get spawn point
+                const result = await handlePlayerDeathMutation({ campaignId });
+                setDeathXpLost(result.xpLost);
+                setXp(result.newXp);
+                setHp(maxHp); // Reset HP to full
+
+                // After showing death overlay, respawn player
+                setTimeout(() => {
+                    // Teleport to spawn point
+                    canvasRef.current?.setPlayerPosition(result.spawnX, result.spawnY);
+                    setShowDeathOverlay(false);
+                    setCombatState(null);
+                    setEngineState(null);
+                    setGameContext('explore');
+                    addNotification('info', 'Respawned', `You lost ${result.xpLost} XP`);
+                }, 3000);
+            } catch (error) {
+                console.error('Failed to handle death:', error);
+                // Fallback: just reset state
+                setTimeout(() => {
+                    setShowDeathOverlay(false);
+                    setCombatState(null);
+                    setEngineState(null);
+                    setGameContext('explore');
+                }, 3000);
+            }
         } else {
             addNotification('info', 'Escaped!', 'You fled from combat');
-        }
 
-        // Clear combat after delay
-        setTimeout(() => {
-            setCombatState(null);
-            setEngineState(null);
-            setGameContext('explore');
-        }, 2000);
-    }, [engineState, saveGameState, addXp, addNotification]);
+            // Clear combat after delay
+            setTimeout(() => {
+                setCombatState(null);
+                setEngineState(null);
+                setGameContext('explore');
+            }, 2000);
+        }
+    }, [engineState, saveGameState, addXp, addNotification, handlePlayerDeathMutation, campaignId, maxHp]);
 
     // Assign handleCombatEnd to ref for use in earlier callbacks
     useEffect(() => {
@@ -1080,6 +1119,11 @@ export default function PlayDFPage() {
         if (typeof gameData.hp === 'number') {
             setHp(gameData.hp);
             stateUpdates.hp = gameData.hp;
+
+            // Check for death outside of combat
+            if (gameData.hp <= 0 && !combatState?.isActive) {
+                handleCombatEnd('defeat', 0);
+            }
         }
 
         if (typeof gameData.gold === 'number') {
@@ -1278,7 +1322,7 @@ export default function PlayDFPage() {
         if (Object.keys(stateUpdates).length > 0) {
             saveGameState(stateUpdates);
         }
-    }, [addReward, addXp, saveGameState, addNotification, initiateCombat, combatState, endCombat]);
+    }, [addReward, addXp, saveGameState, addNotification, initiateCombat, combatState, endCombat, handleCombatEnd]);
 
 
     // --- INITIAL GAME START ---
@@ -2015,6 +2059,42 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
                         newLevel={level}
                         onComplete={() => setShowLevelUp(false)}
                     />
+                )}
+
+                {/* === DEATH OVERLAY === */}
+                {showDeathOverlay && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90"
+                    >
+                        <div className="text-center">
+                            <motion.div
+                                initial={{ scale: 0.5, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
+                            >
+                                <Skull className="w-24 h-24 mx-auto text-red-500 mb-4" />
+                            </motion.div>
+                            <motion.h1
+                                initial={{ y: 20, opacity: 0 }}
+                                animate={{ y: 0, opacity: 1 }}
+                                transition={{ delay: 0.4 }}
+                                className="text-4xl font-bold text-red-500 mb-2"
+                            >
+                                YOU DIED
+                            </motion.h1>
+                            <motion.p
+                                initial={{ y: 20, opacity: 0 }}
+                                animate={{ y: 0, opacity: 1 }}
+                                transition={{ delay: 0.6 }}
+                                className="text-slate-400 text-lg"
+                            >
+                                {deathXpLost > 0 ? `Lost ${deathXpLost} XP` : 'Respawning...'}
+                            </motion.p>
+                        </div>
+                    </motion.div>
                 )}
 
                 {/* === FULL COMBAT OVERLAY === */}

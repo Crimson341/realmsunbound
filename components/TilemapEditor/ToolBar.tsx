@@ -7,7 +7,6 @@ import {
   PaintBucket,
   MousePointer2,
   MapPin,
-  Move,
 } from 'lucide-react';
 
 export type Tool = 'paint' | 'erase' | 'fill' | 'select' | 'spawn' | 'move';

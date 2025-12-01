@@ -1,13 +1,12 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { Id } from '@/convex/_generated/dataModel';
 import { TilemapEditor, TilemapSaveData, ConditionOption } from '@/components/TilemapEditor';
-import { Loader2, ArrowLeft } from 'lucide-react';
-import Link from 'next/link';
+import { Loader2 } from 'lucide-react';
 
 export default function LocationLayoutEditor() {
   const params = useParams();
@@ -27,14 +26,12 @@ export default function LocationLayoutEditor() {
   const deleteConditionMutation = useMutation(api.conditions.deleteCondition);
   const toggleConditionMutation = useMutation(api.conditions.toggleCondition);
 
-  const [isSaving, setIsSaving] = useState(false);
+  const [, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
   // Find the specific location
   const location = campaignData?.locations?.find(l => l._id === locationId);
-  const npcs = campaignData?.npcs?.filter(n => n.locationId === locationId) || [];
   const allNpcs = campaignData?.npcs || [];
-  const monsters = campaignData?.monsters?.filter(m => m.locationId === locationId) || [];
   const allMonsters = campaignData?.monsters || [];
 
   // Get shops for this location

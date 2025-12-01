@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { PlacedEntity, PlacedObject, EntityBehavior, LootItem } from '@/game/procedural/types';
-import { ChevronDown, ChevronRight, User, Box, Store, Package, Footprints, Ban, Hand, ScrollText, Plus, Trash2, Percent, Sword, Palette } from 'lucide-react';
+import { ChevronDown, ChevronRight, User, Box, Store, Package, Footprints, Ban, Hand, ScrollText, Plus, Trash2, Sword, Palette } from 'lucide-react';
 import { Id } from '@/convex/_generated/dataModel';
 
 interface ShopOption {

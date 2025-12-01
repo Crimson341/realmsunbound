@@ -86,10 +86,12 @@ export function ConditionsPalette({
   locations,
   factions,
   onCreate,
-  onUpdate,
+  onUpdate: _onUpdate,
   onDelete,
   onToggle,
 }: ConditionsPaletteProps) {
+  // Note: _onUpdate is available for future inline editing functionality
+  void _onUpdate;
   const [isCreating, setIsCreating] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 

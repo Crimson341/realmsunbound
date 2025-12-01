@@ -166,7 +166,7 @@ const DEFAULT_HEIGHT = 20;
 
 export function TilemapEditor({
   locationId,
-  campaignId,
+  campaignId: _campaignId,
   locationName,
   locationType,
   initialWidth = DEFAULT_WIDTH,
@@ -196,6 +196,9 @@ export function TilemapEditor({
   onDeleteCondition,
   onToggleCondition,
 }: TilemapEditorProps) {
+  // Suppress unused var warning - campaignId available for future use
+  void _campaignId;
+
   // ============================================
   // STATE
   // ============================================
@@ -221,7 +224,7 @@ export function TilemapEditor({
   // Spawn points
   const [spawnX, setSpawnX] = useState(initialSpawnX);
   const [spawnY, setSpawnY] = useState(initialSpawnY);
-  const [alternateSpawns, setAlternateSpawns] = useState<AlternateSpawn[]>(initialAlternateSpawns);
+  const [alternateSpawns] = useState<AlternateSpawn[]>(initialAlternateSpawns);
 
   // Visual settings
   const [lighting, setLighting] = useState(initialLighting);

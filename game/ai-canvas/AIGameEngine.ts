@@ -2454,4 +2454,16 @@ export class AIGameEngine {
   setOnTileClick(callback: ((x: number, y: number) => void) | undefined): void {
     this.config.onTileClick = callback;
   }
+
+  setOnEntityClick(callback: ((entityId: string, entity: RoomEntity, screenPos?: { x: number; y: number }) => void) | undefined): void {
+    this.config.onEntityClick = callback;
+  }
+
+  setOnObjectClick(callback: ((objectId: string, object: RoomObject, screenPos?: { x: number; y: number }) => void) | undefined): void {
+    this.config.onObjectClick = callback;
+  }
+
+  setOnHover(callback: ((info: HoverInfo | null) => void) | undefined): void {
+    this.config.onHover = callback;
+  }
 }

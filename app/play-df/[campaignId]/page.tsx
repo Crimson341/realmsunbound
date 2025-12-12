@@ -17,6 +17,7 @@ import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
 import CharacterSheetModal from '../../../components/CharacterSheetModal';
 import QuestDetailModal from '../../../components/QuestDetailModal';
+import { CharacterCreationModal } from '../../../components/CharacterCreationModal';
 import {
     QuickActionBar,
     DiceRollOverlay,
@@ -119,6 +120,21 @@ const generateId = () => Math.random().toString(36).substring(2, 9);
 
 // --- DEDICATED MAP AI HELPER ---
 
+type MapAIResponse = {
+    events?: AIGameEvent[];
+    error?: string;
+    raw?: string;
+};
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+// Cache + in-flight dedupe so we don't spam the provider (which causes 429s).
+// IMPORTANT: This file imports `Map` from `lucide-react`, so use `globalThis.Map` to avoid shadowing.
+const mapAIRoomCache = new globalThis.Map<string, { ts: number; events: AIGameEvent[] }>();
+const mapAIInFlight = new globalThis.Map<string, Promise<AIGameEvent[]>>();
+let mapAISequential: Promise<AIGameEvent[]> = Promise.resolve([]);
+let mapAICooldownUntil = 0;
+
 const callMapAI = async (
     campaignId: string, // CRITICAL: Added campaign ID to fetch world data
     playerAction: string,
@@ -135,6 +151,10 @@ const callMapAI = async (
     needsNewRoom: boolean,
     narrativeContext?: string
 ): Promise<AIGameEvent[]> => {
+    if (Date.now() < mapAICooldownUntil) {
+        // Gemini quota exhausted / rate-limited: don't hammer the endpoint.
+        return [];
+    }
     const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL!;
     if (!convexUrl) {
         console.error("[MapAI] NEXT_PUBLIC_CONVEX_URL not set");
@@ -144,60 +164,136 @@ const callMapAI = async (
         ? convexUrl.replace("convex.cloud", "convex.site")
         : convexUrl;
 
-    try {
-        console.log('[MapAI] Calling map AI with:', {
+    const roomCacheKey = needsNewRoom
+        ? [
+            'room',
             campaignId,
-            playerAction,
-            currentLocationName,
-            locationType,
-            needsNewRoom,
-            hasRoomState: !!currentRoomState,
-        });
+            (currentLocationName || '').toLowerCase(),
+            (locationType || '').toLowerCase(),
+            (currentLocationDescription || '').slice(0, 80),
+        ].join('|')
+        : null;
 
-        const response = await fetch(`${httpUrl}/api/map-events`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                campaignId, // Include campaign ID for world-aware generation
-                playerAction,
-                currentLocationName,
-                currentLocationDescription,
-                locationType,
-                currentRoomState,
-                needsNewRoom,
-                narrativeContext,
-            }),
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('[MapAI] HTTP Error:', response.status, errorText);
-            return [];
+    // Short TTL cache for room generation to avoid repeated startup/return calls.
+    if (roomCacheKey) {
+        const cached = mapAIRoomCache.get(roomCacheKey);
+        if (cached && Date.now() - cached.ts < 60_000) {
+            return cached.events;
         }
+    }
 
-        const data = await response.json();
-        console.log('[MapAI] Raw response:', JSON.stringify(data).substring(0, 500));
+    const requestKey = [
+        campaignId,
+        needsNewRoom ? 'new' : 'update',
+        (currentLocationName || '').toLowerCase(),
+        (locationType || '').toLowerCase(),
+        (playerAction || '').slice(0, 120),
+    ].join('|');
 
-        if (data.error) {
-            console.error('[MapAI] API returned error:', data.error);
-            if (data.raw) console.error('[MapAI] Raw AI output:', data.raw);
-            return [];
+    const existing = mapAIInFlight.get(requestKey);
+    if (existing) return existing;
+
+    const run = async (): Promise<AIGameEvent[]> => {
+        const MAX_RETRIES = 3;
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                console.log('[MapAI] Calling map AI with:', {
+                    campaignId,
+                    currentLocationName,
+                    locationType,
+                    needsNewRoom,
+                    hasRoomState: !!currentRoomState,
+                    attempt: attempt + 1,
+                });
+
+                const response = await fetch(`${httpUrl}/api/map-events`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        campaignId,
+                        playerAction,
+                        currentLocationName,
+                        currentLocationDescription,
+                        locationType,
+                        currentRoomState,
+                        needsNewRoom,
+                        narrativeContext,
+                    }),
+                });
+
+                if (!response.ok) {
+                    const status = response.status;
+                    const retryAfterHeader = response.headers.get('retry-after');
+                    const retryAfterMs = retryAfterHeader ? Math.max(0, parseInt(retryAfterHeader, 10) * 1000) : 0;
+                    const errorText = await response.text();
+
+                    // Retry on rate limit / transient errors.
+                    if ((status === 429 || status === 408 || status >= 500) && attempt < MAX_RETRIES) {
+                        const backoffMs = retryAfterMs || Math.min(8000, 500 * 2 ** attempt);
+                        if (status === 429) {
+                            mapAICooldownUntil = Date.now() + backoffMs;
+                        }
+                        console.warn('[MapAI] Rate limited/transient error, retrying...', { status, backoffMs });
+                        await sleep(backoffMs);
+                        continue;
+                    }
+
+                    if (status === 429) {
+                        // Quota exhausted (often "limit: 0") — treat as expected and avoid noisy errors.
+                        const backoffMs = retryAfterMs || 40_000;
+                        mapAICooldownUntil = Date.now() + backoffMs;
+                        console.warn('[MapAI] Quota/rate limited. Pausing MapAI requests.', { status, backoffMs });
+                        return [];
+                    }
+                    console.error('[MapAI] HTTP Error:', status, errorText);
+                    return [];
+                }
+
+                const data = (await response.json()) as MapAIResponse;
+                if (data.error) {
+                    // If backend returns an error payload, treat it as retryable for common rate-limit phrasing.
+                    const isRetryable = /rate|quota|429/i.test(data.error);
+                    if (isRetryable && attempt < MAX_RETRIES) {
+                        const backoffMs = Math.min(8000, 500 * 2 ** attempt);
+                        console.warn('[MapAI] Backend error, retrying...', { error: data.error, backoffMs });
+                        await sleep(backoffMs);
+                        continue;
+                    }
+                    console.error('[MapAI] API returned error:', data.error);
+                    if (data.raw) console.error('[MapAI] Raw AI output:', data.raw);
+                    return [];
+                }
+
+                if (!data.events || !Array.isArray(data.events)) {
+                    console.warn('[MapAI] No events array in response:', data);
+                    return [];
+                }
+
+                if (roomCacheKey) {
+                    mapAIRoomCache.set(roomCacheKey, { ts: Date.now(), events: data.events });
+                }
+                return data.events;
+            } catch (e) {
+                if (attempt < MAX_RETRIES) {
+                    const backoffMs = Math.min(8000, 500 * 2 ** attempt);
+                    console.warn('[MapAI] Exception, retrying...', { backoffMs, error: e });
+                    await sleep(backoffMs);
+                    continue;
+                }
+                console.error('[MapAI] Exception:', e);
+                return [];
+            }
         }
-
-        if (!data.events || !Array.isArray(data.events)) {
-            console.warn('[MapAI] No events array in response:', data);
-            return [];
-        }
-
-        console.log('[MapAI] Received', data.events.length, 'events');
-        data.events.forEach((evt: AIGameEvent, i: number) => {
-            console.log(`[MapAI] Event ${i}:`, evt.type, evt);
-        });
-
-        return data.events;
-    } catch (e) {
-        console.error('[MapAI] Exception:', e);
         return [];
+    };
+
+    // Avoid concurrent "new room" generations, since they’re the most expensive and most likely to hit 429.
+    const promise = needsNewRoom ? (mapAISequential = mapAISequential.then(run, run)) : run();
+    mapAIInFlight.set(requestKey, promise);
+    try {
+        return await promise;
+    } finally {
+        mapAIInFlight.delete(requestKey);
     }
 };
 
@@ -258,13 +354,27 @@ const streamNarrative = async (
             body: JSON.stringify(payload),
         });
 
-        if (!response.ok) throw new Error(await response.text());
+        if (!response.ok) {
+            const status = response.status;
+            const retryAfterHeader = response.headers.get('retry-after');
+            const retryAfterMs = retryAfterHeader ? Math.max(0, parseInt(retryAfterHeader, 10) * 1000) : 0;
+            const text = await response.text();
+
+            // Gemini quota errors can come through as 429. Don’t spam the console or keep retrying.
+            if (status === 429) {
+                const backoffMs = retryAfterMs || 40_000;
+                mapAICooldownUntil = Date.now() + backoffMs;
+                onError(new Error("AI quota exceeded. The game will run in limited (non-AI) mode for a bit."));
+                return;
+            }
+
+            throw new Error(text);
+        }
         if (!response.body) throw new Error("No response body");
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
 
-        let processedIndex = 0;
         let buffer = "";
         let internalTextBuffer = "";
 
@@ -282,19 +392,39 @@ const streamNarrative = async (
 
             buffer += decoder.decode(value, { stream: true });
 
-            const textRegex = /"text":\s*"((?:[^"\\]|\\.)*)"/g;
-            textRegex.lastIndex = processedIndex;
+            // OpenRouter streams as Server-Sent Events (SSE):
+            //   data: { "choices":[{"delta":{"content":"..."}}] }
+            //   data: [DONE]
+            //
+            // We read SSE lines and append delta content into `internalTextBuffer`,
+            // then reuse the existing <narrative>/<dialogue>/<data>/<mapEvents> tag parser.
+            while (true) {
+                const lineEnd = buffer.indexOf('\n');
+                if (lineEnd === -1) break;
 
-            let match;
-            while ((match = textRegex.exec(buffer)) !== null) {
-                processedIndex = textRegex.lastIndex;
-                let textContent = match[1];
-                try {
-                    textContent = JSON.parse(`"${match[1]}"`);
-                } catch (e) {
-                    console.error(e);
+                const line = buffer.slice(0, lineEnd);
+                buffer = buffer.slice(lineEnd + 1);
+
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+
+                if (trimmed.startsWith('data:')) {
+                    const data = trimmed.slice(5).trim();
+                    if (data === '[DONE]') {
+                        // Stream complete.
+                        buffer = "";
+                        break;
+                    }
+                    try {
+                        const parsed = JSON.parse(data);
+                        const delta = parsed?.choices?.[0]?.delta?.content;
+                        if (typeof delta === 'string' && delta.length > 0) {
+                            internalTextBuffer += delta;
+                        }
+                    } catch {
+                        // Ignore non-JSON data lines.
+                    }
                 }
-                internalTextBuffer += textContent;
             }
 
             while (internalTextBuffer.length > 0) {
@@ -423,7 +553,6 @@ export default function PlayDFPage() {
 
     const data = useQuery(api.forge.getCampaignDetails, { campaignId });
     const generateQuest = useAction(api.ai.generateQuest);
-    const ensureCharacter = useMutation(api.forge.ensureCharacterForCampaign);
 
     // --- AI GAME CANVAS REF ---
     const canvasRef = useRef<AIGameCanvasHandle>(null);
@@ -431,22 +560,45 @@ export default function PlayDFPage() {
     // --- PLAYER ID for queries ---
     const playerIdForAbilities = data?.character?.userId || "";
 
-    // Ensure character exists for this campaign - WAIT FOR AUTH TO BE READY
-    const [characterEnsured, setCharacterEnsured] = useState(false);
-    useEffect(() => {
-        // Only call mutation when auth is ready and user is authenticated
-        if (campaignId && !characterEnsured && isAuthenticated && !isAuthLoading) {
-            console.log('[PlayDF] Auth ready, ensuring character...');
-            ensureCharacter({ campaignId })
-                .then(() => {
-                    console.log('[PlayDF] Character ensured successfully');
-                    setCharacterEnsured(true);
-                })
-                .catch((err) => {
-                    console.error('[PlayDF] Failed to ensure character:', err);
-                });
-        }
-    }, [campaignId, characterEnsured, ensureCharacter, isAuthenticated, isAuthLoading]);
+    // --- CHARACTER CREATION STATE ---
+    // Show modal if user is authenticated but has no character for this campaign
+    const needsCharacterCreation = isAuthenticated && !isAuthLoading && data && !data.character;
+    const [characterCreated, setCharacterCreated] = useState(false);
+
+    // Build character creation config from campaign data
+    const characterCreationConfig = useMemo(() => {
+        if (!data?.campaign) return null;
+        const campaign = data.campaign;
+
+        // Parse JSON fields safely
+        const parseJsonField = <T,>(field: string | undefined, fallback: T): T => {
+            if (!field) return fallback;
+            try {
+                return JSON.parse(field) as T;
+            } catch {
+                return fallback;
+            }
+        };
+
+        return {
+            availableClasses: parseJsonField(campaign.availableClasses, [
+                { name: "Warrior", description: "A skilled fighter trained in combat" },
+                { name: "Mage", description: "A wielder of arcane magic" },
+                { name: "Rogue", description: "A stealthy and cunning adventurer" },
+            ]),
+            availableRaces: parseJsonField(campaign.availableRaces, [
+                { name: "Human", description: "Versatile and adaptable" },
+                { name: "Elf", description: "Graceful and long-lived" },
+                { name: "Dwarf", description: "Hardy and resilient" },
+            ]),
+            statAllocationMethod: campaign.statAllocationMethod || "standard_array",
+            startingStatPoints: 27,
+            allowCustomNames: true,
+            terminology: parseJsonField(campaign.terminology, {}),
+            statConfig: parseJsonField(campaign.statConfig, null),
+            theme: campaign.theme,
+        };
+    }, [data?.campaign]);
 
     // World system mutations
     const killNPC = useMutation(api.forge.killNPC);
@@ -481,9 +633,13 @@ export default function PlayDFPage() {
     const [isLoading, setIsLoading] = useState(false);
     const [isGeneratingMap, setIsGeneratingMap] = useState(false);
     const [mapGenerationStep, setMapGenerationStep] = useState("");
+    // AI availability banner (quota/rate limit)
+    const [aiOfflineUntil, setAiOfflineUntil] = useState<number>(0);
     const [isCharacterSheetOpen, setCharacterSheetOpen] = useState(false);
     const [selectedQuest, setSelectedQuest] = useState<any>(null);
     const [showPlayerHUD, setShowPlayerHUD] = useState(false);
+    const aiOffline = Date.now() < aiOfflineUntil;
+    const aiOfflineSeconds = aiOffline ? Math.max(1, Math.ceil((aiOfflineUntil - Date.now()) / 1000)) : 0;
 
     // --- DIALOGUE SYSTEM STATE ---
     const [dialogueState, setDialogueState] = useState<DialogueState | null>(null);
@@ -1684,6 +1840,7 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
         let aiResponseContent = "";
         let aiChoices: string[] | undefined;
 
+        let aiQuotaLimited = false;
         await streamNarrative(
             payload,
             (delta) => {
@@ -1715,11 +1872,36 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
                 handleDialogue(dialogueData);
             },
             (err) => {
-                console.error("AI Error:", err);
-                setMessages(prev => [...prev, {
-                    role: 'model',
-                    content: "The magic fizzles... Something went wrong connecting to the realm."
-                }]);
+                const msg = (err && typeof err === 'object' && 'message' in err) ? String((err as any).message) : String(err);
+                const isQuota = /quota exceeded|resource_exhausted|retry in|429/i.test(msg);
+                if (isQuota) {
+                    aiQuotaLimited = true;
+                    // Show a friendly banner for ~40s (or whatever streamNarrative picked).
+                    const backoffMs = 40_000;
+                    setAiOfflineUntil(Date.now() + backoffMs);
+
+                    // Provide a non-AI intro so the player isn’t blocked.
+                    setMessages(prev => [
+                        ...prev,
+                        {
+                            role: 'model',
+                            content:
+                                `AI is temporarily offline (quota exhausted). You can still explore the room and use the UI.\n\n` +
+                                `Try again in ~${Math.ceil(backoffMs / 1000)} seconds, or switch to a Gemini API key with active quota.`,
+                        },
+                    ]);
+                    setCurrentChoices([
+                        "Look around carefully.",
+                        "Check my inventory.",
+                        "Move forward and explore.",
+                    ]);
+                } else {
+                    console.error("AI Error:", err);
+                    setMessages(prev => [...prev, {
+                        role: 'model',
+                        content: "The magic fizzles... Something went wrong connecting to the realm."
+                    }]);
+                }
                 setIsLoading(false);
                 setIsGeneratingMap(false);
             }
@@ -2158,6 +2340,16 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
     return (
         <div className="relative h-screen w-screen bg-slate-950 text-slate-200 overflow-hidden">
 
+            {/* === CHARACTER CREATION MODAL === */}
+            {characterCreationConfig && (
+                <CharacterCreationModal
+                    isOpen={!!needsCharacterCreation && !characterCreated}
+                    campaignId={campaignId}
+                    config={characterCreationConfig}
+                    onComplete={() => setCharacterCreated(true)}
+                />
+            )}
+
             {/* === FULL SCREEN GAME CANVAS === */}
             <div className="absolute inset-0">
                 <AIGameCanvas
@@ -2199,6 +2391,11 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
 
                     {/* Right: Context & Actions */}
                     <div className="flex items-center gap-3 pointer-events-auto">
+                        {aiOffline && (
+                            <div className="px-3 py-2 rounded-xl text-xs font-bold tracking-wide uppercase bg-amber-500/15 text-amber-300 border border-amber-500/30 backdrop-blur-sm">
+                                AI offline (quota) • retry in ~{aiOfflineSeconds}s
+                            </div>
+                        )}
                         {/* Game Context Badge */}
                         <div className={cn(
                             "px-3 py-2 rounded-xl text-sm font-medium capitalize backdrop-blur-sm border",

@@ -11,6 +11,17 @@ import {
     BookOpen, Target, X
 } from 'lucide-react';
 
+// React keys must be stable and non-empty.
+// Some game-generated IDs can be empty/whitespace; this helper normalizes those to fallbacks.
+const safeKey = (value: unknown, fallback: string) => {
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        return trimmed.length > 0 ? trimmed : fallback;
+    }
+    if (typeof value === 'number') return String(value);
+    return fallback;
+};
+
 // ============================================
 // TYPES
 // ============================================
@@ -1529,7 +1540,7 @@ const CombatLogPanel: React.FC<{
             >
                 {entries.slice(-maxEntries).map((entry, index) => (
                     <motion.div
-                        key={entry.id || `log_${index}`}
+                        key={safeKey(entry.id, `log_${index}`)}
                         initial={{ opacity: 0, x: -10 }}
                         animate={{ opacity: 1, x: 0 }}
                         className={`text-sm ${getEntryStyle(entry)}`}
@@ -1635,9 +1646,9 @@ const CombatStatsPanel: React.FC<{
                     </span>
                 </div>
                 <div className="p-2 grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">
-                    {player.abilities.map((ability) => (
+                    {player.abilities.map((ability, index) => (
                         <motion.button
-                            key={ability.id || ability.name}
+                            key={safeKey(ability.id || ability.name, `ability_${index}`)}
                             whileHover={{ scale: isPlayerTurn && !isLoading ? 1.02 : 1 }}
                             whileTap={{ scale: isPlayerTurn && !isLoading ? 0.98 : 1 }}
                             onClick={() => isPlayerTurn && !isLoading && onAbilityUse(ability)}
@@ -3677,7 +3688,7 @@ export const TacticalBattleOverlay: React.FC<TacticalBattleOverlayProps> = ({
                         <span className="text-xs text-red-400 font-bold uppercase tracking-widest">Turn {state.turn}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                        {sortedEntities.map((entity) => {
+                        {sortedEntities.map((entity, index) => {
                             const isActive = entity.id === currentEntity?.id;
                             const isDead = entity.hp <= 0;
                             const bgColor = entity.type === 'player' ? 'from-emerald-600 to-green-700'
@@ -3686,7 +3697,7 @@ export const TacticalBattleOverlay: React.FC<TacticalBattleOverlayProps> = ({
 
                             return (
                                 <motion.div
-                                    key={entity.id}
+                                    key={safeKey(entity.id, `turn_${entity.type}_${index}`)}
                                     animate={isActive ? { scale: [1, 1.1, 1], y: [-2, 2, -2] } : { scale: 1, y: 0 }}
                                     transition={{ duration: 1, repeat: isActive ? Infinity : 0 }}
                                     className={`relative ${isDead ? 'opacity-30' : ''}`}
@@ -3846,8 +3857,8 @@ export const TacticalBattleOverlay: React.FC<TacticalBattleOverlayProps> = ({
                     </div>
                     <div className="p-3 h-[calc(100%-36px)] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
                         <div className="space-y-2">
-                            {state.combatLog.slice(-20).map((entry) => (
-                                <div key={entry.id} className={`text-xs ${
+                            {state.combatLog.slice(-20).map((entry, index) => (
+                                <div key={safeKey(entry.id, `combatlog_${index}_${entry.type}`)} className={`text-xs ${
                                     entry.type === 'crit' ? 'text-yellow-400 font-bold' :
                                     entry.type === 'damage' ? 'text-red-400' :
                                     entry.type === 'miss' ? 'text-slate-500' :
@@ -3894,9 +3905,9 @@ export const TacticalBattleOverlay: React.FC<TacticalBattleOverlayProps> = ({
                         )}
 
                         {/* Followers */}
-                        {followers.map(follower => (
+                        {followers.map((follower, index) => (
                             <div
-                                key={follower.id}
+                                key={safeKey(follower.id, `follower_${index}`)}
                                 className={`p-2 rounded-lg ${follower.id === currentEntity?.id ? 'bg-blue-900/30 border border-blue-500/30' : 'bg-slate-900/50'} ${follower.hp <= 0 ? 'opacity-50' : ''}`}
                             >
                                 <div className="flex items-center gap-2 mb-1">
@@ -3925,9 +3936,9 @@ export const TacticalBattleOverlay: React.FC<TacticalBattleOverlayProps> = ({
                             <span className="text-xs text-red-400 font-bold uppercase tracking-widest">Enemies</span>
                         </div>
                         <div className="p-3 space-y-3">
-                            {enemies.map(enemy => (
+                            {enemies.map((enemy, index) => (
                                 <div
-                                    key={enemy.id}
+                                    key={safeKey(enemy.id, `enemy_${index}`)}
                                     className={`p-2 rounded-lg ${enemy.id === currentEntity?.id ? 'bg-red-900/30 border border-red-500/30' : 'bg-slate-900/50'}`}
                                 >
                                     <div className="flex items-center gap-2 mb-1">
@@ -3953,3 +3964,4 @@ export const TacticalBattleOverlay: React.FC<TacticalBattleOverlayProps> = ({
         </>
     );
 };
+

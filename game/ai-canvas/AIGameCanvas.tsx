@@ -21,7 +21,7 @@ export interface AIGameCanvasProps {
 export interface AIGameCanvasHandle {
   processEvent: (event: AIGameEvent) => void;
   loadRoom: (room: RoomData) => void;
-  getPlayerPosition: () => { x: number; y: number };
+  getPlayerPosition: () => { x: number; y: number } | null;
   getCurrentRoom: () => RoomData | null;
   getEntity: (entityId: string) => RoomEntity | undefined;
   loadDemoRoom: () => void;
@@ -111,10 +111,22 @@ export const AIGameCanvas = forwardRef<AIGameCanvasHandle, AIGameCanvasProps>(
       engineRef.current?.setEditMode(editMode);
     }, [editMode]);
 
-    // Update onTileClick callback when it changes (prevents stale closures)
+    // Update callbacks when they change (prevents stale closures)
     useEffect(() => {
       engineRef.current?.setOnTileClick(onTileClick);
     }, [onTileClick]);
+
+    useEffect(() => {
+      engineRef.current?.setOnEntityClick(onEntityClick);
+    }, [onEntityClick]);
+
+    useEffect(() => {
+      engineRef.current?.setOnObjectClick(onObjectClick);
+    }, [onObjectClick]);
+
+    useEffect(() => {
+      engineRef.current?.setOnHover(onHover);
+    }, [onHover]);
 
     // Expose imperative methods
     useImperativeHandle(
@@ -129,7 +141,7 @@ export const AIGameCanvas = forwardRef<AIGameCanvasHandle, AIGameCanvasProps>(
           engineRef.current?.loadRoom(room);
         },
         getPlayerPosition: () => {
-          return engineRef.current?.player ?? { x: 0, y: 0 };
+          return engineRef.current?.player ?? null;
         },
         getCurrentRoom: () => {
           return engineRef.current?.room ?? null;
@@ -347,6 +359,8 @@ export function parseCombatEffect(text: string): { attackerId: string; targetId:
 // STREAMING EVENT PROCESSOR
 // ============================================
 
+const MAX_PROCESSED_EVENTS = 1000;
+
 /**
  * Creates a streaming processor that handles AI events as they arrive
  */
@@ -360,6 +374,15 @@ export function createEventProcessor(
 ) {
   let buffer = '';
   let processedEvents = new Set<string>();
+  let processedCount = 0;
+
+  const pruneProcessedEvents = () => {
+    if (processedEvents.size > MAX_PROCESSED_EVENTS) {
+      // Keep only the most recent half when we exceed the limit
+      const entries = Array.from(processedEvents);
+      processedEvents = new Set(entries.slice(entries.length / 2));
+    }
+  };
 
   return {
     /**
@@ -376,6 +399,12 @@ export function createEventProcessor(
         const eventKey = JSON.stringify(event);
         if (processedEvents.has(eventKey)) continue;
         processedEvents.add(eventKey);
+        processedCount++;
+
+        // Prune if we've accumulated too many events
+        if (processedCount % 100 === 0) {
+          pruneProcessedEvents();
+        }
 
         // Process the event
         canvasRef.current?.processEvent(event);
@@ -403,6 +432,7 @@ export function createEventProcessor(
     reset: () => {
       buffer = '';
       processedEvents.clear();
+      processedCount = 0;
     },
 
     /**

@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
-import { useQuery, useMutation } from 'convex/react';
+import React, { useEffect } from 'react';
+import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
-import { Plus, Map, Settings, ChevronRight, Crown, Shield, Sparkles, Loader2 } from 'lucide-react';
+import { Plus, Map, Settings, ChevronRight, Crown, Shield } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@workos-inc/authkit-nextjs/components';
 import { useTheme } from '@/components/ThemeProvider';
@@ -51,37 +51,6 @@ export default function ForgeDashboard() {
     const campaigns = useQuery(api.forge.getMyCampaigns);
     const isLoading = !campaigns;
 
-    // Seed mutations
-    const seedDragonBall = useMutation(api.forge.seedDragonBall);
-    const seedHarryPotter = useMutation(api.forge.seedHarryPotterCampaign);
-    const [seeding, setSeeding] = useState<string | null>(null);
-
-    const handleSeedDragonBall = async () => {
-        setSeeding('dragonball');
-        try {
-            const result = await seedDragonBall();
-            if (result.success) {
-                window.location.href = `/forge/campaign/${result.campaignId}`;
-            }
-        } catch (e) {
-            console.error('Failed to seed Dragon Ball campaign:', e);
-            setSeeding(null);
-        }
-    };
-
-    const handleSeedHarryPotter = async () => {
-        setSeeding('harrypotter');
-        try {
-            const result = await seedHarryPotter();
-            if (result.success) {
-                window.location.href = `/forge/campaign/${result.campaignId}`;
-            }
-        } catch (e) {
-            console.error('Failed to seed Harry Potter campaign:', e);
-            setSeeding(null);
-        }
-    };
-
     useEffect(() => {
         if (!authLoading && !user) {
             window.location.href = '/sign-in';
@@ -122,23 +91,7 @@ export default function ForgeDashboard() {
                     </div>
 
                     <div className="flex flex-wrap gap-4">
-                         <button
-                            onClick={handleSeedHarryPotter}
-                            disabled={!!seeding}
-                            className={`h-12 px-6 rounded-full border font-bold text-sm uppercase tracking-wider transition-colors flex items-center gap-2 disabled:opacity-50 ${dark ? 'border-purple-500/30 text-purple-400 hover:bg-purple-500/10' : 'border-purple-500/30 text-purple-600 hover:bg-purple-500/5'}`}
-                        >
-                            {seeding === 'harrypotter' ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                            <span className="hidden md:inline">{seeding === 'harrypotter' ? 'Creating...' : 'Harry Potter'}</span>
-                        </button>
-                         <button
-                            onClick={handleSeedDragonBall}
-                            disabled={!!seeding}
-                            className={`h-12 px-6 rounded-full border font-bold text-sm uppercase tracking-wider transition-colors flex items-center gap-2 disabled:opacity-50 ${dark ? 'border-orange-500/30 text-orange-400 hover:bg-orange-500/10' : 'border-orange-500/30 text-orange-600 hover:bg-orange-500/5'}`}
-                        >
-                            {seeding === 'dragonball' ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                            <span className="hidden md:inline">{seeding === 'dragonball' ? 'Creating...' : 'Dragon Ball'}</span>
-                        </button>
-                         <Link href="/settings">
+                        <Link href="/settings">
                             <button className={`h-12 px-6 rounded-full border font-bold text-sm uppercase tracking-wider transition-colors flex items-center gap-2 ${dark ? 'border-[#D4AF37]/30 text-[#e8e6e3] hover:bg-[#D4AF37]/10' : 'border-[#D4AF37]/30 text-[#43485C] hover:bg-[#D4AF37]/5'}`}>
                                 <Settings size={16} />
                                 <span className="hidden md:inline">Studio</span>

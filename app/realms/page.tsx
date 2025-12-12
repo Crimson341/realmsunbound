@@ -4,11 +4,12 @@ import React, { useState, useRef } from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { useTheme } from '@/components/ThemeProvider';
+import { useAuth } from '@workos-inc/authkit-nextjs/components';
 import Link from 'next/link';
 import {
     Search, Map, Users, ArrowRight,
     Sparkles, Crown, Ghost, ChevronLeft, ChevronRight,
-    TrendingUp, Clock, Flame, Filter
+    TrendingUp, Clock, Flame, Filter, Settings
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -55,6 +56,7 @@ interface Campaign {
     templateVersion?: string;
     rules?: string;
     isFeatured?: boolean;
+    userId?: string;
 }
 
 // --- COMPONENTS ---
@@ -135,29 +137,31 @@ const HorizontalScrollSection = ({
     );
 };
 
-const RealmCard = ({ campaign, index, dark, compact = false }: {
+const RealmCard = ({ campaign, index, dark, compact = false, currentUserId }: {
     campaign: Campaign;
     index: number;
     dark: boolean;
     compact?: boolean;
+    currentUserId?: string;
 }) => {
     const genre = GENRES.find(g => g.key === campaign.genre);
     const imageUrl = campaign.imageUrl || FALLBACK_IMAGE;
+    const isOwner = currentUserId && campaign.userId === currentUserId;
 
     return (
-        <Link href={`/realms/${campaign._id}`}>
-            <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, delay: index * 0.05 }}
-                className={`group relative border rounded-2xl overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer flex-shrink-0 ${
-                    compact ? 'w-72' : 'w-80'
-                } ${
-                    dark
-                        ? 'bg-[#1a1d2e] border-[#2a2d3e]'
-                        : 'bg-white border-stone-200'
-                }`}
-            >
+        <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: index * 0.05 }}
+            className={`group relative border rounded-2xl overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-1 flex-shrink-0 ${
+                compact ? 'w-72' : 'w-80'
+            } ${
+                dark
+                    ? 'bg-[#1a1d2e] border-[#2a2d3e]'
+                    : 'bg-white border-stone-200'
+            }`}
+        >
+            <Link href={`/realms/${campaign._id}`}>
                 {/* Image / Banner */}
                 <div className={`${compact ? 'h-40' : 'h-48'} relative overflow-hidden ${dark ? 'bg-[#151821]' : 'bg-stone-100'}`}>
                     <div
@@ -165,10 +169,10 @@ const RealmCard = ({ campaign, index, dark, compact = false }: {
                         style={{ backgroundImage: `url(${imageUrl})` }}
                     />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent z-10" />
-                
+
                 {/* Genre Badge */}
                 {genre && (
-                    <div 
+                    <div
                         className="absolute top-3 left-3 z-20 px-2 py-1 rounded-full text-xs font-bold uppercase tracking-wider flex items-center gap-1"
                         style={{ backgroundColor: `${genre.color}20`, color: genre.color, border: `1px solid ${genre.color}40` }}
                     >
@@ -178,17 +182,21 @@ const RealmCard = ({ campaign, index, dark, compact = false }: {
                 )}
 
                 {/* Stats overlay */}
-                {(campaign.viewCount || campaign.playCount) && (
-                    <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
-                        {campaign.playCount && campaign.playCount > 0 && (
-                            <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-black/40 backdrop-blur-sm text-white/80 text-xs">
-                                <Flame size={12} className="text-orange-400" />
-                                {campaign.playCount}
-                            </div>
-                        )}
-                    </div>
-                )}
-                
+                <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+                    {isOwner && (
+                        <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-[#D4AF37]/80 backdrop-blur-sm text-white text-xs font-bold">
+                            <Crown size={12} />
+                            Owner
+                        </div>
+                    )}
+                    {campaign.playCount && campaign.playCount > 0 && (
+                        <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-black/40 backdrop-blur-sm text-white/80 text-xs">
+                            <Flame size={12} className="text-orange-400" />
+                            {campaign.playCount}
+                        </div>
+                    )}
+                </div>
+
                 <div className="absolute bottom-4 left-4 right-4 z-20">
                     <h3 className="text-white font-serif text-xl font-bold drop-shadow-md line-clamp-1">{campaign.title}</h3>
                     <div className="flex items-center gap-2 text-stone-300 text-xs font-medium uppercase tracking-wider mt-1">
@@ -203,6 +211,7 @@ const RealmCard = ({ campaign, index, dark, compact = false }: {
 
                 <div className="absolute inset-0 bg-indigo-900/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-0" />
             </div>
+            </Link>
 
             {/* Content */}
             <div className={`${compact ? 'p-4' : 'p-6'}`}>
@@ -214,8 +223,8 @@ const RealmCard = ({ campaign, index, dark, compact = false }: {
                     <div className="flex -space-x-2">
                         {[...Array(3)].map((_, i) => (
                             <div key={i} className={`w-7 h-7 rounded-full border-2 flex items-center justify-center text-[10px] font-bold ${
-                                dark 
-                                    ? 'border-[#1a1d2e] bg-[#2a2d3e] text-gray-400' 
+                                dark
+                                    ? 'border-[#1a1d2e] bg-[#2a2d3e] text-gray-400'
                                     : 'border-white bg-stone-200 text-stone-500'
                             }`}>
                                 {String.fromCharCode(65 + i)}
@@ -223,24 +232,43 @@ const RealmCard = ({ campaign, index, dark, compact = false }: {
                         ))}
                     </div>
 
-                    <span className={`flex items-center gap-1 font-bold text-xs group/btn transition-colors ${
-                        dark
-                            ? 'text-[#D4AF37] hover:text-[#eac88f]'
-                            : 'text-indigo-600 hover:text-indigo-700'
-                    }`}>
-                        Explore <ArrowRight size={14} className="group-hover/btn:translate-x-1 transition-transform" />
-                    </span>
+                    <div className="flex items-center gap-3">
+                        {isOwner && (
+                            <Link
+                                href={`/forge/campaign/${campaign._id}`}
+                                className={`flex items-center gap-1 font-bold text-xs transition-colors ${
+                                    dark
+                                        ? 'text-[#D4AF37] hover:text-[#eac88f]'
+                                        : 'text-amber-600 hover:text-amber-700'
+                                }`}
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <Settings size={14} />
+                                Forge
+                            </Link>
+                        )}
+                        <Link
+                            href={`/realms/${campaign._id}`}
+                            className={`flex items-center gap-1 font-bold text-xs transition-colors ${
+                                dark
+                                    ? 'text-[#D4AF37] hover:text-[#eac88f]'
+                                    : 'text-indigo-600 hover:text-indigo-700'
+                            }`}
+                        >
+                            Explore <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                        </Link>
+                    </div>
                 </div>
             </div>
-            </motion.div>
-        </Link>
+        </motion.div>
     );
 };
 
-const FeaturedRealm = ({ campaign, dark }: { campaign: Campaign; dark: boolean }) => {
+const FeaturedRealm = ({ campaign, dark, currentUserId }: { campaign: Campaign; dark: boolean; currentUserId?: string }) => {
     if (!campaign) return null;
     const genre = GENRES.find(g => g.key === campaign.genre);
     const imageUrl = campaign.imageUrl || FALLBACK_IMAGE;
+    const isOwner = currentUserId && campaign.userId === currentUserId;
 
     return (
         <motion.div
@@ -254,14 +282,19 @@ const FeaturedRealm = ({ campaign, dark }: { campaign: Campaign; dark: boolean }
                 style={{ backgroundImage: `url(${imageUrl})` }}
             />
             <div className="absolute inset-0 bg-gradient-to-r from-black via-black/70 to-transparent" />
-            
+
             <div className="relative z-10 p-12 md:p-20 max-w-3xl">
                 <div className="flex items-center gap-3 mb-6">
                     <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-400 text-xs font-bold uppercase tracking-widest">
                         <Crown size={14} /> Featured Realm
                     </div>
+                    {isOwner && (
+                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#D4AF37]/20 border border-[#D4AF37]/30 text-[#D4AF37] text-xs font-bold uppercase tracking-widest">
+                            <Settings size={14} /> Your Realm
+                        </div>
+                    )}
                     {genre && (
-                        <div 
+                        <div
                             className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-widest"
                             style={{ backgroundColor: `${genre.color}20`, color: genre.color, border: `1px solid ${genre.color}40` }}
                         >
@@ -285,6 +318,13 @@ const FeaturedRealm = ({ campaign, dark }: { campaign: Campaign; dark: boolean }
                             Begin Journey <ArrowRight size={16} />
                         </button>
                     </Link>
+                    {isOwner && (
+                        <Link href={`/forge/campaign/${campaign._id}`}>
+                            <button className="px-6 py-4 rounded-full border border-[#D4AF37]/40 text-[#D4AF37] text-sm font-bold uppercase tracking-widest hover:bg-[#D4AF37]/10 transition-colors flex items-center gap-2">
+                                <Settings size={16} /> Open Forge
+                            </button>
+                        </Link>
+                    )}
                     <Link href={`/realms/${campaign._id}`}>
                         <button className="px-6 py-4 rounded-full border border-white/20 text-white/60 text-sm font-bold uppercase tracking-widest hover:bg-white/5 transition-colors">
                             View Lore
@@ -345,11 +385,13 @@ const GenreFilter = ({
 const GenreSection = ({
     genre,
     campaigns,
-    dark
+    dark,
+    currentUserId
 }: {
     genre: typeof GENRES[number];
     campaigns: Campaign[];
     dark: boolean;
+    currentUserId?: string;
 }) => {
     if (campaigns.length === 0) return null;
 
@@ -367,6 +409,7 @@ const GenreSection = ({
                     index={idx}
                     dark={dark}
                     compact
+                    currentUserId={currentUserId}
                 />
             ))}
         </HorizontalScrollSection>
@@ -374,22 +417,29 @@ const GenreSection = ({
 };
 
 export default function RealmsPage() {
-    const allCampaigns = useQuery(api.forge.getAllCampaigns);
+    const { user } = useAuth();
+    const allCampaignsResult = useQuery(api.forge.getAllCampaigns, {});
     const featuredRealms = useQuery(api.forge.getFeaturedRealms);
     const popularRealms = useQuery(api.forge.getPopularRealms, { limit: 10 });
     const newestRealms = useQuery(api.forge.getNewestRealms, { limit: 10 });
-    const realmsByGenre = useQuery(api.forge.getRealmsGroupedByGenre);
+    const realmsByGenre = useQuery(api.forge.getRealmsGroupedByGenre, {});
 
     const { theme, mounted } = useTheme();
     const dark = mounted ? theme === 'dark' : false;
     const [search, setSearch] = useState("");
     const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
 
+    // Get current user ID for ownership check
+    const currentUserId = user?.id ? `${user.id}` : undefined;
+
+    // Extract campaigns array from paginated response
+    const campaigns = allCampaignsResult?.campaigns ?? [];
+
     // Get featured realm (first featured, or first popular, or first campaign)
-    const featuredRealm = featuredRealms?.[0] || popularRealms?.[0] || allCampaigns?.[0] || null;
+    const featuredRealm = featuredRealms?.[0] || popularRealms?.[0] || campaigns[0] || null;
 
     // Filter campaigns based on search and genre
-    const filteredCampaigns = allCampaigns?.filter((c: Campaign) => {
+    const filteredCampaigns = campaigns.filter((c: Campaign) => {
         const matchesSearch = !search || 
             c.title.toLowerCase().includes(search.toLowerCase()) || 
             c.description?.toLowerCase().includes(search.toLowerCase());
@@ -397,7 +447,7 @@ export default function RealmsPage() {
         return matchesSearch && matchesGenre;
     }) || [];
 
-    const isLoading = !allCampaigns;
+    const isLoading = !allCampaignsResult;
 
     return (
         <div className={`min-h-screen font-sans ${dark ? 'bg-[#0f1119] text-[#e8e6e3]' : 'bg-[#f8f7f5] text-stone-800'}`}>
@@ -467,6 +517,7 @@ export default function RealmsPage() {
                                 <FeaturedRealm
                                     campaign={featuredRealm as Campaign}
                                     dark={dark}
+                                    currentUserId={currentUserId}
                                 />
                             )}
                         </section>
@@ -487,6 +538,7 @@ export default function RealmsPage() {
                                             index={idx}
                                             dark={dark}
                                             compact
+                                            currentUserId={currentUserId}
                                         />
                                     ))}
                                 </HorizontalScrollSection>
@@ -508,6 +560,7 @@ export default function RealmsPage() {
                                         index={idx}
                                         dark={dark}
                                         compact
+                                        currentUserId={currentUserId}
                                     />
                                 ))}
                             </HorizontalScrollSection>
@@ -543,6 +596,7 @@ export default function RealmsPage() {
                                                     campaign={campaign}
                                                     index={idx}
                                                     dark={dark}
+                                                    currentUserId={currentUserId}
                                                 />
                                             </motion.div>
                                         ))
@@ -566,6 +620,7 @@ export default function RealmsPage() {
                                             genre={genre}
                                             campaigns={genreCampaigns as Campaign[]}
                                             dark={dark}
+                                            currentUserId={currentUserId}
                                         />
                                     );
                                 })
@@ -588,6 +643,7 @@ export default function RealmsPage() {
                                                 campaign={campaign}
                                                 index={idx}
                                                 dark={dark}
+                                                currentUserId={currentUserId}
                                             />
                                         ))
                                     ) : (

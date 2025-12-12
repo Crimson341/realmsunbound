@@ -4,7 +4,18 @@ export default authkitMiddleware({
   eagerAuth: true,
   middlewareAuth: {
     enabled: true,
-    unauthenticatedPaths: ['/', '/sign-in', '/sign-up', '/features', '/lore', '/callback'],
+    unauthenticatedPaths: [
+      '/',
+      '/sign-in',
+      '/sign-up',
+      '/features',
+      '/lore',
+      // Support both callback paths (repo README uses `/callback`)
+      '/callback',
+      '/auth/callback',
+      // Keep auth debugging endpoint reachable even when auth is broken/misconfigured
+      '/api/debug-auth',
+    ],
   },
 });
 

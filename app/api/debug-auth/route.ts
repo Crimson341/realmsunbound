@@ -25,7 +25,8 @@ export async function GET() {
     NEXT_PUBLIC_WORKOS_REDIRECT_URI: {
       exists: !!redirectUri,
       value: redirectUri,
-      hasCallback: redirectUri?.endsWith('/callback'),
+      hasCallback:
+        redirectUri?.endsWith('/callback') || redirectUri?.endsWith('/auth/callback'),
     }
   };
 

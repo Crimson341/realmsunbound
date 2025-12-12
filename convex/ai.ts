@@ -2,6 +2,7 @@ import { action, httpAction } from "./_generated/server";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
+import { openRouterChatCompletionStream, openRouterChatCompletionText } from "./lib/openrouter";
 
 // Type definitions for campaign entities
 interface Location {
@@ -47,6 +48,23 @@ interface Quest {
     status: string;
     npcId?: Id<"npcs">;
     locationId?: Id<"locations">;
+    // Extended quest system fields (optional).
+    objectives?: QuestObjective[];
+    difficulty?: string;
+    xpReward?: number;
+    goldReward?: number;
+}
+
+interface QuestObjective {
+    id: string;
+    description: string;
+    type: string;
+    target?: string;
+    targetCount?: number;
+    currentCount?: number;
+    isCompleted: boolean;
+    isOptional?: boolean;
+    hint?: string;
 }
 
 interface Monster {
@@ -439,9 +457,9 @@ const generateWorldContext = (campaignData: CampaignData, playerState?: PlayerSt
 
     ${questTiers.active.length > 0 ? `
     ★★★ ACTIVE QUESTS (HIGH PRIORITY - WEAVE INTO NARRATIVE) ★★★
-    ${questTiers.active.map((q: any) => {
+    ${questTiers.active.map((q) => {
       const giver = allFilteredNpcs.find((n) => n._id === q.npcId)?.name || 'Unknown';
-      const objectives = q.objectives?.map((obj: any, i: number) =>
+      const objectives = q.objectives?.map((obj: QuestObjective, i: number) =>
         `      ${obj.isCompleted ? '✓' : '○'} ${i + 1}. ${obj.description}${obj.target ? ` (Target: ${obj.target})` : ''}${obj.targetCount ? ` [${obj.currentCount || 0}/${obj.targetCount}]` : ''}${obj.hint ? ` | Hint: ${obj.hint}` : ''}`
       ).join('\n') || '      (No specific objectives)';
       return `
@@ -633,12 +651,6 @@ export const generateNarrative = action({
     campaignId: v.id("campaigns"),
   },
   handler: async (ctx, args) => {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      console.error("GEMINI_API_KEY is not set in Convex environment variables.");
-      return "The Dungeon Master is currently away (GEMINI_API_KEY missing). Please set it in your Convex dashboard.";
-    }
-
     // Fetch campaign context
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- api cast avoids circular type inference
     const campaignData = await ctx.runQuery((api as any).forge.getCampaignDetails, {
@@ -660,47 +672,34 @@ export const generateNarrative = action({
     // Use chatStream for full features.
     const worldContext = generateWorldContext(campaignData);
 
-    const contents = [
+    const messages = [
       {
-        role: "user",
-        parts: [{ text: worldContext + "\n\nRELEVANT MEMORIES & LORE:\n" + dynamicContext }] // Preload context as the first message
+        role: "system" as const,
+        content: worldContext + "\n\nRELEVANT MEMORIES & LORE:\n" + dynamicContext,
       },
       ...args.history.map((msg) => ({
-        role: msg.role === "user" ? "user" : "model",
-        parts: [{ text: msg.content }],
+        role: msg.role === "user" ? ("user" as const) : ("assistant" as const),
+        content: msg.content,
       })),
       {
-        role: "user",
-        parts: [{ text: args.prompt + "\n\nIMPORTANT: Respond in valid JSON format with these fields:\n1. 'content' (narrative text)\n2. 'choices' (array of 2-4 actions)\n3. 'rewards' (optional object with 'items': string[] and 'quests': string[])\n4. 'current_location' (optional string: the exact name of the location the player is currently in, e.g. 'Riverwood', only if changed or relevant).\nDo not wrap the JSON in markdown code blocks." }],
-      }
+        role: "user" as const,
+        content:
+          args.prompt +
+          "\n\nIMPORTANT: Respond in valid JSON format with these fields:\n1. 'content' (narrative text)\n2. 'choices' (array of 2-4 actions)\n3. 'rewards' (optional object with 'items': string[] and 'quests': string[])\n4. 'current_location' (optional string: the exact name of the location the player is currently in, e.g. 'Riverwood', only if changed or relevant).\nDo not wrap the JSON in markdown code blocks.",
+      },
     ];
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          contents: contents,
-          generationConfig: {
-            temperature: 0.9,
-            maxOutputTokens: 1000,
-            responseMimeType: "application/json"
-          },
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`Gemini API Error: ${errorText}`);
-      return JSON.stringify({ content: `The magic fizzles... (API Error: ${response.status})`, choices: [] });
+    let rawText = "{}";
+    try {
+      rawText = await openRouterChatCompletionText({
+        messages,
+        temperature: 0.9,
+        max_tokens: 1000,
+      });
+    } catch (e) {
+      console.error(`OpenRouter API Error: ${String(e)}`);
+      return JSON.stringify({ content: `The magic fizzles... (API Error)`, choices: [] });
     }
-
-    const data = await response.json();
-    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
     
     try {
        const cleanText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -757,9 +756,8 @@ export const chatStream = httpAction(async (ctx, request) => {
     "Access-Control-Allow-Headers": "Content-Type",
   };
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return new Response("GEMINI_API_KEY not set", { status: 500, headers: corsHeaders });
+  if (!process.env.OPENROUTER_API_KEY) {
+    return new Response("OPENROUTER_API_KEY not set", { status: 500, headers: corsHeaders });
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- api cast avoids circular type inference
@@ -1221,48 +1219,38 @@ COMBAT VISUALIZATION:
 
 The map enhances the narrative - every room should feel unique and atmospheric!`;
 
-  const contents = [
+  const messages = [
     {
-      role: "user",
-      parts: [{ text: worldContext + "\n\nRELEVANT MEMORIES & LORE:\n" + dynamicContext }]
+      role: "system" as const,
+      content: worldContext + "\n\nRELEVANT MEMORIES & LORE:\n" + dynamicContext,
     },
     ...history.map((msg: ChatMessage) => ({
-      role: msg.role === "user" ? "user" : "model",
-      parts: [{ text: msg.content }],
+      role: msg.role === "user" ? ("user" as const) : ("assistant" as const),
+      content: msg.content,
     })),
     {
-      role: "user",
-      parts: [{ text: prompt + "\n\n" + gameEventInstructions }],
-    }
+      role: "user" as const,
+      content: prompt + "\n\n" + gameEventInstructions,
+    },
   ];
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?key=${apiKey}`,
-    {
-      method: "POST",
+  try {
+    const upstream = await openRouterChatCompletionStream({
+      messages,
+      temperature: 0.9,
+      max_tokens: 1000,
+    });
+
+    return new Response(upstream.body, {
       headers: {
-        "Content-Type": "application/json",
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        ...corsHeaders,
       },
-      body: JSON.stringify({
-        contents: contents,
-        generationConfig: {
-          temperature: 0.9,
-          maxOutputTokens: 1000,
-        },
-      }),
-    }
-  );
-
-  if (!response.ok) {
-    return new Response(await response.text(), { status: response.status, headers: corsHeaders });
+    });
+  } catch (e) {
+    return new Response(String(e), { status: 502, headers: corsHeaders });
   }
-
-  return new Response(response.body, {
-      headers: {
-          "Content-Type": "application/json",
-          ...corsHeaders
-      }
-  });
 });
 
 // =============================================================================
@@ -1300,12 +1288,6 @@ export const generateMapEvents = action({
     narrativeContext: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      console.error("GEMINI_API_KEY is not set");
-      return { events: [], error: "API key missing" };
-    }
-
     // Build the map-focused prompt
     const mapPrompt = `You are a MAP GENERATION AI for a 2D dungeon crawler game. Your ONLY job is to generate visual map events.
 
@@ -1380,33 +1362,14 @@ RULES:
 RESPOND WITH ONLY A JSON ARRAY - NO OTHER TEXT:`;
 
     try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ role: "user", parts: [{ text: mapPrompt }] }],
-            generationConfig: {
-              temperature: 0.7,
-              maxOutputTokens: 2000,
-              responseMimeType: "application/json",
-            },
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("[MapAI] API Error:", errorText);
-        return { events: [], error: `API Error: ${response.status}` };
-      }
-
-      const data = await response.json();
-      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
+      const rawText = await openRouterChatCompletionText({
+        messages: [{ role: "user", content: mapPrompt }],
+        temperature: 0.7,
+        max_tokens: 2000,
+      });
 
       // Clean and parse the response
-      let cleanedJson = rawText
+      const cleanedJson = rawText
         .replace(/```json/g, '')
         .replace(/```/g, '')
         .replace(/:\s*True\b/g, ': true')
@@ -1587,7 +1550,7 @@ export const mapStream = httpAction(async (ctx, request) => {
     "Access-Control-Allow-Headers": "Content-Type",
   };
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     return new Response(JSON.stringify({ events: [], error: "API key missing" }), {
       status: 500,
@@ -1705,7 +1668,6 @@ export const mapStream = httpAction(async (ctx, request) => {
       }
 
       // Build quest context from active quests FIRST (before worldContext uses it)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       activeQuests = (campaignData.activeQuests || []) as ActiveQuest[];
       const allNpcsForQuests = campaignData.npcs as NPCWithGrid[];
 
@@ -1979,36 +1941,39 @@ IMPORTANT:
 
 RESPOND WITH ONLY THE JSON ARRAY - NO EXPLANATION TEXT:`;
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: mapPrompt }] }],
-        generationConfig: {
-          temperature: 0.8, // Slightly higher for more creative world generation
-          maxOutputTokens: 3000, // More tokens for larger rooms
-          responseMimeType: "application/json",
-        },
-      }),
-    }
-  );
+  // OpenRouter can still rate limit. Retry a few times with exponential backoff.
+  const MAX_RETRIES = 3;
+  let rawText = "[]";
+  let lastError: unknown = null;
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("[MapStream] API Error:", errorText);
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      rawText = await openRouterChatCompletionText({
+        messages: [{ role: "user", content: mapPrompt }],
+        temperature: 0.8, // Slightly higher for more creative world generation
+        max_tokens: 3000, // More tokens for larger rooms
+      });
+      lastError = null;
+      break;
+    } catch (e) {
+      lastError = e;
+      if (attempt === MAX_RETRIES) break;
+      const backoffMs = Math.min(8000, 500 * Math.pow(2, attempt) + Math.floor(Math.random() * 250));
+      console.warn(`[MapStream] Retry ${attempt + 1}/${MAX_RETRIES} after ${backoffMs}ms (OpenRouter)`);
+      await new Promise((r) => setTimeout(r, backoffMs));
+    }
+  }
+
+  if (lastError) {
+    console.error("[MapStream] OpenRouter API Error:", lastError);
     return new Response(JSON.stringify({ events: [], error: "API Error" }), {
-      status: response.status,
-      headers: { ...corsHeaders, "Content-Type": "application/json" }
+      status: 502,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 
-  const data = await response.json();
-  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
-
   try {
-    let cleanedJson = rawText
+    const cleanedJson = rawText
       .replace(/```json/g, '')
       .replace(/```/g, '')
       .replace(/:\s*True\b/g, ': true')
@@ -2046,9 +2011,8 @@ export const generateQuest = action({
     locationName: v.string(),
   },
   handler: async (ctx, args) => {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error("GEMINI_API_KEY is not set");
+    if (!process.env.OPENROUTER_API_KEY) {
+      throw new Error("OPENROUTER_API_KEY is not set");
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- api cast avoids circular type inference
@@ -2112,25 +2076,15 @@ export const generateQuest = action({
     Do not wrap in markdown. Make the quest feel unique to this world.
     `;
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [
-            { role: "user", parts: [{ text: worldContext }] },
-            { role: "user", parts: [{ text: prompt }] }
-          ],
-          generationConfig: { responseMimeType: "application/json" }
-        }),
-      }
-    );
-
-    if (!response.ok) throw new Error("AI Request Failed");
-
-    const data = await response.json();
-    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+    const rawText = await openRouterChatCompletionText({
+      messages: [
+        { role: "system", content: worldContext },
+        { role: "user", content: prompt },
+      ],
+      // Keep it fairly deterministic to avoid schema drift.
+      temperature: 0.4,
+      max_tokens: 1200,
+    });
     
     try {
         const cleanText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();

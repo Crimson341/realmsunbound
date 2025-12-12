@@ -9,7 +9,8 @@ import { api } from '../../convex/_generated/api';
 export default function FeaturesPage() {
     // Initialize state for client-side rendering
     const [mounted, setMounted] = useState(false);
-    const campaigns = useQuery(api.forge.getAllCampaigns);
+    const campaignsResult = useQuery(api.forge.getAllCampaigns, {});
+    const campaigns = campaignsResult?.campaigns ?? [];
 
     useEffect(() => {
         setMounted(true);
@@ -54,7 +55,7 @@ export default function FeaturesPage() {
                         </button>
                     </div>
 
-                    {!campaigns ? (
+                    {!campaignsResult ? (
                         <div className="grid md:grid-cols-3 gap-8 animate-pulse">
                              {[1, 2, 3].map(i => (
                                  <div key={i} className="h-80 bg-stone-900 rounded-xl border border-stone-800"></div>

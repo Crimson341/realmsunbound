@@ -2,6 +2,7 @@ import { mutation, query, action, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import { Id, Doc } from "./_generated/dataModel";
+import { openRouterChatCompletionText } from "./lib/openrouter";
 
 // =============================================================================
 // STORY EVENTS - Track key plot points for efficient context reconstruction
@@ -629,21 +630,11 @@ export const summarizeOldMessages = action({
       .join("\n\n");
 
     // Call AI to summarize
-    const response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": process.env.GEMINI_API_KEY!,
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: "user",
-              parts: [
-                {
-                  text: `You are a story summarizer for a narrative RPG. Summarize the following conversation into a concise narrative (2-3 paragraphs max). Focus on:
+    const summary = await openRouterChatCompletionText({
+      messages: [
+        {
+          role: "user",
+          content: `You are a story summarizer for a narrative RPG. Summarize the following conversation into a concise narrative (2-3 paragraphs max). Focus on:
 1. Key plot developments and story progress
 2. Important decisions the player made
 3. Major NPC interactions
@@ -656,25 +647,11 @@ CONVERSATION TO SUMMARIZE:
 ${formattedMessages}
 
 SUMMARY:`,
-                },
-              ],
-            },
-          ],
-          generationConfig: {
-            maxOutputTokens: 500,
-            temperature: 0.3,
-          },
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      return { success: false, reason: "AI summarization failed" };
-    }
-
-    const data = await response.json();
-    const summary =
-      data.candidates?.[0]?.content?.parts?.[0]?.text || "No summary generated";
+        },
+      ],
+      temperature: 0.3,
+      max_tokens: 500,
+    });
 
     // Save the summary
     await ctx.runMutation(api.contextOptimization.createStorySummary, {
@@ -732,21 +709,13 @@ export const extractStoryEvents = action({
   },
   handler: async (ctx, args): Promise<{ success: boolean; events: Array<{ id?: Id<"storyEvents">; type: string; title: string; description: string; importance: number }> }> => {
     // Use AI to detect story events from the message
-    const response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": process.env.GEMINI_API_KEY!,
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: "user",
-              parts: [
-                {
-                  text: `Analyze this RPG game message and extract any significant story events. Return a JSON array of events, or an empty array if none.
+    let text = "[]";
+    try {
+      text = await openRouterChatCompletionText({
+        messages: [
+          {
+            role: "user",
+            content: `Analyze this RPG game message and extract any significant story events. Return a JSON array of events, or an empty array if none.
 
 Each event should have:
 - type: one of [quest_started, quest_completed, quest_failed, npc_met, npc_killed, npc_recruited, location_discovered, item_acquired, item_lost, level_up, faction_joined, major_choice, combat_victory, combat_defeat, secret_found, ability_learned, story_milestone]
@@ -758,25 +727,14 @@ MESSAGE:
 ${args.messageContent}
 
 RESPONSE (JSON array only, no markdown):`,
-                },
-              ],
-            },
-          ],
-          generationConfig: {
-            maxOutputTokens: 500,
-            temperature: 0.1,
           },
-        }),
-      }
-    );
-
-    if (!response.ok) {
+        ],
+        temperature: 0.1,
+        max_tokens: 500,
+      });
+    } catch {
       return { success: false, events: [] };
     }
-
-    const data = await response.json();
-    const text =
-      data.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
 
     try {
       // Parse the JSON response

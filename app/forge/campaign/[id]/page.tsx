@@ -25,7 +25,7 @@ export default function CampaignManager() {
     const params = useParams();
     const campaignId = params.id as Id<"campaigns">;
     const data = useQuery(api.forge.getCampaignDetails, { campaignId });
-    const effectsLibrary = useQuery(api.forge.getEffectsLibrary);
+    const effectsLibrary = useQuery(api.forge.getEffectsLibrary, {});
     const createSpell = useMutation(api.forge.createSpell);
 
     const createLocation = useMutation(api.forge.createLocation);

@@ -1,6 +1,15 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { Id } from "./_generated/dataModel";
+import { Doc, Id } from "./_generated/dataModel";
+import { withImageUrl, withImageUrls, validateNonEmptyString, validatePositiveNumber, validateNonNegativeNumber, safeJsonParse } from "./lib/helpers";
+import { REALM_GENRES, DEFAULT_CHARACTER_CLASSES, DEFAULT_CHARACTER_RACES, DEFAULT_CHARACTER_STATS, PAGINATION } from "./lib/constants";
+
+// Re-export constants for backwards compatibility
+export { REALM_GENRES };
+
+// ============================================================================
+// CAMPAIGN QUERIES
+// ============================================================================
 
 export const getMyCampaigns = query({
     args: {},
@@ -15,19 +24,10 @@ export const getMyCampaigns = query({
             .withIndex("by_user", (q) => q.eq("userId", identity.tokenIdentifier))
             .collect();
 
-        // Get image URLs for campaigns that have images
-        return Promise.all(
-            campaigns.map(async (campaign) => ({
-                ...campaign,
-                imageUrl: campaign.imageId
-                    ? await ctx.storage.getUrl(campaign.imageId)
-                    : null,
-            }))
-        );
+        return withImageUrls(ctx, campaigns);
     },
 });
 
-// Get campaigns where user has characters but doesn't own the campaign
 export const getPlayedCampaigns = query({
     args: {},
     handler: async (ctx) => {
@@ -36,39 +36,229 @@ export const getPlayedCampaigns = query({
             return [];
         }
 
-        // Get user's characters
         const myCharacters = await ctx.db
             .query("characters")
             .withIndex("by_user", (q) => q.eq("userId", identity.tokenIdentifier))
             .collect();
 
-        // Get unique campaign IDs from characters
         const campaignIds = [...new Set(
             myCharacters
                 .map((c) => c.campaignId)
-                .filter((id): id is NonNullable<typeof id> => id !== undefined)
+                .filter((id): id is Id<"campaigns"> => id !== undefined)
         )];
 
-        // Fetch those campaigns and filter out ones the user owns
         const campaigns = await Promise.all(
             campaignIds.map((id) => ctx.db.get(id))
         );
 
         const playedCampaigns = campaigns.filter(
-            (c): c is NonNullable<typeof c> =>
+            (c): c is Doc<"campaigns"> =>
                 c !== null && c.userId !== identity.tokenIdentifier
         );
 
-        return Promise.all(
-            playedCampaigns.map(async (campaign) => ({
-                ...campaign,
-                imageUrl: campaign.imageId
-                    ? await ctx.storage.getUrl(campaign.imageId)
-                    : null,
-            }))
-        );
+        return withImageUrls(ctx, playedCampaigns);
     },
 });
+
+export const getAllCampaigns = query({
+    args: {
+        limit: v.optional(v.number()),
+        cursor: v.optional(v.string()),
+    },
+    handler: async (ctx, args) => {
+        const limit = Math.min(args.limit ?? PAGINATION.DEFAULT_LIMIT, PAGINATION.MAX_LIMIT);
+
+        // Only return public campaigns
+        const campaigns = await ctx.db
+            .query("campaigns")
+            .order("desc")
+            .take(limit + 1); // Take one extra to determine if there are more
+
+        const hasMore = campaigns.length > limit;
+        const results = hasMore ? campaigns.slice(0, limit) : campaigns;
+
+        // Filter to only public campaigns (default to public if not set)
+        const publicCampaigns = results.filter((c) => c.isPublic !== false);
+
+        return {
+            campaigns: await withImageUrls(ctx, publicCampaigns),
+            hasMore,
+            nextCursor: hasMore ? results[results.length - 1]._id : null,
+        };
+    },
+});
+
+export const getFeaturedRealms = query({
+    args: {},
+    handler: async (ctx) => {
+        const campaigns = await ctx.db
+            .query("campaigns")
+            .withIndex("by_featured", (q) => q.eq("isFeatured", true))
+            .collect();
+
+        return withImageUrls(ctx, campaigns);
+    },
+});
+
+export const getPopularRealms = query({
+    args: { limit: v.optional(v.number()) },
+    handler: async (ctx, args) => {
+        const limit = Math.min(args.limit ?? 10, PAGINATION.MAX_LIMIT);
+
+        // TODO: Add a popularity index to avoid full table scan
+        // For now, limit the scan to a reasonable number
+        const campaigns = await ctx.db
+            .query("campaigns")
+            .order("desc")
+            .take(200); // Cap the scan
+
+        const sorted = campaigns
+            .filter((c) => c.isPublic !== false)
+            .sort((a, b) => {
+                const scoreA = (a.viewCount ?? 0) + (a.playCount ?? 0) * 2;
+                const scoreB = (b.viewCount ?? 0) + (b.playCount ?? 0) * 2;
+                return scoreB - scoreA;
+            })
+            .slice(0, limit);
+
+        return withImageUrls(ctx, sorted);
+    },
+});
+
+export const getRealmsByGenre = query({
+    args: {
+        genre: v.string(),
+        limit: v.optional(v.number()),
+    },
+    handler: async (ctx, args) => {
+        const limit = Math.min(args.limit ?? PAGINATION.DEFAULT_LIMIT, PAGINATION.MAX_LIMIT);
+
+        const campaigns = await ctx.db
+            .query("campaigns")
+            .withIndex("by_genre", (q) => q.eq("genre", args.genre))
+            .take(limit);
+
+        const publicCampaigns = campaigns.filter((c) => c.isPublic !== false);
+
+        return withImageUrls(ctx, publicCampaigns);
+    },
+});
+
+export const getNewestRealms = query({
+    args: { limit: v.optional(v.number()) },
+    handler: async (ctx, args) => {
+        const limit = Math.min(args.limit ?? 10, PAGINATION.MAX_LIMIT);
+
+        const campaigns = await ctx.db
+            .query("campaigns")
+            .order("desc")
+            .take(limit);
+
+        const publicCampaigns = campaigns.filter((c) => c.isPublic !== false);
+
+        return withImageUrls(ctx, publicCampaigns);
+    },
+});
+
+export const getRealmsGroupedByGenre = query({
+    args: {
+        limitPerGenre: v.optional(v.number()),
+    },
+    handler: async (ctx, args) => {
+        const limitPerGenre = Math.min(args.limitPerGenre ?? 10, 50);
+
+        // Fetch campaigns by genre using index for each genre
+        const genreResults: Record<string, Awaited<ReturnType<typeof withImageUrls>>> = {};
+
+        for (const genre of REALM_GENRES) {
+            const campaigns = await ctx.db
+                .query("campaigns")
+                .withIndex("by_genre", (q) => q.eq("genre", genre.key))
+                .take(limitPerGenre);
+
+            const publicCampaigns = campaigns.filter((c) => c.isPublic !== false);
+
+            if (publicCampaigns.length > 0) {
+                genreResults[genre.key] = await withImageUrls(ctx, publicCampaigns);
+            }
+        }
+
+        // Handle uncategorized campaigns
+        const uncategorized = await ctx.db
+            .query("campaigns")
+            .filter((q) =>
+                q.and(
+                    q.eq(q.field("genre"), undefined),
+                    q.neq(q.field("isPublic"), false)
+                )
+            )
+            .take(limitPerGenre);
+
+        if (uncategorized.length > 0) {
+            genreResults["uncategorized"] = await withImageUrls(ctx, uncategorized);
+        }
+
+        return genreResults;
+    },
+});
+
+export const getCampaignDetails = query({
+    args: { campaignId: v.id("campaigns") },
+    handler: async (ctx, args) => {
+        const campaign = await ctx.db.get(args.campaignId);
+        if (!campaign) return null;
+
+        const identity = await ctx.auth.getUserIdentity();
+
+        const [locations, allNpcs, items, quests, monsters, spells, lore, userCharacters, factions, regions] = await Promise.all([
+            ctx.db.query("locations").withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId)).collect(),
+            ctx.db.query("npcs").withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId)).collect(),
+            ctx.db.query("items").withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId)).collect(),
+            ctx.db.query("quests").withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId)).collect(),
+            ctx.db.query("monsters").withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId)).collect(),
+            ctx.db.query("spells").withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId)).collect(),
+            ctx.db.query("lore").withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId)).collect(),
+            identity
+                ? ctx.db.query("characters")
+                    .withIndex("by_user", (q) => q.eq("userId", identity.tokenIdentifier))
+                    .filter((q) => q.eq(q.field("campaignId"), args.campaignId))
+                    .collect()
+                : Promise.resolve([]),
+            ctx.db.query("factions").withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId)).collect(),
+            ctx.db.query("regions").withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId)).collect(),
+        ]);
+
+        const campaignWithImage = await withImageUrl(ctx, campaign);
+
+        const activeQuests = quests.filter((q) => q.status === "active");
+        const character = userCharacters[0] ?? null;
+        const npcs = allNpcs.filter((npc) => !npc.isDead);
+        const deadNpcs = allNpcs.filter((npc) => npc.isDead);
+
+        return {
+            campaign: campaignWithImage,
+            locations,
+            npcs,
+            deadNpcs,
+            items,
+            quests,
+            activeQuests,
+            monsters,
+            spells,
+            rules: campaign.rules,
+            lore,
+            character,
+            inventory: items,
+            factions,
+            regions,
+            bountyEnabled: campaign.bountyEnabled,
+        };
+    },
+});
+
+// ============================================================================
+// CHARACTER QUERIES
+// ============================================================================
 
 export const getMyCharacters = query({
     args: {},
@@ -83,16 +273,166 @@ export const getMyCharacters = query({
             .withIndex("by_user", (q) => q.eq("userId", identity.tokenIdentifier))
             .collect();
 
-        return Promise.all(
-            characters.map(async (character) => ({
-                ...character,
-                imageUrl: character.imageId
-                    ? await ctx.storage.getUrl(character.imageId)
-                    : null,
-            }))
-        );
+        return withImageUrls(ctx, characters);
     },
 });
+
+export const getMyHeroesStats = query({
+    args: {},
+    handler: async (ctx) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) {
+            return {
+                characters: [],
+                totalLevel: 0,
+                totalItems: 0,
+                totalSpells: 0,
+            };
+        }
+
+        // Fetch all user data in parallel
+        const [characters, allItems, allSpells] = await Promise.all([
+            ctx.db
+                .query("characters")
+                .withIndex("by_user", (q) => q.eq("userId", identity.tokenIdentifier))
+                .collect(),
+            ctx.db
+                .query("items")
+                .withIndex("by_user", (q) => q.eq("userId", identity.tokenIdentifier))
+                .collect(),
+            ctx.db
+                .query("spells")
+                .withIndex("by_user", (q) => q.eq("userId", identity.tokenIdentifier))
+                .collect(),
+        ]);
+
+        // Get unique campaign IDs and fetch campaigns in one batch
+        const campaignIds = [...new Set(
+            characters
+                .map((c) => c.campaignId)
+                .filter((id): id is Id<"campaigns"> => id !== undefined)
+        )];
+
+        const campaigns = await Promise.all(
+            campaignIds.map((id) => ctx.db.get(id))
+        );
+
+        // Create lookup maps for O(1) access
+        const campaignMap = new Map(
+            campaigns
+                .filter((c): c is Doc<"campaigns"> => c !== null)
+                .map((c) => [c._id.toString(), c])
+        );
+
+        // Group items and spells by campaign for O(1) lookup
+        const itemsByCampaign = new Map<string, Doc<"items">[]>();
+        const spellsByCampaign = new Map<string, Doc<"spells">[]>();
+
+        for (const item of allItems) {
+            const key = item.campaignId?.toString() ?? "none";
+            const existing = itemsByCampaign.get(key) ?? [];
+            existing.push(item);
+            itemsByCampaign.set(key, existing);
+        }
+
+        for (const spell of allSpells) {
+            const key = spell.campaignId?.toString() ?? "none";
+            const existing = spellsByCampaign.get(key) ?? [];
+            existing.push(spell);
+            spellsByCampaign.set(key, existing);
+        }
+
+        // Build enriched character data
+        const enrichedCharacters = await Promise.all(
+            characters.map(async (char) => {
+                const campaignKey = char.campaignId?.toString() ?? "none";
+                const campaign = char.campaignId ? campaignMap.get(char.campaignId.toString()) : null;
+                const campaignItems = itemsByCampaign.get(campaignKey) ?? [];
+                const campaignSpells = spellsByCampaign.get(campaignKey) ?? [];
+
+                const [campaignImageUrl, characterImageUrl] = await Promise.all([
+                    campaign?.imageId ? ctx.storage.getUrl(campaign.imageId) : null,
+                    char.imageId ? ctx.storage.getUrl(char.imageId) : null,
+                ]);
+
+                return {
+                    _id: char._id,
+                    _creationTime: char._creationTime,
+                    name: char.name,
+                    class: char.class,
+                    level: char.level,
+                    stats: char.stats,
+                    campaignId: char.campaignId,
+                    campaignTitle: campaign?.title ?? "No Realm",
+                    campaignImageUrl,
+                    characterImageUrl,
+                    itemCount: campaignItems.length,
+                    spellCount: campaignSpells.length,
+                    inventoryPreview: campaignItems.slice(0, 8).map((item) => ({
+                        _id: item._id,
+                        name: item.name,
+                        type: item.type,
+                        rarity: item.rarity,
+                        textColor: item.textColor,
+                    })),
+                };
+            })
+        );
+
+        return {
+            characters: enrichedCharacters,
+            totalLevel: characters.reduce((sum, c) => sum + c.level, 0),
+            totalItems: allItems.length,
+            totalSpells: allSpells.length,
+        };
+    },
+});
+
+export const getCharacterCreationStatus = query({
+    args: {
+        campaignId: v.id("campaigns"),
+    },
+    handler: async (ctx, args) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) {
+            return { needsCreation: true, character: null, config: null };
+        }
+
+        const [existingCharacter, campaign] = await Promise.all([
+            ctx.db
+                .query("characters")
+                .withIndex("by_user", (q) => q.eq("userId", identity.tokenIdentifier))
+                .filter((q) => q.eq(q.field("campaignId"), args.campaignId))
+                .first(),
+            ctx.db.get(args.campaignId),
+        ]);
+
+        if (!campaign) {
+            throw new Error("Campaign not found");
+        }
+
+        const config = {
+            availableClasses: safeJsonParse(campaign.availableClasses) ?? DEFAULT_CHARACTER_CLASSES,
+            availableRaces: safeJsonParse(campaign.availableRaces) ?? DEFAULT_CHARACTER_RACES,
+            statAllocationMethod: campaign.statAllocationMethod ?? "standard_array",
+            startingStatPoints: campaign.startingStatPoints ?? 27,
+            allowCustomNames: campaign.allowCustomNames !== false,
+            terminology: safeJsonParse(campaign.terminology) ?? {},
+            statConfig: safeJsonParse(campaign.statConfig),
+            theme: campaign.theme,
+        };
+
+        return {
+            needsCreation: !existingCharacter,
+            character: existingCharacter,
+            config,
+        };
+    },
+});
+
+// ============================================================================
+// ITEM & SPELL QUERIES
+// ============================================================================
 
 export const getMyItems = query({
     args: {},
@@ -102,10 +442,12 @@ export const getMyItems = query({
             return [];
         }
 
-        return ctx.db
+        const items = await ctx.db
             .query("items")
             .withIndex("by_user", (q) => q.eq("userId", identity.tokenIdentifier))
             .collect();
+
+        return withImageUrls(ctx, items);
     },
 });
 
@@ -124,296 +466,33 @@ export const getMySpells = query({
     },
 });
 
-// Get aggregated hero stats across all realms
-export const getMyHeroesStats = query({
-    args: {},
-    handler: async (ctx) => {
-        const identity = await ctx.auth.getUserIdentity();
-        if (!identity) {
-            return {
-                characters: [],
-                totalLevel: 0,
-                totalItems: 0,
-                totalSpells: 0,
-            };
+// ============================================================================
+// EFFECTS LIBRARY
+// ============================================================================
+
+export const getEffectsLibrary = query({
+    args: {
+        category: v.optional(v.string()),
+        limit: v.optional(v.number()),
+    },
+    handler: async (ctx, args) => {
+        const limit = Math.min(args.limit ?? PAGINATION.DEFAULT_LIMIT, PAGINATION.MAX_LIMIT);
+
+        if (args.category) {
+            return ctx.db
+                .query("effectsLibrary")
+                .withIndex("by_category", (q) => q.eq("category", args.category!))
+                .take(limit);
         }
 
-        // Get all user's characters
-        const characters = await ctx.db
-            .query("characters")
-            .withIndex("by_user", (q) => q.eq("userId", identity.tokenIdentifier))
-            .collect();
-
-        // Get all user's items
-        const allItems = await ctx.db
-            .query("items")
-            .withIndex("by_user", (q) => q.eq("userId", identity.tokenIdentifier))
-            .collect();
-
-        // Get all user's spells
-        const allSpells = await ctx.db
-            .query("spells")
-            .withIndex("by_user", (q) => q.eq("userId", identity.tokenIdentifier))
-            .collect();
-
-        // Get unique campaign IDs
-        const campaignIds = [...new Set(
-            characters
-                .map((c) => c.campaignId)
-                .filter((id): id is NonNullable<typeof id> => id !== undefined)
-        )];
-
-        // Fetch campaign details
-        const campaigns = await Promise.all(
-            campaignIds.map((id) => ctx.db.get(id))
-        );
-
-        // Create campaign lookup map
-        const campaignMap = new Map(
-            campaigns
-                .filter((c): c is NonNullable<typeof c> => c !== null)
-                .map((c) => [c._id, c])
-        );
-
-        // Build enriched character data
-        const enrichedCharacters = await Promise.all(
-            characters.map(async (char) => {
-                const campaign = char.campaignId ? campaignMap.get(char.campaignId) : null;
-
-                // Count items for this campaign
-                const campaignItems = allItems.filter(
-                    (item) => item.campaignId === char.campaignId || (!item.campaignId && !char.campaignId)
-                );
-
-                // Count spells for this campaign
-                const campaignSpells = allSpells.filter(
-                    (spell) => spell.campaignId === char.campaignId || (!spell.campaignId && !char.campaignId)
-                );
-
-                // Get campaign image URL
-                const campaignImageUrl = campaign?.imageId
-                    ? await ctx.storage.getUrl(campaign.imageId)
-                    : null;
-
-                // Get character image URL
-                const characterImageUrl = char.imageId
-                    ? await ctx.storage.getUrl(char.imageId)
-                    : null;
-
-                return {
-                    _id: char._id,
-                    _creationTime: char._creationTime,
-                    name: char.name,
-                    class: char.class,
-                    level: char.level,
-                    stats: char.stats,
-                    campaignId: char.campaignId,
-                    campaignTitle: campaign?.title || "No Realm",
-                    campaignImageUrl,
-                    characterImageUrl,
-                    itemCount: campaignItems.length,
-                    spellCount: campaignSpells.length,
-                    // Include some items for inventory preview (max 8)
-                    inventoryPreview: campaignItems.slice(0, 8).map((item) => ({
-                        _id: item._id,
-                        name: item.name,
-                        type: item.type,
-                        rarity: item.rarity,
-                        textColor: item.textColor,
-                    })),
-                };
-            })
-        );
-
-        // Calculate totals
-        const totalLevel = characters.reduce((sum, c) => sum + c.level, 0);
-        const totalItems = allItems.length;
-        const totalSpells = allSpells.length;
-
-        return {
-            characters: enrichedCharacters,
-            totalLevel,
-            totalItems,
-            totalSpells,
-        };
+        return ctx.db.query("effectsLibrary").take(limit);
     },
 });
 
-// Genre definitions for the platform
-export const REALM_GENRES = [
-    { key: 'fantasy', label: 'Fantasy', icon: '🏰', description: 'Magic, dragons, and medieval adventures' },
-    { key: 'sci-fi', label: 'Sci-Fi', icon: '🚀', description: 'Space exploration and future tech' },
-    { key: 'anime', label: 'Anime', icon: '⚔️', description: 'Anime-inspired worlds and storylines' },
-    { key: 'realism', label: 'Realism', icon: '🌍', description: 'Grounded, realistic settings' },
-    { key: 'historical', label: 'Historical', icon: '📜', description: 'Adventures through history' },
-    { key: 'horror', label: 'Horror', icon: '👻', description: 'Dark, terrifying experiences' },
-    { key: 'mythology', label: 'Mythology', icon: '⚡', description: 'Gods, legends, and ancient myths' },
-    { key: 'cyberpunk', label: 'Cyberpunk', icon: '🤖', description: 'High tech, low life dystopias' },
-    { key: 'steampunk', label: 'Steampunk', icon: '⚙️', description: 'Victorian-era steam technology' },
-    { key: 'post-apocalyptic', label: 'Post-Apocalyptic', icon: '☢️', description: 'Survival after the end' },
-] as const;
+// ============================================================================
+// PLAYER RELATIONSHIPS
+// ============================================================================
 
-// Get all public campaigns (for browsing)
-export const getAllCampaigns = query({
-    args: {},
-    handler: async (ctx) => {
-        const campaigns = await ctx.db.query("campaigns").collect();
-
-        return Promise.all(
-            campaigns.map(async (campaign) => ({
-                ...campaign,
-                imageUrl: campaign.imageId
-                    ? await ctx.storage.getUrl(campaign.imageId)
-                    : null,
-            }))
-        );
-    },
-});
-
-// Get featured realms (admin-curated)
-export const getFeaturedRealms = query({
-    args: {},
-    handler: async (ctx) => {
-        const campaigns = await ctx.db
-            .query("campaigns")
-            .withIndex("by_featured", (q) => q.eq("isFeatured", true))
-            .collect();
-
-        return Promise.all(
-            campaigns.map(async (campaign) => ({
-                ...campaign,
-                imageUrl: campaign.imageId
-                    ? await ctx.storage.getUrl(campaign.imageId)
-                    : null,
-            }))
-        );
-    },
-});
-
-// Get popular realms (sorted by view/play count)
-export const getPopularRealms = query({
-    args: { limit: v.optional(v.number()) },
-    handler: async (ctx, args) => {
-        const campaigns = await ctx.db.query("campaigns").collect();
-
-        // Sort by combined view + play count
-        const sorted = campaigns.sort((a, b) => {
-            const scoreA = (a.viewCount || 0) + (a.playCount || 0) * 2;
-            const scoreB = (b.viewCount || 0) + (b.playCount || 0) * 2;
-            return scoreB - scoreA;
-        });
-
-        const limited = sorted.slice(0, args.limit || 10);
-
-        return Promise.all(
-            limited.map(async (campaign) => ({
-                ...campaign,
-                imageUrl: campaign.imageId
-                    ? await ctx.storage.getUrl(campaign.imageId)
-                    : null,
-            }))
-        );
-    },
-});
-
-// Get realms by genre
-export const getRealmsByGenre = query({
-    args: { genre: v.string() },
-    handler: async (ctx, args) => {
-        const campaigns = await ctx.db
-            .query("campaigns")
-            .withIndex("by_genre", (q) => q.eq("genre", args.genre))
-            .collect();
-
-        return Promise.all(
-            campaigns.map(async (campaign) => ({
-                ...campaign,
-                imageUrl: campaign.imageId
-                    ? await ctx.storage.getUrl(campaign.imageId)
-                    : null,
-            }))
-        );
-    },
-});
-
-// Get newest realms
-export const getNewestRealms = query({
-    args: { limit: v.optional(v.number()) },
-    handler: async (ctx, args) => {
-        const campaigns = await ctx.db
-            .query("campaigns")
-            .order("desc")
-            .take(args.limit || 10);
-
-        return Promise.all(
-            campaigns.map(async (campaign) => ({
-                ...campaign,
-                imageUrl: campaign.imageId
-                    ? await ctx.storage.getUrl(campaign.imageId)
-                    : null,
-            }))
-        );
-    },
-});
-
-// Get all realms organized by genre
-export const getRealmsGroupedByGenre = query({
-    args: {},
-    handler: async (ctx) => {
-        const campaigns = await ctx.db.query("campaigns").collect();
-
-        // Get image URLs and group by genre
-        const campaignsWithImages = await Promise.all(
-            campaigns.map(async (campaign) => ({
-                ...campaign,
-                imageUrl: campaign.imageId
-                    ? await ctx.storage.getUrl(campaign.imageId)
-                    : null,
-            }))
-        );
-
-        // Group by genre
-        const grouped: Record<string, typeof campaignsWithImages> = {};
-
-        for (const campaign of campaignsWithImages) {
-            const genre = campaign.genre || 'uncategorized';
-            if (!grouped[genre]) {
-                grouped[genre] = [];
-            }
-            grouped[genre].push(campaign);
-        }
-
-        return grouped;
-    },
-});
-
-// Increment view count when a realm is viewed
-export const incrementRealmView = mutation({
-    args: { campaignId: v.id("campaigns") },
-    handler: async (ctx, args) => {
-        const campaign = await ctx.db.get(args.campaignId);
-        if (!campaign) return;
-
-        await ctx.db.patch(args.campaignId, {
-            viewCount: (campaign.viewCount || 0) + 1,
-        });
-    },
-});
-
-// Increment play count when a realm is played
-export const incrementRealmPlay = mutation({
-    args: { campaignId: v.id("campaigns") },
-    handler: async (ctx, args) => {
-        const campaign = await ctx.db.get(args.campaignId);
-        if (!campaign) return;
-
-        await ctx.db.patch(args.campaignId, {
-            playCount: (campaign.playCount || 0) + 1,
-        });
-    },
-});
-
-// Get player relationships - how factions and NPCs feel about the player
 export const getPlayerRelationships = query({
     args: { campaignId: v.id("campaigns") },
     handler: async (ctx, args) => {
@@ -422,7 +501,6 @@ export const getPlayerRelationships = query({
 
         const playerId = identity.tokenIdentifier;
 
-        // Fetch factions, NPCs, and player reputation in parallel
         const [factions, npcs, reputations] = await Promise.all([
             ctx.db.query("factions").withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId)).collect(),
             ctx.db.query("npcs").withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId)).collect(),
@@ -431,20 +509,12 @@ export const getPlayerRelationships = query({
                 .collect(),
         ]);
 
-        // Get image URLs for factions
-        const factionsWithImages = await Promise.all(
-            factions.map(async (faction) => ({
-                ...faction,
-                imageUrl: faction.imageId ? await ctx.storage.getUrl(faction.imageId) : null,
-            }))
-        );
+        const factionsWithImages = await withImageUrls(ctx, factions);
 
-        // Map reputation to faction IDs for easy lookup
         const reputationMap = new Map(
             reputations.map((r) => [r.factionId.toString(), r.reputation])
         );
 
-        // Build faction relationships with reputation
         const factionRelationships = factionsWithImages.map((faction) => ({
             id: faction._id,
             name: faction.name,
@@ -454,14 +524,11 @@ export const getPlayerRelationships = query({
             territory: faction.territory,
         }));
 
-        // Get NPC images and build NPC relationships
         const livingNpcs = npcs.filter((npc) => !npc.isDead);
         const npcRelationships = await Promise.all(
             livingNpcs.map(async (npc) => {
                 const imageUrl = npc.imageId ? await ctx.storage.getUrl(npc.imageId) : null;
                 const faction = npc.factionId ? factions.find((f) => f._id === npc.factionId) : null;
-
-                // NPC attitude can be influenced by faction reputation
                 const factionRep = npc.factionId
                     ? (reputationMap.get(npc.factionId.toString()) ?? 0)
                     : 0;
@@ -489,76 +556,9 @@ export const getPlayerRelationships = query({
     },
 });
 
-// Get full campaign details with all related entities
-export const getCampaignDetails = query({
-    args: { campaignId: v.id("campaigns") },
-    handler: async (ctx, args) => {
-        const campaign = await ctx.db.get(args.campaignId);
-        if (!campaign) return null;
-
-        // Get current user for character lookup
-        const identity = await ctx.auth.getUserIdentity();
-
-        const [locations, allNpcs, items, quests, monsters, spells, lore, userCharacters, factions, regions] = await Promise.all([
-            ctx.db.query("locations").withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId)).collect(),
-            ctx.db.query("npcs").withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId)).collect(),
-            ctx.db.query("items").withIndex("by_user", (q) => q.eq("userId", campaign.userId)).collect(),
-            ctx.db.query("quests").withIndex("by_user", (q) => q.eq("userId", campaign.userId)).collect(),
-            ctx.db.query("monsters").withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId)).collect(),
-            ctx.db.query("spells").withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId)).collect(),
-            ctx.db.query("lore").withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId)).collect(),
-            identity
-                ? ctx.db.query("characters")
-                    .withIndex("by_user", (q) => q.eq("userId", identity.tokenIdentifier))
-                    .collect()
-                : Promise.resolve([]),
-            ctx.db.query("factions").withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId)).collect(),
-            ctx.db.query("regions").withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId)).collect(),
-        ]);
-
-        const imageUrl = campaign.imageId ? await ctx.storage.getUrl(campaign.imageId) : null;
-
-        // Filter items and quests for this campaign
-        const campaignItems = items.filter((i) => !i.campaignId || i.campaignId === args.campaignId);
-        const campaignQuests = quests.filter((q) => !q.campaignId || q.campaignId === args.campaignId);
-
-        // Get active quests
-        const activeQuests = campaignQuests.filter((q) => q.status === "active");
-
-        // Get user's character for this campaign (or first character)
-        const character = userCharacters.find((c) => c.campaignId === args.campaignId) || userCharacters[0] || null;
-
-        // Separate living and dead NPCs
-        const npcs = allNpcs.filter((npc) => !npc.isDead);
-        const deadNpcs = allNpcs.filter((npc) => npc.isDead);
-
-        return {
-            campaign: { ...campaign, imageUrl },
-            locations,
-            npcs,
-            deadNpcs, // Include dead NPCs for AI context
-            items: campaignItems,
-            quests: campaignQuests,
-            activeQuests,
-            monsters,
-            spells,
-            rules: campaign.rules,
-            lore,
-            character,
-            inventory: campaignItems,
-            factions,
-            regions,
-            bountyEnabled: campaign.bountyEnabled,
-        };
-    },
-});
-
-export const getEffectsLibrary = query({
-    args: {},
-    handler: async (ctx) => {
-        return ctx.db.query("effectsLibrary").collect();
-    },
-});
+// ============================================================================
+// PROFILE QUERIES
+// ============================================================================
 
 export const getMyProfile = query({
     args: {},
@@ -566,21 +566,21 @@ export const getMyProfile = query({
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) return null;
 
-        const user = await ctx.db
+        return ctx.db
             .query("users")
             .withIndex("by_token", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
             .unique();
-
-        return user;
     },
 });
 
-// --- MUTATIONS ---
+// ============================================================================
+// CAMPAIGN MUTATIONS
+// ============================================================================
 
 export const generateUploadUrl = mutation({
     args: {},
     handler: async (ctx) => {
-        return await ctx.storage.generateUploadUrl();
+        return ctx.storage.generateUploadUrl();
     },
 });
 
@@ -599,10 +599,15 @@ export const createCampaign = mutation({
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) throw new Error("Unauthorized");
 
-        return await ctx.db.insert("campaigns", {
+        // Validation
+        validateNonEmptyString(args.title, "Title");
+        validateNonEmptyString(args.description, "Description");
+        validatePositiveNumber(args.xpRate, "XP Rate");
+
+        return ctx.db.insert("campaigns", {
             userId: identity.tokenIdentifier,
-            title: args.title,
-            description: args.description,
+            title: args.title.trim(),
+            description: args.description.trim(),
             xpRate: args.xpRate,
             rules: args.rules,
             imageId: args.imageId,
@@ -614,6 +619,84 @@ export const createCampaign = mutation({
         });
     },
 });
+
+export const incrementRealmView = mutation({
+    args: { campaignId: v.id("campaigns") },
+    handler: async (ctx, args) => {
+        const campaign = await ctx.db.get(args.campaignId);
+        if (!campaign) {
+            throw new Error("Campaign not found");
+        }
+
+        await ctx.db.patch(args.campaignId, {
+            viewCount: (campaign.viewCount ?? 0) + 1,
+        });
+    },
+});
+
+export const incrementRealmPlay = mutation({
+    args: { campaignId: v.id("campaigns") },
+    handler: async (ctx, args) => {
+        const campaign = await ctx.db.get(args.campaignId);
+        if (!campaign) {
+            throw new Error("Campaign not found");
+        }
+
+        await ctx.db.patch(args.campaignId, {
+            playCount: (campaign.playCount ?? 0) + 1,
+        });
+    },
+});
+
+export const updateCampaignEngine = mutation({
+    args: {
+        campaignId: v.id("campaigns"),
+        worldBible: v.optional(v.string()),
+        aiPersona: v.optional(v.string()),
+        terminology: v.optional(v.string()),
+        statConfig: v.optional(v.string()),
+        theme: v.optional(v.string()),
+    },
+    handler: async (ctx, args) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) throw new Error("Unauthorized");
+
+        const campaign = await ctx.db.get(args.campaignId);
+        if (!campaign) throw new Error("Campaign not found");
+        if (campaign.userId !== identity.tokenIdentifier) throw new Error("Unauthorized");
+
+        await ctx.db.patch(args.campaignId, {
+            worldBible: args.worldBible,
+            aiPersona: args.aiPersona,
+            terminology: args.terminology,
+            statConfig: args.statConfig,
+            theme: args.theme,
+        });
+    },
+});
+
+export const updateRarityColors = mutation({
+    args: {
+        campaignId: v.id("campaigns"),
+        rarityColors: v.string(),
+    },
+    handler: async (ctx, args) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) throw new Error("Unauthorized");
+
+        const campaign = await ctx.db.get(args.campaignId);
+        if (!campaign) throw new Error("Campaign not found");
+        if (campaign.userId !== identity.tokenIdentifier) throw new Error("Unauthorized");
+
+        await ctx.db.patch(args.campaignId, {
+            rarityColors: args.rarityColors,
+        });
+    },
+});
+
+// ============================================================================
+// CHARACTER MUTATIONS
+// ============================================================================
 
 export const createCharacter = mutation({
     args: {
@@ -630,21 +713,59 @@ export const createCharacter = mutation({
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) throw new Error("Unauthorized");
 
-        // If creating for a campaign, increment play count
+        // Validation
+        validateNonEmptyString(args.name, "Name");
+        validateNonEmptyString(args.class, "Class");
+        validatePositiveNumber(args.level, "Level");
+
+        // If creating for a campaign, also create playerGameState
         if (args.campaignId) {
             const campaign = await ctx.db.get(args.campaignId);
             if (campaign) {
                 await ctx.db.patch(args.campaignId, {
-                    playCount: (campaign.playCount || 0) + 1,
+                    playCount: (campaign.playCount ?? 0) + 1,
+                });
+            }
+
+            // Check if playerGameState already exists
+            const existingGameState = await ctx.db
+                .query("playerGameState")
+                .withIndex("by_campaign_and_player", (q) =>
+                    q.eq("campaignId", args.campaignId!).eq("playerId", identity.tokenIdentifier)
+                )
+                .first();
+
+            if (!existingGameState) {
+                // Find starting location for this campaign
+                const startingLocation = await ctx.db
+                    .query("locations")
+                    .withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId!))
+                    .first();
+
+                await ctx.db.insert("playerGameState", {
+                    campaignId: args.campaignId,
+                    playerId: identity.tokenIdentifier,
+                    currentLocationId: startingLocation?._id,
+                    hp: 20,
+                    maxHp: 20,
+                    energy: 100,
+                    maxEnergy: 100,
+                    xp: 0,
+                    level: args.level,
+                    gold: 0,
+                    isJailed: false,
+                    activeBuffs: "[]",
+                    activeCooldowns: "{}",
+                    lastPlayed: Date.now(),
                 });
             }
         }
 
-        return await ctx.db.insert("characters", {
+        return ctx.db.insert("characters", {
             userId: identity.tokenIdentifier,
-            name: args.name,
-            class: args.class,
-            race: args.race,
+            name: args.name.trim(),
+            class: args.class.trim(),
+            race: args.race?.trim(),
             level: args.level,
             stats: args.stats,
             campaignId: args.campaignId,
@@ -654,63 +775,6 @@ export const createCharacter = mutation({
     },
 });
 
-// Check if character exists and return campaign character creation config
-export const getCharacterCreationStatus = query({
-    args: {
-        campaignId: v.id("campaigns"),
-    },
-    handler: async (ctx, args) => {
-        const identity = await ctx.auth.getUserIdentity();
-        if (!identity) return { needsCreation: true, character: null, config: null };
-
-        // Check for existing character
-        const existingCharacter = await ctx.db
-            .query("characters")
-            .withIndex("by_user", (q) => q.eq("userId", identity.tokenIdentifier))
-            .filter((q) => q.eq(q.field("campaignId"), args.campaignId))
-            .first();
-
-        // Get campaign config
-        const campaign = await ctx.db.get(args.campaignId);
-        if (!campaign) throw new Error("Campaign not found");
-
-        // Parse character creation config
-        const config = {
-            availableClasses: campaign.availableClasses
-                ? JSON.parse(campaign.availableClasses)
-                : [
-                    { name: "Warrior", description: "A skilled fighter with strength and combat prowess" },
-                    { name: "Mage", description: "A wielder of arcane magic and mystical arts" },
-                    { name: "Rogue", description: "A cunning trickster skilled in stealth and agility" },
-                    { name: "Cleric", description: "A divine healer blessed with holy magic" },
-                    { name: "Ranger", description: "A wilderness expert with bow and blade" },
-                ],
-            availableRaces: campaign.availableRaces
-                ? JSON.parse(campaign.availableRaces)
-                : [
-                    { name: "Human", description: "Versatile and adaptable, humans excel in all fields" },
-                    { name: "Elf", description: "Graceful beings with keen senses and magical affinity" },
-                    { name: "Dwarf", description: "Stout and sturdy folk with great resilience" },
-                    { name: "Orc", description: "Powerful warriors with incredible strength" },
-                    { name: "Halfling", description: "Small but nimble, with remarkable luck" },
-                ],
-            statAllocationMethod: campaign.statAllocationMethod || "standard_array",
-            startingStatPoints: campaign.startingStatPoints || 27,
-            allowCustomNames: campaign.allowCustomNames !== false, // default true
-            terminology: campaign.terminology ? JSON.parse(campaign.terminology) : {},
-            statConfig: campaign.statConfig ? JSON.parse(campaign.statConfig) : null,
-            theme: campaign.theme,
-        };
-
-        return {
-            needsCreation: !existingCharacter,
-            character: existingCharacter,
-            config,
-        };
-    },
-});
-
-// Ensure a character exists for a campaign (auto-create if not)
 export const ensureCharacterForCampaign = mutation({
     args: {
         campaignId: v.id("campaigns"),
@@ -719,7 +783,6 @@ export const ensureCharacterForCampaign = mutation({
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) throw new Error("Unauthorized");
 
-        // Check if user already has a character for this campaign
         const existingCharacter = await ctx.db
             .query("characters")
             .withIndex("by_user", (q) => q.eq("userId", identity.tokenIdentifier))
@@ -730,34 +793,37 @@ export const ensureCharacterForCampaign = mutation({
             return { characterId: existingCharacter._id, created: false };
         }
 
-        // Get campaign to potentially use its theme for character generation
         const campaign = await ctx.db.get(args.campaignId);
         if (!campaign) throw new Error("Campaign not found");
 
-        // Create a new character for this campaign
+        // Use campaign's stat config if available, otherwise use defaults
+        const statConfig = safeJsonParse<Array<{ key: string }>>(campaign.statConfig);
+        let defaultStats: Record<string, number>;
+
+        if (statConfig && statConfig.length > 0) {
+            // Use campaign's custom stats
+            defaultStats = {};
+            for (const stat of statConfig) {
+                defaultStats[stat.key] = 10;
+            }
+        } else {
+            defaultStats = { ...DEFAULT_CHARACTER_STATS };
+        }
+
         const characterId = await ctx.db.insert("characters", {
             userId: identity.tokenIdentifier,
-            name: identity.name || "Traveler",
+            name: identity.name ?? "Traveler",
             class: "Adventurer",
             level: 1,
-            stats: JSON.stringify({
-                strength: 10,
-                dexterity: 10,
-                constitution: 10,
-                intelligence: 10,
-                wisdom: 10,
-                charisma: 10,
-            }),
+            stats: JSON.stringify(defaultStats),
             campaignId: args.campaignId,
         });
 
-        // Get starting location for the campaign (first location if available)
         const startingLocation = await ctx.db
             .query("locations")
             .withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId))
             .first();
 
-        // Create playerGameState for this character
         await ctx.db.insert("playerGameState", {
             campaignId: args.campaignId,
             playerId: identity.tokenIdentifier,
@@ -775,14 +841,53 @@ export const ensureCharacterForCampaign = mutation({
             lastPlayed: Date.now(),
         });
 
-        // Increment play count for the campaign
         await ctx.db.patch(args.campaignId, {
-            playCount: (campaign.playCount || 0) + 1,
+            playCount: (campaign.playCount ?? 0) + 1,
         });
 
         return { characterId, created: true };
     },
 });
+
+export const updateCharacterStats = mutation({
+    args: {
+        characterId: v.id("characters"),
+        stats: v.string(),
+    },
+    handler: async (ctx, args) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) throw new Error("Unauthorized");
+
+        const character = await ctx.db.get(args.characterId);
+        if (!character) throw new Error("Character not found");
+        if (character.userId !== identity.tokenIdentifier) throw new Error("Unauthorized");
+
+        await ctx.db.patch(args.characterId, {
+            stats: args.stats,
+        });
+    },
+});
+
+export const killNPC = mutation({
+    args: {
+        npcId: v.id("npcs"),
+    },
+    handler: async (ctx, args) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) throw new Error("Unauthorized");
+
+        const npc = await ctx.db.get(args.npcId);
+        if (!npc) throw new Error("NPC not found");
+
+        await ctx.db.patch(args.npcId, {
+            isDead: true,
+        });
+    },
+});
+
+// ============================================================================
+// ITEM MUTATIONS
+// ============================================================================
 
 export const createItem = mutation({
     args: {
@@ -805,11 +910,15 @@ export const createItem = mutation({
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) throw new Error("Unauthorized");
 
-        return await ctx.db.insert("items", {
+        validateNonEmptyString(args.name, "Name");
+        validateNonEmptyString(args.type, "Type");
+        validateNonEmptyString(args.rarity, "Rarity");
+
+        return ctx.db.insert("items", {
             userId: identity.tokenIdentifier,
-            name: args.name,
-            type: args.type,
-            rarity: args.rarity,
+            name: args.name.trim(),
+            type: args.type.trim(),
+            rarity: args.rarity.trim(),
             effects: args.effects,
             campaignId: args.campaignId,
             description: args.description,
@@ -825,6 +934,10 @@ export const createItem = mutation({
     },
 });
 
+// ============================================================================
+// LOCATION MUTATIONS
+// ============================================================================
+
 export const createLocation = mutation({
     args: {
         campaignId: v.id("campaigns"),
@@ -838,23 +951,30 @@ export const createLocation = mutation({
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) throw new Error("Unauthorized");
 
-        // Verify campaign ownership
         const campaign = await ctx.db.get(args.campaignId);
         if (!campaign || campaign.userId !== identity.tokenIdentifier) {
             throw new Error("Unauthorized: You don't own this campaign");
         }
 
-        return await ctx.db.insert("locations", {
+        validateNonEmptyString(args.name, "Name");
+        validateNonEmptyString(args.type, "Type");
+        validateNonEmptyString(args.description, "Description");
+
+        return ctx.db.insert("locations", {
             userId: identity.tokenIdentifier,
             campaignId: args.campaignId,
-            name: args.name,
-            type: args.type,
-            environment: args.environment,
-            description: args.description,
-            neighbors: args.neighbors || [],
+            name: args.name.trim(),
+            type: args.type.trim(),
+            environment: args.environment?.trim(),
+            description: args.description.trim(),
+            neighbors: args.neighbors ?? [],
         });
     },
 });
+
+// ============================================================================
+// EVENT MUTATIONS
+// ============================================================================
 
 export const createEvent = mutation({
     args: {
@@ -867,21 +987,27 @@ export const createEvent = mutation({
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) throw new Error("Unauthorized");
 
-        // Verify campaign ownership
         const campaign = await ctx.db.get(args.campaignId);
         if (!campaign || campaign.userId !== identity.tokenIdentifier) {
             throw new Error("Unauthorized: You don't own this campaign");
         }
 
-        return await ctx.db.insert("events", {
+        validateNonEmptyString(args.trigger, "Trigger");
+        validateNonEmptyString(args.effect, "Effect");
+
+        return ctx.db.insert("events", {
             userId: identity.tokenIdentifier,
             campaignId: args.campaignId,
-            trigger: args.trigger,
-            effect: args.effect,
+            trigger: args.trigger.trim(),
+            effect: args.effect.trim(),
             locationId: args.locationId,
         });
     },
 });
+
+// ============================================================================
+// NPC MUTATIONS
+// ============================================================================
 
 export const createNPC = mutation({
     args: {
@@ -891,20 +1017,16 @@ export const createNPC = mutation({
         attitude: v.string(),
         description: v.string(),
         locationId: v.optional(v.id("locations")),
-        // Health & Combat
         health: v.optional(v.number()),
         maxHealth: v.optional(v.number()),
         damage: v.optional(v.number()),
         armorClass: v.optional(v.number()),
-        // Inventory & Loot
         inventoryItems: v.optional(v.array(v.id("items"))),
         dropItems: v.optional(v.array(v.id("items"))),
         gold: v.optional(v.number()),
-        // Trading
         willTrade: v.optional(v.boolean()),
         tradeInventory: v.optional(v.array(v.id("items"))),
         tradePriceModifier: v.optional(v.number()),
-        // Other
         isEssential: v.optional(v.boolean()),
         isRecruitable: v.optional(v.boolean()),
         recruitCost: v.optional(v.number()),
@@ -914,38 +1036,41 @@ export const createNPC = mutation({
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) throw new Error("Unauthorized");
 
-        // Verify campaign ownership
         const campaign = await ctx.db.get(args.campaignId);
         if (!campaign || campaign.userId !== identity.tokenIdentifier) {
             throw new Error("Unauthorized: You don't own this campaign");
         }
 
-        // Set defaults for health if not provided
+        validateNonEmptyString(args.name, "Name");
+        validateNonEmptyString(args.role, "Role");
+        validateNonEmptyString(args.attitude, "Attitude");
+        validateNonEmptyString(args.description, "Description");
+
+        if (args.gold !== undefined) {
+            validateNonNegativeNumber(args.gold, "Gold");
+        }
+
         const maxHealth = args.maxHealth ?? 20;
         const health = args.health ?? maxHealth;
 
-        return await ctx.db.insert("npcs", {
+        return ctx.db.insert("npcs", {
             userId: identity.tokenIdentifier,
             campaignId: args.campaignId,
-            name: args.name,
-            role: args.role,
-            attitude: args.attitude,
-            description: args.description,
+            name: args.name.trim(),
+            role: args.role.trim(),
+            attitude: args.attitude.trim(),
+            description: args.description.trim(),
             locationId: args.locationId,
-            // Health & Combat
             health,
             maxHealth,
             damage: args.damage ?? 5,
             armorClass: args.armorClass ?? 10,
-            // Inventory & Loot
             inventoryItems: args.inventoryItems,
             dropItems: args.dropItems,
             gold: args.gold ?? 0,
-            // Trading
             willTrade: args.willTrade,
             tradeInventory: args.tradeInventory,
             tradePriceModifier: args.tradePriceModifier ?? 1.0,
-            // Other
             isEssential: args.isEssential,
             isRecruitable: args.isRecruitable,
             recruitCost: args.recruitCost,
@@ -953,6 +1078,10 @@ export const createNPC = mutation({
         });
     },
 });
+
+// ============================================================================
+// QUEST MUTATIONS
+// ============================================================================
 
 export const createQuest = mutation({
     args: {
@@ -970,17 +1099,19 @@ export const createQuest = mutation({
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) throw new Error("Unauthorized");
 
-        // Verify campaign ownership
         const campaign = await ctx.db.get(args.campaignId);
         if (!campaign || campaign.userId !== identity.tokenIdentifier) {
             throw new Error("Unauthorized: You don't own this campaign");
         }
 
-        return await ctx.db.insert("quests", {
+        validateNonEmptyString(args.title, "Title");
+        validateNonEmptyString(args.description, "Description");
+
+        return ctx.db.insert("quests", {
             userId: identity.tokenIdentifier,
             campaignId: args.campaignId,
-            title: args.title,
-            description: args.description,
+            title: args.title.trim(),
+            description: args.description.trim(),
             status: "active",
             locationId: args.locationId,
             npcId: args.npcId,
@@ -992,7 +1123,6 @@ export const createQuest = mutation({
     },
 });
 
-// Save an AI-generated quest with its reward items
 export const saveGeneratedQuest = mutation({
     args: {
         campaignId: v.id("campaigns"),
@@ -1025,9 +1155,11 @@ export const saveGeneratedQuest = mutation({
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) throw new Error("Unauthorized");
 
-        // Get campaign to use its userId (quest is for the campaign, not the player)
         const campaign = await ctx.db.get(args.campaignId);
         if (!campaign) throw new Error("Campaign not found");
+
+        validateNonEmptyString(args.title, "Title");
+        validateNonEmptyString(args.description, "Description");
 
         // Create reward items first
         const rewardItemIds: Id<"items">[] = [];
@@ -1045,28 +1177,25 @@ export const saveGeneratedQuest = mutation({
             rewardItemIds.push(itemId);
         }
 
-        // Create the quest
-        const questId = await ctx.db.insert("quests", {
+        // Create the quest with properly typed rewardItemIds
+        return ctx.db.insert("quests", {
             userId: campaign.userId,
             campaignId: args.campaignId,
             locationId: args.locationId,
-            title: args.title,
-            description: args.description,
+            title: args.title.trim(),
+            description: args.description.trim(),
             status: "active",
             source: args.source,
-            rewardItemIds: rewardItemIds as any,
+            rewardItemIds,
             objectives: args.objectives,
             currentObjectiveIndex: 0,
-            difficulty: args.difficulty || "medium",
-            xpReward: args.xpReward || 50,
-            goldReward: args.goldReward || 25,
+            difficulty: args.difficulty ?? "medium",
+            xpReward: args.xpReward ?? 50,
+            goldReward: args.goldReward ?? 25,
         });
-
-        return questId;
     },
 });
 
-// Update quest progress (objective completion, status changes)
 export const updateQuestProgress = mutation({
     args: {
         questId: v.id("quests"),
@@ -1079,25 +1208,22 @@ export const updateQuestProgress = mutation({
         const quest = await ctx.db.get(args.questId);
         if (!quest) throw new Error("Quest not found");
 
-        const updates: Record<string, unknown> = {};
+        const updates: Partial<Doc<"quests">> = {};
 
-        // Update specific objective
         if (args.objectiveId && quest.objectives) {
             const objectives = [...quest.objectives];
-            const objIndex = objectives.findIndex(o => o.id === args.objectiveId);
+            const objIndex = objectives.findIndex((o) => o.id === args.objectiveId);
 
             if (objIndex !== -1) {
                 const obj = { ...objectives[objIndex] };
 
-                // Increment count
                 if (args.incrementCount) {
-                    obj.currentCount = (obj.currentCount || 0) + args.incrementCount;
+                    obj.currentCount = (obj.currentCount ?? 0) + args.incrementCount;
                     if (obj.targetCount && obj.currentCount >= obj.targetCount) {
                         obj.isCompleted = true;
                     }
                 }
 
-                // Complete objective directly
                 if (args.completeObjective) {
                     obj.isCompleted = true;
                 }
@@ -1105,10 +1231,9 @@ export const updateQuestProgress = mutation({
                 objectives[objIndex] = obj;
                 updates.objectives = objectives;
 
-                // Check if all required objectives are complete
                 const allRequiredComplete = objectives
-                    .filter(o => !o.isOptional)
-                    .every(o => o.isCompleted);
+                    .filter((o) => !o.isOptional)
+                    .every((o) => o.isCompleted);
 
                 if (allRequiredComplete && quest.status === "active") {
                     updates.status = "completed";
@@ -1116,7 +1241,6 @@ export const updateQuestProgress = mutation({
             }
         }
 
-        // Direct status update
         if (args.newStatus) {
             updates.status = args.newStatus;
         }
@@ -1129,7 +1253,6 @@ export const updateQuestProgress = mutation({
     },
 });
 
-// Complete a quest and grant rewards
 export const completeQuest = mutation({
     args: {
         questId: v.id("quests"),
@@ -1141,29 +1264,27 @@ export const completeQuest = mutation({
         if (!quest) throw new Error("Quest not found");
         if (quest.status === "completed") throw new Error("Quest already completed");
 
-        // Mark quest as completed
         await ctx.db.patch(args.questId, { status: "completed" });
 
-        // Grant rewards to player game state
         const playerState = await ctx.db
             .query("playerGameState")
-            .withIndex("by_campaign_and_player", q =>
+            .withIndex("by_campaign_and_player", (q) =>
                 q.eq("campaignId", args.campaignId).eq("playerId", args.playerId)
             )
             .first();
 
         if (playerState) {
-            const updates: Record<string, unknown> = {};
+            const stateUpdates: Partial<Doc<"playerGameState">> = {};
 
             if (quest.xpReward) {
-                updates.xp = (playerState.xp || 0) + quest.xpReward;
+                stateUpdates.xp = (playerState.xp ?? 0) + quest.xpReward;
             }
             if (quest.goldReward) {
-                updates.gold = (playerState.gold || 0) + quest.goldReward;
+                stateUpdates.gold = (playerState.gold ?? 0) + quest.goldReward;
             }
 
-            if (Object.keys(updates).length > 0) {
-                await ctx.db.patch(playerState._id, updates);
+            if (Object.keys(stateUpdates).length > 0) {
+                await ctx.db.patch(playerState._id, stateUpdates);
             }
         }
 
@@ -1173,38 +1294,40 @@ export const completeQuest = mutation({
                 await ctx.db.insert("playerInventory", {
                     campaignId: args.campaignId,
                     playerId: args.playerId,
-                    itemId: itemId,
+                    itemId,
                     quantity: 1,
                     acquiredAt: Date.now(),
                 });
             }
         }
 
-        // Apply reputation changes
+        // Apply reputation changes with proper error handling
         if (quest.rewardReputation) {
-            try {
-                const repChanges = JSON.parse(quest.rewardReputation);
+            const repChanges = safeJsonParse<Record<string, number>>(quest.rewardReputation);
+
+            if (!repChanges) {
+                // Log but don't throw - partial success is better than total failure
+                console.error("Failed to parse reputation rewards for quest:", args.questId);
+            } else {
                 for (const [factionName, change] of Object.entries(repChanges)) {
-                    // Find faction by name
                     const faction = await ctx.db
                         .query("factions")
-                        .withIndex("by_campaign", q => q.eq("campaignId", args.campaignId))
-                        .filter(q => q.eq(q.field("name"), factionName))
+                        .withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId))
+                        .filter((q) => q.eq(q.field("name"), factionName))
                         .first();
 
                     if (faction) {
-                        // Update or create reputation
                         const existingRep = await ctx.db
                             .query("playerReputation")
-                            .withIndex("by_campaign_player", q =>
+                            .withIndex("by_campaign_player", (q) =>
                                 q.eq("campaignId", args.campaignId).eq("playerId", args.playerId)
                             )
-                            .filter(q => q.eq(q.field("factionId"), faction._id))
+                            .filter((q) => q.eq(q.field("factionId"), faction._id))
                             .first();
 
                         if (existingRep) {
                             await ctx.db.patch(existingRep._id, {
-                                reputation: existingRep.reputation + (change as number),
+                                reputation: existingRep.reputation + change,
                                 updatedAt: Date.now(),
                             });
                         } else {
@@ -1212,14 +1335,12 @@ export const completeQuest = mutation({
                                 campaignId: args.campaignId,
                                 playerId: args.playerId,
                                 factionId: faction._id,
-                                reputation: change as number,
+                                reputation: change,
                                 updatedAt: Date.now(),
                             });
                         }
                     }
                 }
-            } catch (e) {
-                console.error("Failed to parse reputation rewards:", e);
             }
         }
 
@@ -1230,13 +1351,17 @@ export const completeQuest = mutation({
 
         return {
             success: true,
-            xpGranted: quest.xpReward || 0,
-            goldGranted: quest.goldReward || 0,
-            itemsGranted: quest.rewardItemIds?.length || 0,
+            xpGranted: quest.xpReward ?? 0,
+            goldGranted: quest.goldReward ?? 0,
+            itemsGranted: quest.rewardItemIds?.length ?? 0,
             nextQuestActivated: !!quest.nextQuestId,
         };
     },
 });
+
+// ============================================================================
+// MONSTER MUTATIONS
+// ============================================================================
 
 export const createMonster = mutation({
     args: {
@@ -1252,17 +1377,21 @@ export const createMonster = mutation({
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) throw new Error("Unauthorized");
 
-        // Verify campaign ownership
         const campaign = await ctx.db.get(args.campaignId);
         if (!campaign || campaign.userId !== identity.tokenIdentifier) {
             throw new Error("Unauthorized: You don't own this campaign");
         }
 
-        return await ctx.db.insert("monsters", {
+        validateNonEmptyString(args.name, "Name");
+        validateNonEmptyString(args.description, "Description");
+        validatePositiveNumber(args.health, "Health");
+        validateNonNegativeNumber(args.damage, "Damage");
+
+        return ctx.db.insert("monsters", {
             userId: identity.tokenIdentifier,
             campaignId: args.campaignId,
-            name: args.name,
-            description: args.description,
+            name: args.name.trim(),
+            description: args.description.trim(),
             health: args.health,
             damage: args.damage,
             locationId: args.locationId,
@@ -1271,29 +1400,28 @@ export const createMonster = mutation({
     },
 });
 
-// Create Ability/Spell/Jutsu/Power - Genre-agnostic
+// ============================================================================
+// SPELL MUTATIONS
+// ============================================================================
+
 export const createSpell = mutation({
     args: {
         campaignId: v.id("campaigns"),
-        // Core Identity
         name: v.string(),
         description: v.optional(v.string()),
         category: v.optional(v.string()),
         subcategory: v.optional(v.string()),
         iconEmoji: v.optional(v.string()),
         tags: v.optional(v.array(v.string())),
-        // Requirements
         requiredLevel: v.optional(v.number()),
         requiredStats: v.optional(v.string()),
         requiredItems: v.optional(v.string()),
         requiredAbilities: v.optional(v.string()),
-        // Cost & Cooldown
         energyCost: v.optional(v.number()),
         healthCost: v.optional(v.number()),
         cooldown: v.optional(v.number()),
         usesPerDay: v.optional(v.number()),
         isPassive: v.optional(v.boolean()),
-        // Effects
         damage: v.optional(v.number()),
         damageType: v.optional(v.string()),
         damageScaling: v.optional(v.string()),
@@ -1303,17 +1431,13 @@ export const createSpell = mutation({
         debuffEffect: v.optional(v.string()),
         statusEffect: v.optional(v.string()),
         statusDuration: v.optional(v.number()),
-        // Targeting
         targetType: v.optional(v.string()),
         range: v.optional(v.string()),
         areaSize: v.optional(v.string()),
-        // Special Properties
         castTime: v.optional(v.string()),
         interruptible: v.optional(v.boolean()),
-        // Upgrade
         canUpgrade: v.optional(v.boolean()),
         upgradedVersion: v.optional(v.string()),
-        // Lore
         lore: v.optional(v.string()),
         creator: v.optional(v.string()),
         rarity: v.optional(v.string()),
@@ -1324,16 +1448,27 @@ export const createSpell = mutation({
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) throw new Error("Unauthorized");
 
-        // Verify campaign ownership
         const campaign = await ctx.db.get(args.campaignId);
         if (!campaign || campaign.userId !== identity.tokenIdentifier) {
             throw new Error("Unauthorized: You don't own this campaign");
         }
 
-        return await ctx.db.insert("spells", {
+        validateNonEmptyString(args.name, "Name");
+
+        if (args.requiredLevel !== undefined) {
+            validatePositiveNumber(args.requiredLevel, "Required Level");
+        }
+        if (args.energyCost !== undefined) {
+            validateNonNegativeNumber(args.energyCost, "Energy Cost");
+        }
+        if (args.healthCost !== undefined) {
+            validateNonNegativeNumber(args.healthCost, "Health Cost");
+        }
+
+        return ctx.db.insert("spells", {
             userId: identity.tokenIdentifier,
             campaignId: args.campaignId,
-            name: args.name,
+            name: args.name.trim(),
             description: args.description,
             category: args.category,
             subcategory: args.subcategory,
@@ -1373,25 +1508,9 @@ export const createSpell = mutation({
     },
 });
 
-export const updateRarityColors = mutation({
-    args: {
-        campaignId: v.id("campaigns"),
-        rarityColors: v.string(),
-    },
-    handler: async (ctx, args) => {
-        const identity = await ctx.auth.getUserIdentity();
-        if (!identity) throw new Error("Unauthorized");
-
-        const campaign = await ctx.db.get(args.campaignId);
-        if (!campaign || campaign.userId !== identity.tokenIdentifier) {
-            throw new Error("Unauthorized");
-        }
-
-        await ctx.db.patch(args.campaignId, {
-            rarityColors: args.rarityColors,
-        });
-    },
-});
+// ============================================================================
+// PROFILE MUTATIONS
+// ============================================================================
 
 export const updateProfile = mutation({
     args: {
@@ -1402,6 +1521,10 @@ export const updateProfile = mutation({
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) throw new Error("Unauthorized");
 
+        if (args.name !== undefined) {
+            validateNonEmptyString(args.name, "Name");
+        }
+
         const user = await ctx.db
             .query("users")
             .withIndex("by_token", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
@@ -1409,42 +1532,15 @@ export const updateProfile = mutation({
 
         if (user) {
             await ctx.db.patch(user._id, {
-                name: args.name ?? user.name,
-                studioName: args.studioName,
+                name: args.name?.trim() ?? user.name,
+                studioName: args.studioName?.trim(),
             });
         } else {
             await ctx.db.insert("users", {
                 tokenIdentifier: identity.tokenIdentifier,
-                name: args.name ?? identity.name ?? "Unknown",
-                studioName: args.studioName,
+                name: args.name?.trim() ?? identity.name ?? "Unknown",
+                studioName: args.studioName?.trim(),
             });
         }
-    },
-});
-
-export const updateCampaignEngine = mutation({
-    args: {
-        campaignId: v.id("campaigns"),
-        worldBible: v.optional(v.string()),
-        aiPersona: v.optional(v.string()),
-        terminology: v.optional(v.string()),
-        statConfig: v.optional(v.string()),
-        theme: v.optional(v.string()),
-    },
-    handler: async (ctx, args) => {
-        const identity = await ctx.auth.getUserIdentity();
-        if (!identity) throw new Error("Unauthorized");
-
-        const campaign = await ctx.db.get(args.campaignId);
-        if (!campaign) throw new Error("Campaign not found");
-        if (campaign.userId !== identity.tokenIdentifier) throw new Error("Unauthorized");
-
-        await ctx.db.patch(args.campaignId, {
-            worldBible: args.worldBible,
-            aiPersona: args.aiPersona,
-            terminology: args.terminology,
-            statConfig: args.statConfig,
-            theme: args.theme,
-        });
     },
 });

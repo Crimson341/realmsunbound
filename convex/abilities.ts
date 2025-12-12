@@ -1,91 +1,105 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { Id } from "./_generated/dataModel";
+import {
+    getPlayerGameState,
+    parseCooldowns,
+    rollDamageDice,
+    getEnergy,
+    getMaxEnergy,
+} from "./lib/helpers";
+import { PLAYER_DEFAULTS } from "./lib/constants";
 
-// --- ABILITY/SPELL SYSTEM ---
+// --- TYPES ---
 
-// Get all abilities/spells available to a player for a campaign
+type TargetEffect = {
+    npcId: Id<"npcs">;
+    damage: number;
+    killed: boolean;
+    npcName: string;
+};
+
+type UseAbilityResult =
+    | {
+          success: true;
+          spell: {
+              name: string;
+              damage: number;
+              healing: number;
+              energyCost: number;
+              school: string | undefined;
+          };
+          targetEffect: TargetEffect | null;
+          newEnergy: number;
+          newHp: number;
+      }
+    | {
+          success: false;
+          message: string;
+          requiresEnergy?: number;
+          currentEnergy?: number;
+          cooldownRemaining?: number;
+      };
+
+// --- QUERIES ---
+
 export const getPlayerAbilities = query({
     args: {
         campaignId: v.id("campaigns"),
         playerId: v.string(),
     },
     handler: async (ctx, args) => {
-        // Get campaign spells
         const spells = await ctx.db
             .query("spells")
             .withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId))
             .collect();
 
-        // Get player's game state for cooldowns
-        const gameState = await ctx.db
-            .query("playerGameState")
-            .withIndex("by_campaign_and_player", (q) =>
-                q.eq("campaignId", args.campaignId).eq("playerId", args.playerId)
-            )
-            .first();
+        const gameState = await getPlayerGameState(ctx, args.campaignId, args.playerId);
+        const cooldowns = parseCooldowns(gameState?.activeCooldowns);
 
-        let cooldowns: Record<string, number> = {};
-        if (gameState?.activeCooldowns) {
-            try {
-                cooldowns = JSON.parse(gameState.activeCooldowns);
-            } catch {
-                console.error("Failed to parse activeCooldowns in getPlayerAbilities");
-            }
-        }
-
-        // Return spells with cooldown status
         return spells.map((spell) => ({
             ...spell,
-            cooldownRemaining: cooldowns[spell._id] || 0,
-            canUse: (cooldowns[spell._id] || 0) === 0,
+            cooldownRemaining: cooldowns[spell._id] ?? 0,
+            canUse: (cooldowns[spell._id] ?? 0) === 0,
         }));
     },
 });
 
-// Get player's current energy
 export const getPlayerEnergy = query({
     args: {
         campaignId: v.id("campaigns"),
         playerId: v.string(),
     },
     handler: async (ctx, args) => {
-        const gameState = await ctx.db
-            .query("playerGameState")
-            .withIndex("by_campaign_and_player", (q) =>
-                q.eq("campaignId", args.campaignId).eq("playerId", args.playerId)
-            )
-            .first();
+        const gameState = await getPlayerGameState(ctx, args.campaignId, args.playerId);
 
         if (!gameState) {
-            return { energy: 100, maxEnergy: 100 };
+            return {
+                energy: PLAYER_DEFAULTS.ENERGY,
+                maxEnergy: PLAYER_DEFAULTS.MAX_ENERGY,
+            };
         }
 
         return {
-            energy: gameState.energy ?? 100,
-            maxEnergy: gameState.maxEnergy ?? 100,
+            energy: getEnergy(gameState),
+            maxEnergy: getMaxEnergy(gameState),
         };
     },
 });
 
-// Get player's current gold (source of truth for gold tracking)
 export const getPlayerGold = query({
     args: {
         campaignId: v.id("campaigns"),
         playerId: v.string(),
     },
     handler: async (ctx, args) => {
-        const gameState = await ctx.db
-            .query("playerGameState")
-            .withIndex("by_campaign_and_player", (q) =>
-                q.eq("campaignId", args.campaignId).eq("playerId", args.playerId)
-            )
-            .first();
-
-        return gameState?.gold ?? 0;
+        const gameState = await getPlayerGameState(ctx, args.campaignId, args.playerId);
+        return gameState?.gold ?? PLAYER_DEFAULTS.GOLD;
     },
 });
 
-// Use an ability
+// --- MUTATIONS ---
+
 export const useAbility = mutation({
     args: {
         campaignId: v.id("campaigns"),
@@ -93,94 +107,72 @@ export const useAbility = mutation({
         spellId: v.id("spells"),
         targetNpcId: v.optional(v.id("npcs")),
     },
-    handler: async (ctx, args) => {
-        // Get the spell
+    handler: async (ctx, args): Promise<UseAbilityResult> => {
         const spell = await ctx.db.get(args.spellId);
         if (!spell) {
             return { success: false, message: "Ability not found" };
         }
 
-        // Get player game state
-        const gameState = await ctx.db
-            .query("playerGameState")
-            .withIndex("by_campaign_and_player", (q) =>
-                q.eq("campaignId", args.campaignId).eq("playerId", args.playerId)
-            )
-            .first();
-
+        const gameState = await getPlayerGameState(ctx, args.campaignId, args.playerId);
         if (!gameState) {
             return { success: false, message: "Player state not found" };
         }
 
-        const currentEnergy = gameState.energy ?? 100;
+        const currentEnergy = getEnergy(gameState);
         const energyCost = spell.energyCost ?? 0;
 
-        // Check energy
         if (currentEnergy < energyCost) {
-            return { success: false, message: "Not enough energy", requiresEnergy: energyCost, currentEnergy };
-        }
-
-        // Check cooldown
-        let cooldowns: Record<string, number> = {};
-        if (gameState.activeCooldowns) {
-            try {
-                cooldowns = JSON.parse(gameState.activeCooldowns);
-            } catch {
-                console.error("Failed to parse activeCooldowns in useAbility");
-            }
-        }
-        if (typeof cooldowns[args.spellId] === 'number' && cooldowns[args.spellId] > 0) {
             return {
                 success: false,
-                message: `Ability on cooldown (${cooldowns[args.spellId]} turns)`,
-                cooldownRemaining: cooldowns[args.spellId],
+                message: "Not enough energy",
+                requiresEnergy: energyCost,
+                currentEnergy,
+            };
+        }
+
+        const cooldowns = parseCooldowns(gameState.activeCooldowns);
+        const cooldownRemaining = cooldowns[args.spellId] ?? 0;
+
+        if (cooldownRemaining > 0) {
+            return {
+                success: false,
+                message: `Ability on cooldown (${cooldownRemaining} turns)`,
+                cooldownRemaining,
             };
         }
 
         // Calculate effects
-        let damage = 0;
-        let healing = 0;
-        let targetEffect: {
-            npcId?: string;
-            damage?: number;
-            killed?: boolean;
-            npcName?: string;
-        } | null = null;
+        let damage = spell.damage ?? 0;
+        let healing = spell.healing ?? 0;
+        let targetEffect: TargetEffect | null = null;
 
-        // Direct damage
-        if (spell.damage) {
-            damage = spell.damage;
-        }
-
-        // Damage dice (e.g., "2d6+3")
+        // Damage dice - use deterministic seed based on game state ID + current time
         if (spell.damageDice) {
-            const parsed = parseDamageDice(spell.damageDice);
-            damage += parsed;
+            // Create seed from ID string - sum of char codes
+            const idStr = gameState._id.toString();
+            const seed = idStr.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0) + Date.now();
+            const diceResult = rollDamageDice(spell.damageDice, seed);
+            if (diceResult !== null) {
+                damage += diceResult;
+            }
         }
 
-        // Healing
-        if (spell.healing) {
-            healing = spell.healing;
-        }
-
-        // Apply damage to target NPC if specified
+        // Apply damage to target NPC
         if (args.targetNpcId && damage > 0) {
             const npc = await ctx.db.get(args.targetNpcId);
             if (npc) {
-                const npcHealth = npc.health ?? 100;
+                const npcHealth = npc.health ?? PLAYER_DEFAULTS.HP;
                 const newHealth = Math.max(0, npcHealth - damage);
                 const killed = newHealth <= 0;
 
                 await ctx.db.patch(args.targetNpcId, {
                     health: newHealth,
-                    ...(killed
-                        ? {
-                              isDead: true,
-                              deathCause: `Killed by ${spell.name}`,
-                              killedBy: args.playerId,
-                              deathTimestamp: Date.now(),
-                          }
-                        : {}),
+                    ...(killed && {
+                        isDead: true,
+                        deathCause: `Killed by ${spell.name}`,
+                        killedBy: args.playerId,
+                        deathTimestamp: Date.now(),
+                    }),
                 });
 
                 targetEffect = {
@@ -192,13 +184,13 @@ export const useAbility = mutation({
             }
         }
 
-        // Apply healing to player
+        // Apply healing
         let newHp = gameState.hp;
         if (healing > 0) {
             newHp = Math.min(gameState.maxHp, gameState.hp + healing);
         }
 
-        // Update player state (energy, cooldowns, hp)
+        // Update cooldowns
         const newCooldowns = { ...cooldowns };
         if (spell.cooldown && spell.cooldown > 0) {
             newCooldowns[args.spellId] = spell.cooldown;
@@ -226,34 +218,20 @@ export const useAbility = mutation({
     },
 });
 
-// Tick cooldowns (call at end of player turn)
 export const tickCooldowns = mutation({
     args: {
         campaignId: v.id("campaigns"),
         playerId: v.string(),
     },
     handler: async (ctx, args) => {
-        const gameState = await ctx.db
-            .query("playerGameState")
-            .withIndex("by_campaign_and_player", (q) =>
-                q.eq("campaignId", args.campaignId).eq("playerId", args.playerId)
-            )
-            .first();
-
+        const gameState = await getPlayerGameState(ctx, args.campaignId, args.playerId);
         if (!gameState?.activeCooldowns) return;
 
-        let cooldowns: Record<string, number> = {};
-        try {
-            cooldowns = JSON.parse(gameState.activeCooldowns);
-        } catch {
-            console.error("Failed to parse activeCooldowns in tickCooldowns");
-            return;
-        }
-
+        const cooldowns = parseCooldowns(gameState.activeCooldowns);
         const newCooldowns: Record<string, number> = {};
 
         for (const [spellId, turns] of Object.entries(cooldowns)) {
-            if (typeof turns !== 'number') continue;
+            if (typeof turns !== "number") continue;
             const remaining = Math.max(0, turns - 1);
             if (remaining > 0) {
                 newCooldowns[spellId] = remaining;
@@ -266,7 +244,6 @@ export const tickCooldowns = mutation({
     },
 });
 
-// Regenerate energy (call at rest or end of combat)
 export const regenerateEnergy = mutation({
     args: {
         campaignId: v.id("campaigns"),
@@ -274,18 +251,12 @@ export const regenerateEnergy = mutation({
         amount: v.optional(v.number()),
     },
     handler: async (ctx, args) => {
-        const gameState = await ctx.db
-            .query("playerGameState")
-            .withIndex("by_campaign_and_player", (q) =>
-                q.eq("campaignId", args.campaignId).eq("playerId", args.playerId)
-            )
-            .first();
-
+        const gameState = await getPlayerGameState(ctx, args.campaignId, args.playerId);
         if (!gameState) return;
 
-        const currentEnergy = gameState.energy ?? 0;
-        const maxEnergy = gameState.maxEnergy ?? 100;
-        const regenAmount = args.amount ?? maxEnergy; // Full restore by default
+        const currentEnergy = getEnergy(gameState);
+        const maxEnergy = getMaxEnergy(gameState);
+        const regenAmount = args.amount ?? maxEnergy;
 
         await ctx.db.patch(gameState._id, {
             energy: Math.min(maxEnergy, currentEnergy + regenAmount),
@@ -293,7 +264,6 @@ export const regenerateEnergy = mutation({
     },
 });
 
-// Create a new ability/spell
 export const createAbility = mutation({
     args: {
         campaignId: v.id("campaigns"),
@@ -318,7 +288,7 @@ export const createAbility = mutation({
         tags: v.optional(v.array(v.string())),
     },
     handler: async (ctx, args) => {
-        const spellId = await ctx.db.insert("spells", {
+        return ctx.db.insert("spells", {
             campaignId: args.campaignId,
             userId: args.userId,
             name: args.name,
@@ -340,31 +310,6 @@ export const createAbility = mutation({
             iconEmoji: args.iconEmoji ?? "✨",
             tags: args.tags,
         });
-
-        return spellId;
     },
 });
-
-// Helper function to parse damage dice (e.g., "2d6+3")
-function parseDamageDice(dice: string): number {
-    // Parse "XdY+Z" format
-    const match = dice.match(/(\d+)d(\d+)([+-]\d+)?/);
-    if (!match) return 0;
-
-    const numDice = parseInt(match[1], 10);
-    const dieSize = parseInt(match[2], 10);
-    const modifier = match[3] ? parseInt(match[3], 10) : 0;
-
-    let total = 0;
-    for (let i = 0; i < numDice; i++) {
-        total += Math.floor(Math.random() * dieSize) + 1;
-    }
-    return total + modifier;
-}
-
-
-
-
-
-
 

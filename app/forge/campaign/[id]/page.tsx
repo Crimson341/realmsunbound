@@ -6,7 +6,7 @@ import { useParams } from 'next/navigation';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import { Id } from '../../../../convex/_generated/dataModel';
-import { Map, Users, Scroll, Zap, Settings, Plus, Save, ArrowLeft, Loader2, Link as LinkIcon, Package, Skull, Palette, Sparkles, ChevronDown, Sword, Shield, Crown, Store, Trash2, GitBranch, Play, Pause } from 'lucide-react';
+import { Map, Users, Scroll, Zap, Settings, Plus, Save, ArrowLeft, Loader2, Link as LinkIcon, Package, Skull, Palette, Sparkles, ChevronDown, Sword, Shield, Crown, Store, Trash2, GitBranch, Play, Pause, Box, DoorOpen, Flame, AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
 import { MentionTextArea } from '@/components/MentionTextArea';
 import { motion } from 'framer-motion';
@@ -50,7 +50,12 @@ export default function CampaignManager() {
     const toggleCondition = useMutation(api.conditions.toggleCondition);
     const campaignConditions = useQuery(api.conditions.getConditions, { campaignId });
 
-    const [activeTab, setActiveTab] = useState<'overview' | 'realm' | 'npcs' | 'events' | 'quests' | 'items' | 'spells' | 'monsters' | 'shops' | 'conditions' | 'players'>('overview');
+    // Interactables mutations
+    const createInteractable = useMutation(api.interactables.create);
+    const deleteInteractable = useMutation(api.interactables.remove);
+    const campaignInteractables = useQuery(api.interactables.getByCampaign, { campaignId });
+
+    const [activeTab, setActiveTab] = useState<'overview' | 'realm' | 'npcs' | 'events' | 'quests' | 'items' | 'spells' | 'monsters' | 'interactables' | 'shops' | 'conditions' | 'players'>('overview');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const { theme, mounted } = useTheme();
     const dark = mounted ? theme === 'dark' : false;
@@ -154,6 +159,28 @@ export default function CampaignManager() {
     const [monsterHealth, setMonsterHealth] = useState(10);
     const [monsterDamage, setMonsterDamage] = useState(1);
     const [monsterDropIds, setMonsterDropIds] = useState<Id<"items">[]>([]);
+    // New monster fields
+    const [monsterXpReward, setMonsterXpReward] = useState<number | undefined>(undefined);
+    const [monsterGoldReward, setMonsterGoldReward] = useState<number | undefined>(undefined);
+    const [monsterGoldVariance, setMonsterGoldVariance] = useState<number | undefined>(undefined);
+    const [monsterArmorClass, setMonsterArmorClass] = useState<number | undefined>(undefined);
+    const [monsterLevel, setMonsterLevel] = useState<number | undefined>(undefined);
+    const [monsterAbilities, setMonsterAbilities] = useState<Id<"spells">[]>([]);
+    const [monsterDropChance, setMonsterDropChance] = useState<number | undefined>(100);
+
+    // Interactable State
+    const [interactableName, setInteractableName] = useState("");
+    const [interactableType, setInteractableType] = useState<string>("chest");
+    const [interactableLocationId, setInteractableLocationId] = useState("");
+    const [interactableDesc, setInteractableDesc] = useState("");
+    const [interactableGridX, setInteractableGridX] = useState(5);
+    const [interactableGridY, setInteractableGridY] = useState(5);
+    const [interactableGold, setInteractableGold] = useState<number | undefined>(undefined);
+    const [interactableItems, setInteractableItems] = useState<Id<"items">[]>([]);
+    const [interactableEffect, setInteractableEffect] = useState("");
+    const [interactableIsHidden, setInteractableIsHidden] = useState(false);
+    const [interactableLockDifficulty, setInteractableLockDifficulty] = useState<number | undefined>(undefined);
+    const [interactableSignText, setInteractableSignText] = useState("");
 
     // Shop State
     const [shopName, setShopName] = useState("");
@@ -362,10 +389,59 @@ export default function CampaignManager() {
                 health: monsterHealth,
                 damage: monsterDamage,
                 dropItemIds: monsterDropIds,
+                // New fields
+                xpReward: monsterXpReward,
+                goldReward: monsterGoldReward,
+                goldVariance: monsterGoldVariance,
+                armorClass: monsterArmorClass,
+                level: monsterLevel,
+                abilities: monsterAbilities.length > 0 ? monsterAbilities : undefined,
+                dropChance: monsterDropChance,
             });
+            // Reset all fields
             setMonsterName(""); setMonsterDesc(""); setMonsterDropIds([]);
+            setMonsterXpReward(undefined); setMonsterGoldReward(undefined);
+            setMonsterGoldVariance(undefined); setMonsterArmorClass(undefined);
+            setMonsterLevel(undefined); setMonsterAbilities([]);
+            setMonsterDropChance(100);
         } finally {
             setIsSubmitting(false);
+        }
+    };
+
+    const handleCreateInteractable = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!interactableLocationId) return;
+        setIsSubmitting(true);
+        try {
+            await createInteractable({
+                campaignId,
+                locationId: interactableLocationId as Id<"locations">,
+                name: interactableName,
+                type: interactableType,
+                gridX: interactableGridX,
+                gridY: interactableGridY,
+                description: interactableDesc || undefined,
+                goldAmount: interactableGold,
+                containedItems: interactableItems.length > 0 ? interactableItems : undefined,
+                effect: interactableEffect || undefined,
+                isHidden: interactableIsHidden || undefined,
+                lockDifficulty: interactableLockDifficulty,
+                signText: interactableSignText || undefined,
+            });
+            // Reset fields
+            setInteractableName(""); setInteractableDesc(""); setInteractableItems([]);
+            setInteractableGold(undefined); setInteractableEffect("");
+            setInteractableIsHidden(false); setInteractableLockDifficulty(undefined);
+            setInteractableSignText("");
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleDeleteInteractable = async (id: Id<"interactables">) => {
+        if (confirm("Delete this interactable?")) {
+            await deleteInteractable({ id });
         }
     };
 
@@ -603,7 +679,7 @@ export default function CampaignManager() {
                         </div>
                     </div>
                     <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide py-2">
-                        {['overview', 'realm', 'npcs', 'events', 'quests', 'items', 'spells', 'monsters', 'shops', 'conditions', 'players'].map((tab) => (
+                        {['overview', 'realm', 'npcs', 'events', 'quests', 'items', 'spells', 'monsters', 'interactables', 'shops', 'conditions', 'players'].map((tab) => (
                             <button
                                 key={tab}
                                 onClick={() => setActiveTab(tab as any)}
@@ -1567,6 +1643,7 @@ export default function CampaignManager() {
                                     Create Monster
                                 </h3>
                                 <form onSubmit={handleCreateMonster} className="space-y-6">
+                                    {/* Basic Info */}
                                     <div className="grid md:grid-cols-2 gap-6">
                                         <Input label="Name" value={monsterName} onChange={(e: any) => setMonsterName(e.target.value)} required />
                                         <div className="space-y-1">
@@ -1584,10 +1661,30 @@ export default function CampaignManager() {
                                         </div>
                                     </div>
                                     <TextArea label="Description" value={monsterDesc} onChange={(e: any) => setMonsterDesc(e.target.value)} required />
-                                    <div className="grid md:grid-cols-2 gap-6">
-                                        <Input label="Health" type="number" value={monsterHealth} onChange={(e: any) => setMonsterHealth(Math.max(1, parseInt(e.target.value, 10) || 1))} min={1} required />
-                                        <Input label="Damage" type="number" value={monsterDamage} onChange={(e: any) => setMonsterDamage(Math.max(1, parseInt(e.target.value, 10) || 1))} min={1} required />
+
+                                    {/* Combat Stats */}
+                                    <div className="border-t border-[#D4AF37]/10 pt-6">
+                                        <h4 className="text-sm font-bold text-[#43485C]/70 mb-4 uppercase tracking-wider">Combat Stats</h4>
+                                        <div className="grid md:grid-cols-4 gap-4">
+                                            <Input label="Health" type="number" value={monsterHealth} onChange={(e: any) => setMonsterHealth(Math.max(1, parseInt(e.target.value, 10) || 1))} min={1} required />
+                                            <Input label="Damage" type="number" value={monsterDamage} onChange={(e: any) => setMonsterDamage(Math.max(1, parseInt(e.target.value, 10) || 1))} min={1} required />
+                                            <Input label="Armor Class" type="number" value={monsterArmorClass ?? ''} onChange={(e: any) => setMonsterArmorClass(e.target.value ? parseInt(e.target.value, 10) : undefined)} placeholder="10" />
+                                            <Input label="Level" type="number" value={monsterLevel ?? ''} onChange={(e: any) => setMonsterLevel(e.target.value ? parseInt(e.target.value, 10) : undefined)} placeholder="1" min={1} />
+                                        </div>
                                     </div>
+
+                                    {/* Rewards */}
+                                    <div className="border-t border-[#D4AF37]/10 pt-6">
+                                        <h4 className="text-sm font-bold text-[#43485C]/70 mb-4 uppercase tracking-wider">Rewards on Kill</h4>
+                                        <div className="grid md:grid-cols-4 gap-4">
+                                            <Input label="XP Reward" type="number" value={monsterXpReward ?? ''} onChange={(e: any) => setMonsterXpReward(e.target.value ? parseInt(e.target.value, 10) : undefined)} placeholder="0" min={0} />
+                                            <Input label="Gold Reward" type="number" value={monsterGoldReward ?? ''} onChange={(e: any) => setMonsterGoldReward(e.target.value ? parseInt(e.target.value, 10) : undefined)} placeholder="0" min={0} />
+                                            <Input label="Gold Variance ±" type="number" value={monsterGoldVariance ?? ''} onChange={(e: any) => setMonsterGoldVariance(e.target.value ? parseInt(e.target.value, 10) : undefined)} placeholder="0" min={0} />
+                                            <Input label="Drop Chance %" type="number" value={monsterDropChance ?? ''} onChange={(e: any) => setMonsterDropChance(e.target.value ? Math.min(100, Math.max(0, parseInt(e.target.value, 10))) : undefined)} placeholder="100" min={0} max={100} />
+                                        </div>
+                                    </div>
+
+                                    {/* Item Drops */}
                                     <div className="space-y-1">
                                         <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Item Drops</label>
                                         <select
@@ -1600,7 +1697,25 @@ export default function CampaignManager() {
                                                 <option key={item._id} value={item._id}>{item.name} ({item.rarity})</option>
                                             ))}
                                         </select>
+                                        <p className="text-xs text-[#43485C]/50 ml-1">Hold Ctrl/Cmd to select multiple items</p>
                                     </div>
+
+                                    {/* Abilities */}
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Monster Abilities</label>
+                                        <select
+                                            multiple
+                                            value={monsterAbilities}
+                                            onChange={(e) => setMonsterAbilities(Array.from(e.target.selectedOptions, option => option.value as Id<"spells">))}
+                                            className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-4 text-[#43485C] text-sm focus:outline-none focus:border-[#D4AF37] transition-colors min-h-[100px]"
+                                        >
+                                            {spells?.map((spell) => (
+                                                <option key={spell._id} value={spell._id}>{spell.name} {spell.damage ? `(${spell.damage} dmg)` : ''}</option>
+                                            ))}
+                                        </select>
+                                        <p className="text-xs text-[#43485C]/50 ml-1">Special attacks this monster can use in combat</p>
+                                    </div>
+
                                     <div className="pt-4">
                                         <button
                                             type="submit"
@@ -1612,6 +1727,226 @@ export default function CampaignManager() {
                                         </button>
                                     </div>
                                 </form>
+                            </div>
+
+                            {/* Existing Monsters List */}
+                            <div className={`rounded-[2rem] border border-[#D4AF37]/20 p-8 shadow-lg ${dark ? 'bg-[#1a1d2e]' : 'bg-white'}`}>
+                                <h3 className="text-xl font-bold mb-6 flex items-center gap-2 text-[#43485C]">
+                                    <Skull className="text-red-400" />
+                                    Monsters ({monsters?.length || 0})
+                                </h3>
+                                {!monsters || monsters.length === 0 ? (
+                                    <div className="text-center py-12 border-2 border-dashed border-[#D4AF37]/20 rounded-2xl">
+                                        <Skull className="mx-auto text-[#D4AF37]/50 mb-2" size={32} />
+                                        <p className="text-[#43485C]/50">No monsters yet. Create your first monster above!</p>
+                                    </div>
+                                ) : (
+                                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                        {monsters.map((monster) => (
+                                            <div key={monster._id} className={`border border-[#D4AF37]/10 rounded-xl p-4 ${dark ? 'bg-[#0d0f17]' : 'bg-[#f8f9fa]'}`}>
+                                                <h4 className="font-bold text-[#43485C]">{monster.name}</h4>
+                                                <p className="text-xs text-[#43485C]/60 line-clamp-2 mt-1">{monster.description}</p>
+                                                <div className="flex flex-wrap gap-2 mt-3">
+                                                    <span className="text-xs bg-red-500/10 text-red-500 px-2 py-0.5 rounded-full">❤️ {monster.health}</span>
+                                                    <span className="text-xs bg-orange-500/10 text-orange-500 px-2 py-0.5 rounded-full">⚔️ {monster.damage}</span>
+                                                    {monster.xpReward && <span className="text-xs bg-purple-500/10 text-purple-500 px-2 py-0.5 rounded-full">✨ {monster.xpReward} XP</span>}
+                                                    {monster.goldReward && <span className="text-xs bg-yellow-500/10 text-yellow-600 px-2 py-0.5 rounded-full">💰 {monster.goldReward} Gold</span>}
+                                                    {monster.level && <span className="text-xs bg-blue-500/10 text-blue-500 px-2 py-0.5 rounded-full">Lv.{monster.level}</span>}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* INTERACTABLES TAB */}
+                    {activeTab === 'interactables' && (
+                        <div className="space-y-8">
+                            <div className={`rounded-[2rem] border border-[#D4AF37]/20 p-8 shadow-lg ${dark ? 'bg-[#1a1d2e]' : 'bg-white'}`}>
+                                <h3 className="text-xl font-bold mb-6 flex items-center gap-2 text-[#43485C]">
+                                    <Box className="text-amber-500" />
+                                    Create Interactable
+                                </h3>
+                                <form onSubmit={handleCreateInteractable} className="space-y-6">
+                                    {/* Basic Info */}
+                                    <div className="grid md:grid-cols-3 gap-6">
+                                        <Input label="Name" value={interactableName} onChange={(e: any) => setInteractableName(e.target.value)} placeholder="Old Chest" required />
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Type</label>
+                                            <select
+                                                value={interactableType}
+                                                onChange={(e) => setInteractableType(e.target.value)}
+                                                className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-4 text-[#43485C] text-sm focus:outline-none focus:border-[#D4AF37] transition-colors appearance-none"
+                                            >
+                                                <option value="chest">📦 Chest</option>
+                                                <option value="gold_pile">💰 Gold Pile</option>
+                                                <option value="shrine">⛩️ Shrine</option>
+                                                <option value="trap">⚠️ Trap</option>
+                                                <option value="lever">🔧 Lever</option>
+                                                <option value="sign">🪧 Sign</option>
+                                                <option value="door">🚪 Door</option>
+                                            </select>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Location *</label>
+                                            <select
+                                                value={interactableLocationId}
+                                                onChange={(e) => setInteractableLocationId(e.target.value)}
+                                                className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-4 text-[#43485C] text-sm focus:outline-none focus:border-[#D4AF37] transition-colors appearance-none"
+                                                required
+                                            >
+                                                <option value="">Select Location</option>
+                                                {locations?.map((loc) => (
+                                                    <option key={loc._id} value={loc._id}>{loc.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <TextArea label="Description (optional)" value={interactableDesc} onChange={(e: any) => setInteractableDesc(e.target.value)} placeholder="An old wooden chest, covered in dust..." />
+
+                                    {/* Position */}
+                                    <div className="border-t border-[#D4AF37]/10 pt-6">
+                                        <h4 className="text-sm font-bold text-[#43485C]/70 mb-4 uppercase tracking-wider">Position on Map</h4>
+                                        <div className="grid md:grid-cols-2 gap-4">
+                                            <Input label="Grid X" type="number" value={interactableGridX} onChange={(e: any) => setInteractableGridX(parseInt(e.target.value, 10) || 0)} min={0} required />
+                                            <Input label="Grid Y" type="number" value={interactableGridY} onChange={(e: any) => setInteractableGridY(parseInt(e.target.value, 10) || 0)} min={0} required />
+                                        </div>
+                                    </div>
+
+                                    {/* Contents (for chests/gold piles) */}
+                                    {(interactableType === 'chest' || interactableType === 'gold_pile') && (
+                                        <div className="border-t border-[#D4AF37]/10 pt-6">
+                                            <h4 className="text-sm font-bold text-[#43485C]/70 mb-4 uppercase tracking-wider">Contents</h4>
+                                            <div className="grid md:grid-cols-2 gap-4">
+                                                <Input label="Gold Amount" type="number" value={interactableGold ?? ''} onChange={(e: any) => setInteractableGold(e.target.value ? parseInt(e.target.value, 10) : undefined)} placeholder="0" min={0} />
+                                                <Input label="Lock Difficulty (DC)" type="number" value={interactableLockDifficulty ?? ''} onChange={(e: any) => setInteractableLockDifficulty(e.target.value ? parseInt(e.target.value, 10) : undefined)} placeholder="0 = unlocked" min={0} />
+                                            </div>
+                                            {interactableType === 'chest' && (
+                                                <div className="mt-4 space-y-1">
+                                                    <label className="text-xs font-bold text-[#D4AF37] uppercase tracking-wider ml-1">Contained Items</label>
+                                                    <select
+                                                        multiple
+                                                        value={interactableItems}
+                                                        onChange={(e) => setInteractableItems(Array.from(e.target.selectedOptions, option => option.value as Id<"items">))}
+                                                        className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-4 text-[#43485C] text-sm focus:outline-none focus:border-[#D4AF37] transition-colors min-h-[100px]"
+                                                    >
+                                                        {items?.map((item) => (
+                                                            <option key={item._id} value={item._id}>{item.name} ({item.rarity})</option>
+                                                        ))}
+                                                    </select>
+                                                    <p className="text-xs text-[#43485C]/50 ml-1">Hold Ctrl/Cmd to select multiple items</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* Effects (for shrines/traps) */}
+                                    {(interactableType === 'shrine' || interactableType === 'trap') && (
+                                        <div className="border-t border-[#D4AF37]/10 pt-6">
+                                            <h4 className="text-sm font-bold text-[#43485C]/70 mb-4 uppercase tracking-wider">Effect</h4>
+                                            <TextArea
+                                                label="Effect JSON"
+                                                value={interactableEffect}
+                                                onChange={(e: any) => setInteractableEffect(e.target.value)}
+                                                placeholder={interactableType === 'shrine' ? '{"type": "heal", "amount": 50}' : '{"type": "damage", "amount": 20}'}
+                                            />
+                                            <p className="text-xs text-[#43485C]/50 ml-1 mt-1">
+                                                Examples: {`{"type": "heal", "amount": 50}`} or {`{"type": "damage", "amount": 20}`}
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {/* Sign Text */}
+                                    {interactableType === 'sign' && (
+                                        <div className="border-t border-[#D4AF37]/10 pt-6">
+                                            <TextArea label="Sign Text" value={interactableSignText} onChange={(e: any) => setInteractableSignText(e.target.value)} placeholder="Welcome to the village!" />
+                                        </div>
+                                    )}
+
+                                    {/* Options */}
+                                    <div className="border-t border-[#D4AF37]/10 pt-6">
+                                        <label className="flex items-center gap-3 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={interactableIsHidden}
+                                                onChange={(e) => setInteractableIsHidden(e.target.checked)}
+                                                className="w-5 h-5 rounded border-[#D4AF37]/20 text-[#D4AF37] focus:ring-[#D4AF37]"
+                                            />
+                                            <span className="text-sm text-[#43485C]">Hidden until discovered</span>
+                                        </label>
+                                    </div>
+
+                                    <div className="pt-4">
+                                        <button
+                                            type="submit"
+                                            disabled={isSubmitting || !interactableLocationId}
+                                            className="w-full bg-[#43485C] hover:bg-[#2d3142] text-white px-6 py-4 rounded-full font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg text-sm uppercase tracking-widest"
+                                        >
+                                            {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : <Plus size={20} />}
+                                            Create Interactable
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+
+                            {/* Existing Interactables List */}
+                            <div className={`rounded-[2rem] border border-[#D4AF37]/20 p-8 shadow-lg ${dark ? 'bg-[#1a1d2e]' : 'bg-white'}`}>
+                                <h3 className="text-xl font-bold mb-6 flex items-center gap-2 text-[#43485C]">
+                                    <Box className="text-amber-500" />
+                                    Interactables ({campaignInteractables?.length || 0})
+                                </h3>
+                                {!campaignInteractables || campaignInteractables.length === 0 ? (
+                                    <div className="text-center py-12 border-2 border-dashed border-[#D4AF37]/20 rounded-2xl">
+                                        <Box className="mx-auto text-[#D4AF37]/50 mb-2" size={32} />
+                                        <p className="text-[#43485C]/50">No interactables yet. Create chests, shrines, traps and more!</p>
+                                    </div>
+                                ) : (
+                                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                        {campaignInteractables.map((interactable) => {
+                                            const location = locations?.find(l => l._id === interactable.locationId);
+                                            const typeIcons: Record<string, string> = {
+                                                chest: '📦', gold_pile: '💰', shrine: '⛩️', trap: '⚠️',
+                                                lever: '🔧', sign: '🪧', door: '🚪'
+                                            };
+                                            return (
+                                                <div key={interactable._id} className={`border border-[#D4AF37]/10 rounded-xl p-4 ${dark ? 'bg-[#0d0f17]' : 'bg-[#f8f9fa]'}`}>
+                                                    <div className="flex items-start justify-between">
+                                                        <div>
+                                                            <h4 className="font-bold text-[#43485C] flex items-center gap-2">
+                                                                <span>{typeIcons[interactable.type] || '📦'}</span>
+                                                                {interactable.name}
+                                                            </h4>
+                                                            <p className="text-xs text-[#43485C]/50 mt-0.5">{location?.name || 'Unknown'} ({interactable.gridX}, {interactable.gridY})</p>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => handleDeleteInteractable(interactable._id)}
+                                                            className="text-red-400 hover:text-red-500 p-1"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </div>
+                                                    {interactable.description && (
+                                                        <p className="text-xs text-[#43485C]/60 line-clamp-2 mt-2">{interactable.description}</p>
+                                                    )}
+                                                    <div className="flex flex-wrap gap-2 mt-3">
+                                                        <span className="text-xs bg-[#D4AF37]/10 text-[#D4AF37] px-2 py-0.5 rounded-full capitalize">{interactable.type.replace('_', ' ')}</span>
+                                                        {interactable.goldAmount && <span className="text-xs bg-yellow-500/10 text-yellow-600 px-2 py-0.5 rounded-full">💰 {interactable.goldAmount}</span>}
+                                                        {interactable.containedItems && interactable.containedItems.length > 0 && (
+                                                            <span className="text-xs bg-purple-500/10 text-purple-500 px-2 py-0.5 rounded-full">📦 {interactable.containedItems.length} items</span>
+                                                        )}
+                                                        {interactable.isHidden && <span className="text-xs bg-gray-500/10 text-gray-500 px-2 py-0.5 rounded-full">👁️ Hidden</span>}
+                                                        {interactable.lockDifficulty && interactable.lockDifficulty > 0 && (
+                                                            <span className="text-xs bg-red-500/10 text-red-500 px-2 py-0.5 rounded-full">🔒 DC {interactable.lockDifficulty}</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}

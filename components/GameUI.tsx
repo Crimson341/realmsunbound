@@ -2064,7 +2064,7 @@ export const StatsBar: React.FC<StatsBarProps> = ({
     const xpPercent = Math.max(0, Math.min(100, (xp / xpToNextLevel) * 100));
 
     const getHpColor = () => {
-        if (hpPercent > 60) return 'bg-emerald-500';
+        if (hpPercent > 70) return 'bg-emerald-500';
         if (hpPercent > 30) return 'bg-amber-500';
         return 'bg-red-500';
     };
@@ -2713,6 +2713,7 @@ interface DialogueBoxProps {
     isLastLine?: boolean;
     typingSpeed?: number;
     className?: string;
+    isStreaming?: boolean;
 }
 
 export const DialogueBox: React.FC<DialogueBoxProps> = ({
@@ -2722,6 +2723,7 @@ export const DialogueBox: React.FC<DialogueBoxProps> = ({
     isLastLine = false,
     typingSpeed = 30,
     className = '',
+    isStreaming = false,
 }) => {
     const [displayedText, setDisplayedText] = useState('');
     const [isTyping, setIsTyping] = useState(true);
@@ -2755,12 +2757,15 @@ export const DialogueBox: React.FC<DialogueBoxProps> = ({
             setDisplayedText(dialogue.text);
             setIsTyping(false);
             setShowContinue(true);
+        } else if (isStreaming) {
+            // Don't close/advance while AI is streaming
+            return;
         } else if (isLastLine && onComplete) {
             onComplete();
         } else {
             onAdvance();
         }
-    }, [isTyping, dialogue.text, isLastLine, onComplete, onAdvance]);
+    }, [isTyping, dialogue.text, isLastLine, onComplete, onAdvance, isStreaming]);
 
     // Keyboard support
     useEffect(() => {
@@ -3294,6 +3299,7 @@ interface DialogueManagerProps {
     narrativeOverlay?: NarrativeOverlayProps;
     onNarrativeComplete?: () => void;
     interactionPrompt?: InteractionPromptProps;
+    isStreaming?: boolean;
 }
 
 export const DialogueManager: React.FC<DialogueManagerProps> = ({
@@ -3304,6 +3310,7 @@ export const DialogueManager: React.FC<DialogueManagerProps> = ({
     narrativeOverlay,
     onNarrativeComplete,
     interactionPrompt,
+    isStreaming = false,
 }) => {
     const currentLine = dialogue?.lines[dialogue.currentLineIndex];
     const isLastLine = dialogue ? dialogue.currentLineIndex >= dialogue.lines.length - 1 : false;
@@ -3333,6 +3340,7 @@ export const DialogueManager: React.FC<DialogueManagerProps> = ({
                         onAdvance={onDialogueAdvance}
                         onComplete={onDialogueComplete}
                         isLastLine={isLastLine && (!dialogue?.choices || dialogue.choices.length === 0)}
+                        isStreaming={isStreaming}
                     />
                 )}
             </AnimatePresence>

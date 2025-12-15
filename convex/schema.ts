@@ -299,8 +299,29 @@ export default defineSchema({
     dropItemIds: v.optional(v.array(v.id("items"))),
     locationId: v.optional(v.id("locations")),
     embedding: v.optional(v.array(v.number())), // Searchable
+
+    // --- PROGRESSION & REWARDS ---
+    xpReward: v.optional(v.number()),             // XP granted on kill
+    goldReward: v.optional(v.number()),           // Base gold dropped
+    goldVariance: v.optional(v.number()),         // ±variance (e.g., 10 = drop 90-110)
+    dropChance: v.optional(v.number()),           // % chance for item drops (default 100)
+    lootTableId: v.optional(v.id("lootTables")),  // Reference to loot table for randomized drops
+
+    // --- COMBAT STATS ---
+    armorClass: v.optional(v.number()),           // Defense stat / difficulty to hit
+    level: v.optional(v.number()),                // Monster level for scaling
+    abilities: v.optional(v.array(v.id("spells"))), // Monster abilities/attacks
+
+    // --- 2D GAME VISUAL SYSTEM ---
+    gridX: v.optional(v.number()),                // Position on tilemap X
+    gridY: v.optional(v.number()),                // Position on tilemap Y
+    spriteColor: v.optional(v.string()),          // Hex color for placeholder sprite
+    spriteSheetId: v.optional(v.id("spriteSheets")), // Custom animated sprite
+    spriteTint: v.optional(v.string()),           // Hex color tint to apply
+    movementPattern: v.optional(v.string()),      // "static" | "wander" | "patrol"
   })
   .index("by_campaign", ["campaignId"])
+  .index("by_location", ["locationId"])
   .vectorIndex("by_embedding", {
     vectorField: "embedding",
     dimensions: 768,
@@ -865,6 +886,186 @@ export default defineSchema({
     visitCount: v.number(),
   })
   .index("by_player_location", ["campaignId", "playerId", "locationId"])
+  .index("by_campaign", ["campaignId"]),
+
+  // --- LOOT TABLES ---
+
+  // Loot Tables - randomized drop pools for monsters/chests
+  lootTables: defineTable({
+    campaignId: v.id("campaigns"),
+    name: v.string(),                           // "Goblin Loot", "Dungeon Chest Tier 1"
+    description: v.optional(v.string()),
+
+    // Entries - items that can drop from this table
+    entries: v.array(v.object({
+      itemId: v.id("items"),
+      weight: v.number(),                       // Higher = more likely to drop
+      minQuantity: v.number(),                  // Minimum quantity if dropped
+      maxQuantity: v.number(),                  // Maximum quantity if dropped
+    })),
+
+    // Roll settings
+    minRolls: v.optional(v.number()),           // Minimum items to drop (default 1)
+    maxRolls: v.optional(v.number()),           // Maximum items to drop (default 1)
+    guaranteedDrops: v.optional(v.array(v.id("items"))), // Always drops these items
+  })
+  .index("by_campaign", ["campaignId"]),
+
+  // --- INTERACTABLES ---
+
+  // Interactables - placeable objects (chests, shrines, traps, levers, etc.)
+  interactables: defineTable({
+    campaignId: v.id("campaigns"),
+    locationId: v.id("locations"),
+
+    // Identity
+    name: v.string(),                           // "Old Chest", "Healing Shrine", "Spike Trap"
+    type: v.string(),                           // "chest", "gold_pile", "shrine", "trap", "lever", "sign", "door"
+    description: v.optional(v.string()),        // Description shown on interaction
+
+    // Position on tilemap
+    gridX: v.number(),
+    gridY: v.number(),
+
+    // Visual
+    spriteId: v.optional(v.number()),           // Tile ID for rendering (from OBJECTS range 200-299)
+    spriteColor: v.optional(v.string()),        // Hex color override
+
+    // --- CONTENTS (for chests, gold piles) ---
+    containedItems: v.optional(v.array(v.id("items"))), // Fixed items inside
+    lootTableId: v.optional(v.id("lootTables")), // Randomized loot
+    goldAmount: v.optional(v.number()),         // Gold inside
+
+    // --- EFFECTS (for shrines, traps) ---
+    effect: v.optional(v.string()),             // JSON: {type: "heal", amount: 50} or {type: "damage", amount: 20}
+    buffId: v.optional(v.id("spells")),         // Grants a buff/ability on use
+
+    // --- INTERACTION REQUIREMENTS ---
+    requiresKey: v.optional(v.id("items")),     // Item required to open/activate
+    lockDifficulty: v.optional(v.number()),     // DC for lockpicking (0 = unlocked)
+    requiresQuest: v.optional(v.id("quests")),  // Quest must be active/complete
+
+    // --- STATE ---
+    isHidden: v.optional(v.boolean()),          // Not visible until discovered
+    isOneTime: v.optional(v.boolean()),         // Can only be used once (default true for chests)
+    respawnTime: v.optional(v.number()),        // Minutes until respawn (-1 = never)
+
+    // --- DOOR/LEVER SPECIFIC ---
+    linkedInteractableId: v.optional(v.id("interactables")), // Lever controls this door
+    isOpen: v.optional(v.boolean()),            // For doors - current state
+
+    // --- SIGN SPECIFIC ---
+    signText: v.optional(v.string()),           // Text displayed when reading sign
+  })
+  .index("by_campaign", ["campaignId"])
+  .index("by_location", ["locationId"]),
+
+  // Player Interactable State - tracks per-player state for interactables
+  playerInteractableState: defineTable({
+    campaignId: v.id("campaigns"),
+    playerId: v.string(),
+    interactableId: v.id("interactables"),
+
+    // State
+    isLooted: v.optional(v.boolean()),          // Has been opened/looted
+    isTriggered: v.optional(v.boolean()),       // Has been activated (traps, shrines)
+    isDiscovered: v.optional(v.boolean()),      // Has been revealed (hidden objects)
+    lootedAt: v.optional(v.number()),           // Timestamp of looting
+    respawnsAt: v.optional(v.number()),         // When it becomes available again
+  })
+  .index("by_campaign_player", ["campaignId", "playerId"])
+  .index("by_interactable", ["interactableId"]),
+
+  // --- AI CACHE ---
+
+  // AI Response Cache - cache AI-generated content to reduce API calls
+  aiCache: defineTable({
+    campaignId: v.id("campaigns"),
+
+    // Cache key
+    cacheType: v.string(),                      // "zone_description", "npc_greeting", "combat_narration"
+    contextHash: v.string(),                    // Hash of relevant context (location, player state, etc.)
+
+    // Cached content
+    content: v.string(),                        // The cached AI response
+
+    // Related entities (for invalidation)
+    locationId: v.optional(v.id("locations")),
+    npcId: v.optional(v.id("npcs")),
+
+    // TTL & stats
+    createdAt: v.number(),
+    expiresAt: v.optional(v.number()),          // When cache entry expires (null = never)
+    usageCount: v.number(),                     // How many times this cache has been used
+    lastUsedAt: v.number(),
+  })
+  .index("by_campaign", ["campaignId"])
+  .index("by_cache_key", ["campaignId", "cacheType", "contextHash"])
+  .index("by_location", ["locationId"])
+  .index("by_npc", ["npcId"]),
+
+  // --- ADVENTURE SHARING ---
+
+  // Adventure Highlights - auto-captured key moments for sharing
+  adventureHighlights: defineTable({
+    campaignId: v.id("campaigns"),
+    playerId: v.string(),
+
+    // Stats
+    totalPlayTime: v.number(),                  // Total seconds played
+    zonesVisited: v.number(),
+    questsCompleted: v.number(),
+    enemiesDefeated: v.number(),
+    deathCount: v.number(),
+    goldEarned: v.number(),
+    itemsCollected: v.number(),
+
+    // Key moments
+    highlights: v.array(v.object({
+      type: v.string(),                         // "quest_complete", "boss_kill", "secret_found", "death", "level_up"
+      title: v.string(),
+      description: v.string(),
+      timestamp: v.number(),
+      locationId: v.optional(v.id("locations")),
+      importance: v.optional(v.number()),       // 1-10 for sorting
+    })),
+
+    // Player notes
+    playerTitle: v.optional(v.string()),        // Custom title for their adventure
+    playerNotes: v.optional(v.string()),        // Player's own notes/story
+    isPublic: v.boolean(),                      // Whether adventure is shareable
+
+    // Tracking
+    startedAt: v.number(),
+    lastPlayedAt: v.number(),
+  })
+  .index("by_campaign", ["campaignId"])
+  .index("by_player", ["playerId"])
+  .index("by_public", ["campaignId", "isPublic"]),
+
+  // Realm Statistics - aggregated stats for creators
+  realmStats: defineTable({
+    campaignId: v.id("campaigns"),
+
+    // Play stats
+    totalPlays: v.number(),
+    totalPlayTime: v.number(),                  // Total seconds across all players
+    uniquePlayers: v.number(),
+    averagePlayTime: v.number(),
+
+    // Completion stats
+    questCompletionRates: v.optional(v.string()), // JSON: {questId: {completed: 10, started: 20}}
+    averageDeaths: v.optional(v.number()),
+    averageLevel: v.optional(v.number()),
+
+    // Notable stats
+    hardestBoss: v.optional(v.string()),        // Monster name with most player deaths
+    mostFoundSecret: v.optional(v.string()),    // Most discovered hidden item/location
+    mostPopularPath: v.optional(v.string()),    // JSON: most common zone progression
+
+    // Last updated
+    updatedAt: v.number(),
+  })
   .index("by_campaign", ["campaignId"]),
 
 });

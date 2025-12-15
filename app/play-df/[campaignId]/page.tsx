@@ -3313,6 +3313,7 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
                                 setDialogueState(null);
                             }
                         }}
+                        isStreaming={isLoading}
                     />
                 )}
 

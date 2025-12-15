@@ -400,6 +400,7 @@ const generateWorldContext = (campaignData: CampaignData, playerState?: PlayerSt
     4. Only create new content if the user explicitly asks for something that doesn't exist, and even then, try to tie it to existing lore.
     5. DEAD NPCs CANNOT appear, speak, or interact - they are GONE FOREVER.
     6. NPCs only know about deaths/events if it makes sense (local knowledge, same faction, rumors spreading).
+    7. KEEP RESPONSES CONCISE - Maximum 2-3 short paragraphs. Get to the point quickly. Avoid flowery prose.
 
     CAMPAIGN: ${campaign.title}
     DESCRIPTION: ${campaign.description}

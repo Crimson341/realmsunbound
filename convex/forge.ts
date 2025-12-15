@@ -1372,6 +1372,23 @@ export const createMonster = mutation({
         damage: v.number(),
         locationId: v.optional(v.id("locations")),
         dropItemIds: v.optional(v.array(v.id("items"))),
+        // New progression & rewards fields
+        xpReward: v.optional(v.number()),
+        goldReward: v.optional(v.number()),
+        goldVariance: v.optional(v.number()),
+        dropChance: v.optional(v.number()),
+        lootTableId: v.optional(v.id("lootTables")),
+        // Combat stats
+        armorClass: v.optional(v.number()),
+        level: v.optional(v.number()),
+        abilities: v.optional(v.array(v.id("spells"))),
+        // Visual fields
+        gridX: v.optional(v.number()),
+        gridY: v.optional(v.number()),
+        spriteColor: v.optional(v.string()),
+        spriteSheetId: v.optional(v.id("spriteSheets")),
+        spriteTint: v.optional(v.string()),
+        movementPattern: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
         const identity = await ctx.auth.getUserIdentity();
@@ -1396,7 +1413,79 @@ export const createMonster = mutation({
             damage: args.damage,
             locationId: args.locationId,
             dropItemIds: args.dropItemIds,
+            // Progression & rewards
+            xpReward: args.xpReward,
+            goldReward: args.goldReward,
+            goldVariance: args.goldVariance,
+            dropChance: args.dropChance,
+            lootTableId: args.lootTableId,
+            // Combat stats
+            armorClass: args.armorClass,
+            level: args.level,
+            abilities: args.abilities,
+            // Visual
+            gridX: args.gridX,
+            gridY: args.gridY,
+            spriteColor: args.spriteColor,
+            spriteSheetId: args.spriteSheetId,
+            spriteTint: args.spriteTint,
+            movementPattern: args.movementPattern,
         });
+    },
+});
+
+export const updateMonster = mutation({
+    args: {
+        id: v.id("monsters"),
+        name: v.optional(v.string()),
+        description: v.optional(v.string()),
+        health: v.optional(v.number()),
+        damage: v.optional(v.number()),
+        locationId: v.optional(v.id("locations")),
+        dropItemIds: v.optional(v.array(v.id("items"))),
+        // Progression & rewards
+        xpReward: v.optional(v.number()),
+        goldReward: v.optional(v.number()),
+        goldVariance: v.optional(v.number()),
+        dropChance: v.optional(v.number()),
+        lootTableId: v.optional(v.id("lootTables")),
+        // Combat stats
+        armorClass: v.optional(v.number()),
+        level: v.optional(v.number()),
+        abilities: v.optional(v.array(v.id("spells"))),
+        // Visual
+        gridX: v.optional(v.number()),
+        gridY: v.optional(v.number()),
+        spriteColor: v.optional(v.string()),
+        spriteSheetId: v.optional(v.id("spriteSheets")),
+        spriteTint: v.optional(v.string()),
+        movementPattern: v.optional(v.string()),
+    },
+    handler: async (ctx, args) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) throw new Error("Unauthorized");
+
+        const monster = await ctx.db.get(args.id);
+        if (!monster) throw new Error("Monster not found");
+
+        const campaign = await ctx.db.get(monster.campaignId);
+        if (!campaign || campaign.userId !== identity.tokenIdentifier) {
+            throw new Error("Unauthorized: You don't own this campaign");
+        }
+
+        if (args.name !== undefined) validateNonEmptyString(args.name, "Name");
+        if (args.description !== undefined) validateNonEmptyString(args.description, "Description");
+        if (args.health !== undefined) validatePositiveNumber(args.health, "Health");
+        if (args.damage !== undefined) validateNonNegativeNumber(args.damage, "Damage");
+
+        const { id, ...updates } = args;
+
+        // Clean up undefined values
+        const cleanUpdates = Object.fromEntries(
+            Object.entries(updates).filter(([_, v]) => v !== undefined)
+        );
+
+        return ctx.db.patch(id, cleanUpdates);
     },
 });
 

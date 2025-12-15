@@ -1,84 +1,61 @@
-# Welcome to your Convex + Next.js + WorkOS AuthKit app
+# Realms Unbound
 
-This is a [Convex](https://convex.dev/) project migrated to use WorkOS AuthKit for authentication.
+A fantasy world-building platform where creators forge realms and adventurers explore them. Built with AI-powered storytelling, visual world editors, and real-time multiplayer.
 
-After the initial setup (<2 minutes) you'll have a working full-stack app using:
+## Features
 
-- Convex as your backend (database, server logic)
-- [React](https://react.dev/) as your frontend (web page interactivity)
-- [Next.js](https://nextjs.org/) for optimized web hosting and page routing
-- [Tailwind](https://tailwindcss.com/) for building great looking accessible UI
-- [WorkOS AuthKit](https://authkit.com/) for authentication
+**World Forge** - Design entire worlds with our visual campaign editor. Create maps, populate them with NPCs, and craft branching narratives.
 
-## Get started
+**Play Anywhere** - Explore community-created realms or your own. Traverse dungeons, complete quests, and discover secrets.
 
-1. Clone this repository and install dependencies:
+**AI Dungeon Master** - Dynamic storytelling powered by AI that adapts to your choices and keeps adventures fresh.
 
-   ```bash
-   npm install
-   ```
+**Visual Experience** - Immersive graphics with Three.js and Pixi.js bring your worlds to life.
 
-2. Set up your environment variables:
-   ```bash
-   cp .env.local.example .env.local
-   ```
-3. Configure WorkOS AuthKit:
-   - Create a [WorkOS account](https://workos.com/)
-   - Get your Client ID and API Key from the WorkOS dashboard
-   - In the WorkOS dashboard, add `http://localhost:3000/callback` as a redirect URI
-   - Generate a secure password for cookie encryption (minimum 32 characters)
-   - Update your `.env.local` file with these values
+## Tech Stack
 
-4. Configure Convex:
+- **Frontend:** Next.js 16, React 19, Tailwind CSS
+- **Backend:** Convex (real-time database & functions)
+- **Auth:** WorkOS AuthKit
+- **Graphics:** Three.js, Pixi.js, React Flow
 
-   ```bash
-   npx convex dev
-   ```
+## Getting Started
 
-   This will:
-   - Set up your Convex deployment
-   - Add your Convex URL to `.env.local`
-   - Open the Convex dashboard
+```bash
+# Install dependencies
+npm install
 
-   Then configure WorkOS authentication in Convex:
+# Set up environment variables
+cp .env.local.example .env.local
 
-   ```bash
-   npx convex auth add workos
-   ```
+# Start Convex backend
+npx convex dev
 
-   This creates `convex/auth.config.ts` with WorkOS integration
+# Run development server
+npm run dev
+```
 
-5. Run the development server:
+Open [http://localhost:3000](http://localhost:3000) to explore.
 
-   ```bash
-   npm run dev
-   ```
+## License
 
-   This starts both the Next.js frontend and Convex backend in parallel
+This project is licensed under the **Realms Unbound License Agreement**. See [LICENSE](LICENSE) for the full text.
 
-6. Open [http://localhost:3000](http://localhost:3000) to see your app
+### Summary of Terms
 
-## WorkOS AuthKit Setup
+**Allowed:**
+- **Build Anything** - Clone and use locally or in your organization to build any product (commercial or free)
+- **Internal Use** - Use internally within your company without restriction
+- **Modify** - Modify the code for internal use within your organization
 
-This app uses WorkOS AuthKit for authentication. Key features:
+**Restricted (No Monetization of the Tool):**
+- **No Resale** - You cannot resell Realms Unbound itself
+- **No SaaS** - You cannot host this as a service for others
+- **No Monetizing Mods** - You cannot distribute modified versions for money
 
-- **Redirect-based authentication**: Users are redirected to WorkOS for sign-in/sign-up
-- **Session management**: Automatic token refresh and session handling
-- **Middleware protection**: Routes are protected using Next.js middleware
-- **Client and server hooks**: `useAuth()` for client components, `withAuth()` for server components
+**Liability:**
+- **Use at Own Risk** - This tool uses AI. We are not responsible for any damages. You assume all risk.
 
-## Learn more
-
-To learn more about developing your project with Convex, check out:
-
-- The [Tour of Convex](https://docs.convex.dev/get-started) for a thorough introduction to Convex principles.
-- The rest of [Convex docs](https://docs.convex.dev/) to learn about all Convex features.
-- [Stack](https://stack.convex.dev/) for in-depth articles on advanced topics.
-
-## Join the community
-
-Join thousands of developers building full-stack apps with Convex:
-
-- Join the [Convex Discord community](https://convex.dev/community) to get help in real-time.
-- Follow [Convex on GitHub](https://github.com/get-convex/), star and contribute to the open-source implementation of Convex.
-# realmsunbound
+**Contributing:**
+- By contributing, you grant Core Contributors full, irrevocable rights to your code (copyright assignment)
+- Core Contributors (Cody Seibert, SuperComboGamer, Kacper Lachowicz, Ben Scott) are granted perpetual, royalty-free licenses for any use, including monetization

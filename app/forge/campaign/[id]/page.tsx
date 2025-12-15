@@ -126,9 +126,11 @@ export default function CampaignManager() {
     // Effects
     const [abilityDamage, setAbilityDamage] = useState<number | undefined>(undefined);
     const [abilityDamageType, setAbilityDamageType] = useState("");
+    const [abilityDamageDice, setAbilityDamageDice] = useState("");
     const [abilityHealing, setAbilityHealing] = useState<number | undefined>(undefined);
     const [abilityStatusEffect, setAbilityStatusEffect] = useState("");
     const [abilityStatusDuration, setAbilityStatusDuration] = useState<number | undefined>(undefined);
+    const [abilityEffectId, setAbilityEffectId] = useState("");
     // Targeting
     const [abilityTargetType, setAbilityTargetType] = useState("single");
     const [abilityRange, setAbilityRange] = useState("melee");
@@ -314,10 +316,12 @@ export default function CampaignManager() {
                 usesPerDay: abilityUsesPerDay,
                 isPassive: abilityIsPassive,
                 damage: abilityDamage,
+                damageDice: abilityDamageDice || undefined,
                 damageType: abilityDamageType || undefined,
                 healing: abilityHealing,
                 statusEffect: abilityStatusEffect || undefined,
                 statusDuration: abilityStatusDuration,
+                effectId: abilityEffectId ? (abilityEffectId as Id<"effectsLibrary">) : undefined,
                 targetType: abilityTargetType || undefined,
                 range: abilityRange || undefined,
                 areaSize: abilityAreaSize || undefined,
@@ -329,18 +333,18 @@ export default function CampaignManager() {
                 canUpgrade: abilityCanUpgrade,
                 upgradedVersion: abilityUpgradedVersion || undefined,
                 notes: abilityNotes || undefined,
-            });
+            } as any);
             // Reset form
             setAbilityName(""); setAbilityDescription(""); setAbilityCategory(""); setAbilitySubcategory("");
             setAbilityIconEmoji(""); setAbilityTags(""); setAbilityRequiredLevel(undefined);
             setAbilityRequiredStats(""); setAbilityEnergyCost(undefined); setAbilityHealthCost(undefined);
             setAbilityCooldown(undefined); setAbilityUsesPerDay(undefined); setAbilityIsPassive(false);
-            setAbilityDamage(undefined); setAbilityDamageType(""); setAbilityHealing(undefined);
+            setAbilityDamage(undefined); setAbilityDamageType(""); setAbilityDamageDice(""); setAbilityHealing(undefined);
             setAbilityStatusEffect(""); setAbilityStatusDuration(undefined); setAbilityTargetType("single");
             setAbilityRange("melee"); setAbilityAreaSize(""); setAbilityCastTime("instant");
             setAbilityInterruptible(false); setAbilityLore(""); setAbilityRarity("common");
             setAbilityIsForbidden(false); setAbilityCanUpgrade(false); setAbilityUpgradedVersion("");
-            setAbilityNotes("");
+            setAbilityNotes(""); setAbilityEffectId("");
         } finally {
             setIsSubmitting(false);
         }
@@ -1421,6 +1425,31 @@ export default function CampaignManager() {
                                                 />
                                             </div>
                                             <div className="space-y-1">
+                                                <label className="text-xs text-[#43485C]/60 ml-1">Damage Dice (optional)</label>
+                                                <input
+                                                    type="text"
+                                                    value={abilityDamageDice}
+                                                    onChange={(e) => setAbilityDamageDice(e.target.value)}
+                                                    placeholder="2d6"
+                                                    className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-xs text-[#43485C]/60 ml-1">Effect Preset (optional)</label>
+                                                <select
+                                                    value={abilityEffectId}
+                                                    onChange={(e) => setAbilityEffectId(e.target.value)}
+                                                    className="w-full bg-[#f8f9fa] border border-[#D4AF37]/20 rounded-xl p-3 text-[#43485C] text-sm"
+                                                >
+                                                    <option value="">None</option>
+                                                    {effectsLibrary?.map((eff) => (
+                                                        <option key={eff._id} value={eff._id}>
+                                                            {eff.name} ({eff.category})
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div className="space-y-1">
                                                 <label className="text-xs text-[#43485C]/60 ml-1">Healing</label>
                                                 <input
                                                     type="number"
@@ -1442,6 +1471,9 @@ export default function CampaignManager() {
                                                 />
                                             </div>
                                         </div>
+                                        <p className="text-[10px] text-[#43485C]/60 mt-2">
+                                            Effect presets are a scaffold for custom ability effects; behavior will be wired into combat later.
+                                        </p>
                                     </div>
 
                                     {/* Targeting */}

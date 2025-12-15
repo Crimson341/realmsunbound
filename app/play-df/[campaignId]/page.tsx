@@ -77,6 +77,7 @@ import {
     // Tactical combat
     initializeTacticalCombat,
     processTacticalAttack,
+    processTacticalAbility,
     processTacticalDefend,
     processTacticalMove,
     advanceTacticalTurn,
@@ -336,7 +337,9 @@ const streamNarrative = async (
     onData: (data: any) => void,
     onMapEvents: (events: AIGameEvent[]) => void,
     onDialogue: (dialogue: { lines: Array<{ speaker?: string; text: string; emotion?: string }>; activeNpc?: string }) => void,
-    onError: (err: any) => void
+    onError: (err: any) => void,
+    onSlowStream?: () => void,
+    controllerRef?: { current: AbortController | null }
 ) => {
     const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL!;
     if (!convexUrl) {
@@ -347,12 +350,76 @@ const streamNarrative = async (
         ? convexUrl.replace("convex.cloud", "convex.site")
         : convexUrl;
 
+    let slowStreamTimer: ReturnType<typeof setTimeout> | null = null;
+    let idleTimer: ReturnType<typeof setInterval> | null = null;
+    let hardStallTimer: ReturnType<typeof setTimeout> | null = null;
+    let errored = false;
+
     try {
+        const controller = new AbortController();
+        if (controllerRef) {
+            controllerRef.current = controller;
+        }
+        let finished = false;
+        let sawAnyDelta = false;
+        let lastDeltaAt = Date.now();
+        let lastNetworkActivityAt = Date.now();
+        let emittedAnything = false;
+
+        // Progress signal: after 8-12s without first token, signal "still thinking" (don't abort)
+        const SLOW_STREAM_SIGNAL_MS = 10_000;
+        // Hard abort: only for true stalls (no network bytes for 60-90s) or user cancellation
+        const HARD_STALL_TIMEOUT_MS = 75_000;
+        // Idle timeout: if we got tokens but then nothing for 20s, consider it stalled
+        const IDLE_TIMEOUT_MS = 20_000;
+
+        const fail = (err: Error) => {
+            if (errored) return;
+            errored = true;
+            finished = true;
+            if (slowStreamTimer) clearTimeout(slowStreamTimer);
+            if (idleTimer) clearInterval(idleTimer);
+            if (hardStallTimer) clearTimeout(hardStallTimer);
+            try { controller.abort(); } catch { /* ignore */ }
+            if (controllerRef) {
+                controllerRef.current = null;
+            }
+            onError(err);
+        };
+
+        // Signal slow stream (don't abort, just notify UI)
+        slowStreamTimer = setTimeout(() => {
+            if (finished || sawAnyDelta) return;
+            if (onSlowStream) {
+                onSlowStream();
+            }
+        }, SLOW_STREAM_SIGNAL_MS);
+
+        // Hard stall detection: no network activity for a very long time
+        hardStallTimer = setTimeout(() => {
+            if (finished) return;
+            const timeSinceActivity = Date.now() - lastNetworkActivityAt;
+            if (timeSinceActivity > HARD_STALL_TIMEOUT_MS) {
+                fail(new Error("AI connection stalled. Please try again."));
+            }
+        }, HARD_STALL_TIMEOUT_MS);
+
+        // Idle timeout: got tokens but then nothing for a while
+        idleTimer = setInterval(() => {
+            if (finished) return;
+            if (sawAnyDelta && Date.now() - lastDeltaAt > IDLE_TIMEOUT_MS) {
+                fail(new Error("AI stream stalled. Please try again."));
+            }
+        }, 1000);
+
         const response = await fetch(`${httpUrl}/api/stream-narrative`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
+            signal: controller.signal,
         });
+
+        lastNetworkActivityAt = Date.now();
 
         if (!response.ok) {
             const status = response.status;
@@ -360,7 +427,7 @@ const streamNarrative = async (
             const retryAfterMs = retryAfterHeader ? Math.max(0, parseInt(retryAfterHeader, 10) * 1000) : 0;
             const text = await response.text();
 
-            // Gemini quota errors can come through as 429. Don’t spam the console or keep retrying.
+            // OpenRouter quota errors can come through as 429. Don’t spam the console or keep retrying.
             if (status === 429) {
                 const backoffMs = retryAfterMs || 40_000;
                 mapAICooldownUntil = Date.now() + backoffMs;
@@ -377,6 +444,46 @@ const streamNarrative = async (
 
         let buffer = "";
         let internalTextBuffer = "";
+        let rawText = "";
+        const RAW_TEXT_CAP = 80_000;
+
+        const parseJsonLoose = (raw: string) => {
+            const cleaned = raw
+                .replace(/```json/g, '')
+                .replace(/```/g, '')
+                .replace(/:\s*True\b/g, ': true')
+                .replace(/:\s*False\b/g, ': false')
+                .replace(/:\s*None\b/g, ': null')
+                .replace(/,\s*([}\]])/g, '$1')
+                .trim();
+
+            const tryParse = (text: string) => {
+                try {
+                    return JSON.parse(text);
+                } catch {
+                    return null;
+                }
+            };
+
+            const direct = tryParse(cleaned);
+            if (direct !== null) return direct;
+
+            const objStart = cleaned.indexOf('{');
+            const objEnd = cleaned.lastIndexOf('}');
+            if (objStart !== -1 && objEnd !== -1 && objEnd > objStart) {
+                const sliced = tryParse(cleaned.slice(objStart, objEnd + 1));
+                if (sliced !== null) return sliced;
+            }
+
+            const arrStart = cleaned.indexOf('[');
+            const arrEnd = cleaned.lastIndexOf(']');
+            if (arrStart !== -1 && arrEnd !== -1 && arrEnd > arrStart) {
+                const sliced = tryParse(cleaned.slice(arrStart, arrEnd + 1));
+                if (sliced !== null) return sliced;
+            }
+
+            return null;
+        };
 
         let inNarrative = false;
         let inData = false;
@@ -385,10 +492,20 @@ const streamNarrative = async (
         let dataString = "";
         let mapEventsString = "";
         let dialogueString = "";
+        let emittedNarrative = false;
+        let emittedData = false;
+        let emittedMapEvents = false;
+        let emittedDialogue = false;
+        let emittedContent = false;
 
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
+
+            // Track network activity for hard stall detection
+            if (value && value.length > 0) {
+                lastNetworkActivityAt = Date.now();
+            }
 
             buffer += decoder.decode(value, { stream: true });
 
@@ -417,12 +534,24 @@ const streamNarrative = async (
                     }
                     try {
                         const parsed = JSON.parse(data);
+                        if (parsed?.error) {
+                            const msg = parsed?.error?.message || parsed?.error?.toString?.() || "AI stream error";
+                            fail(new Error(String(msg)));
+                            break;
+                        }
                         const delta = parsed?.choices?.[0]?.delta?.content;
                         if (typeof delta === 'string' && delta.length > 0) {
+                            sawAnyDelta = true;
+                            lastDeltaAt = Date.now();
                             internalTextBuffer += delta;
+                            rawText += delta;
+                            if (rawText.length > RAW_TEXT_CAP) {
+                                rawText = rawText.slice(-RAW_TEXT_CAP);
+                            }
                         }
-                    } catch {
+                    } catch (parseErr) {
                         // Ignore non-JSON data lines.
+                        void parseErr;
                     }
                 }
             }
@@ -464,21 +593,40 @@ const streamNarrative = async (
                     const navEnd = internalTextBuffer.indexOf("</narrative>");
                     if (navEnd !== -1) {
                         const content = internalTextBuffer.substring(0, navEnd);
-                        if (content) onContent(content);
+                        if (content) {
+                            emittedAnything = true;
+                            emittedNarrative = true;
+                            emittedContent = true;
+                            onContent(content);
+                        }
                         inNarrative = false;
                         internalTextBuffer = internalTextBuffer.substring(navEnd + 12);
                     } else {
-                        onContent(internalTextBuffer);
-                        internalTextBuffer = "";
-                        break;
+                        // Stream narrative progressively, but keep a small tail so tags
+                        // like </narrative> aren't lost if they arrive split across chunks.
+                        const KEEP_TAIL = 32;
+                        if (internalTextBuffer.length > KEEP_TAIL) {
+                            const emit = internalTextBuffer.slice(0, internalTextBuffer.length - KEEP_TAIL);
+                            if (emit) {
+                                emittedAnything = true;
+                                emittedNarrative = true;
+                                emittedContent = true;
+                                onContent(emit);
+                            }
+                            internalTextBuffer = internalTextBuffer.slice(-KEEP_TAIL);
+                        } else {
+                            break;
+                        }
                     }
                 } else if (inData) {
                     const dataEnd = internalTextBuffer.indexOf("</data>");
                     if (dataEnd !== -1) {
                         dataString += internalTextBuffer.substring(0, dataEnd);
                         try {
-                            const cleanJson = dataString.replace(/```json/g, '').replace(/```/g, '').trim();
-                            const json = JSON.parse(cleanJson);
+                            const json = parseJsonLoose(dataString);
+                            if (json === null) throw new Error("Failed to parse <data> JSON");
+                            emittedAnything = true;
+                            emittedData = true;
                             onData(json);
                         } catch (e) {
                             console.error("JSON Parse Error in Stream", e);
@@ -504,6 +652,8 @@ const streamNarrative = async (
                                 .replace(/,\s*([}\]])/g, '$1') // Remove trailing commas
                                 .trim();
                             const events = JSON.parse(cleanedJson) as AIGameEvent[];
+                            emittedAnything = true;
+                            emittedMapEvents = true;
                             onMapEvents(events);
                         } catch (e) {
                             console.error("Map Events Parse Error:", e, "Raw:", mapEventsString);
@@ -521,8 +671,10 @@ const streamNarrative = async (
                     if (dialogueEnd !== -1) {
                         dialogueString += internalTextBuffer.substring(0, dialogueEnd);
                         try {
-                            const cleanJson = dialogueString.replace(/```json/g, '').replace(/```/g, '').trim();
-                            const dialogueData = JSON.parse(cleanJson);
+                            const dialogueData = parseJsonLoose(dialogueString);
+                            if (dialogueData === null) throw new Error("Failed to parse <dialogue> JSON");
+                            emittedAnything = true;
+                            emittedDialogue = true;
                             onDialogue(dialogueData);
                         } catch (e) {
                             console.error("Dialogue Parse Error:", e, "Raw:", dialogueString);
@@ -538,8 +690,86 @@ const streamNarrative = async (
                 }
             }
         }
+
+        // If the stream ended without any content deltas, treat it as an error so callers can retry.
+        finished = true;
+        if (slowStreamTimer) clearTimeout(slowStreamTimer);
+        if (idleTimer) clearInterval(idleTimer);
+        if (hardStallTimer) clearTimeout(hardStallTimer);
+        if (controllerRef) {
+            controllerRef.current = null;
+        }
+
+        // End-of-stream flush: if we were mid-narrative and never saw </narrative>,
+        // emit what's left so the player still sees text.
+        if (inNarrative) {
+            const leftoverNarrative = internalTextBuffer.trim();
+            if (leftoverNarrative.length > 0) {
+                emittedAnything = true;
+                emittedNarrative = true;
+                emittedContent = true;
+                onContent(leftoverNarrative);
+            }
+        }
+
+        // Post-pass fallback: if the stream included <data> but the UI never got any narrative,
+        // attempt to extract it from the raw stream text, and if still missing, show a minimal
+        // message so the player isn't stuck staring at nothing.
+        if (!emittedContent && rawText.length > 0) {
+            const start = rawText.indexOf("<narrative>");
+            const end = rawText.indexOf("</narrative>");
+            if (start !== -1 && end !== -1 && end > start) {
+                const content = rawText.slice(start + 11, end);
+                if (content.trim().length > 0) {
+                    emittedAnything = true;
+                    emittedNarrative = true;
+                    emittedContent = true;
+                    onContent(content);
+                }
+            }
+        }
+
+        // If we still didn't emit *any* content, surface something visible no matter what.
+        // (This prevents "AI responded but nothing appears".)
+        if (!emittedContent && !errored) {
+            if (emittedData) {
+                emittedAnything = true;
+                emittedContent = true;
+                onContent("Choose an action below.");
+            } else {
+                const rawVisible = rawText
+                    .replace(/<\/?(narrative|data|dialogue|mapEvents)>/g, "")
+                    .trim();
+                if (rawVisible.length > 0) {
+                    emittedAnything = true;
+                    emittedContent = true;
+                    onContent(rawVisible);
+                }
+            }
+        }
+
+        // Fallback: if we received deltas but never saw expected tags, flush raw text so the user sees something.
+        if (!emittedAnything) {
+            const leftover = internalTextBuffer.trim();
+            if (leftover.length > 0) {
+                emittedAnything = true;
+                emittedContent = true;
+                onContent(leftover);
+            }
+        }
+
+        if (!errored && (!sawAnyDelta || !emittedAnything)) {
+            fail(new Error("AI returned an empty response. Please try again."));
+        }
     } catch (e) {
-        onError(e);
+        // Ensure timers are cleared on any thrown error.
+        if (slowStreamTimer) clearTimeout(slowStreamTimer);
+        if (idleTimer) clearInterval(idleTimer);
+        if (hardStallTimer) clearTimeout(hardStallTimer);
+        if (controllerRef) {
+            controllerRef.current = null;
+        }
+        if (!errored) onError(e);
     }
 };
 
@@ -635,6 +865,11 @@ export default function PlayDFPage() {
     const [mapGenerationStep, setMapGenerationStep] = useState("");
     // AI availability banner (quota/rate limit)
     const [aiOfflineUntil, setAiOfflineUntil] = useState<number>(0);
+    // Slow stream feedback
+    const [isSlowStream, setIsSlowStream] = useState(false);
+    const streamAbortControllerRef = useRef<AbortController | null>(null);
+    // Stores the current request's <narrative> content so we can surface it in the dialogue UI.
+    const lastNarrativeRef = useRef<string>("");
     const [isCharacterSheetOpen, setCharacterSheetOpen] = useState(false);
     const [selectedQuest, setSelectedQuest] = useState<any>(null);
     const [showPlayerHUD, setShowPlayerHUD] = useState(false);
@@ -681,6 +916,8 @@ export default function PlayDFPage() {
     const [currentLocationId, setCurrentLocationId] = useState<string | null>(null);
     const [hp, setHp] = useState(20);
     const [maxHp, setMaxHp] = useState(20);
+    const [energy, setEnergy] = useState(100);
+    const [maxEnergy, setMaxEnergy] = useState(100);
     const [xp, setXp] = useState(0);
     const [xpToLevel, setXpToLevel] = useState(100);
     const [level, setLevel] = useState(1);
@@ -694,9 +931,19 @@ export default function PlayDFPage() {
         if (playerGameState && !gameStateInitialized) {
             setHp(playerGameState.hp);
             setMaxHp(playerGameState.maxHp);
+            setEnergy(playerGameState.energy ?? 100);
+            setMaxEnergy(playerGameState.maxEnergy ?? 100);
             setXp(playerGameState.xp);
             setLevel(playerGameState.level);
             setGold(playerGameState.gold ?? 0);
+            try {
+                const parsed = JSON.parse(playerGameState.activeCooldowns || "{}");
+                if (parsed && typeof parsed === 'object') {
+                    setActiveCooldowns(parsed as Record<string, number>);
+                }
+            } catch {
+                setActiveCooldowns({});
+            }
             if (playerGameState.currentLocationId) {
                 setCurrentLocationId(playerGameState.currentLocationId);
             }
@@ -714,10 +961,13 @@ export default function PlayDFPage() {
     const saveGameState = useCallback(async (updates: {
         hp?: number;
         maxHp?: number;
+        energy?: number;
+        maxEnergy?: number;
         xp?: number;
         level?: number;
         gold?: number;
         currentLocationId?: Id<"locations">;
+        activeCooldowns?: string;
     }) => {
         if (!gameStateInitialized) return;
         try {
@@ -745,6 +995,8 @@ export default function PlayDFPage() {
     // --- TACTICAL BATTLE STATE (Multi-combatant) ---
     const [tacticalBattleState, setTacticalBattleState] = useState<TacticalCombatState | null>(null);
     const [tacticalUIState, setTacticalUIState] = useState<TacticalBattleState | null>(null);
+    const [selectedTacticalAbilityId, setSelectedTacticalAbilityId] = useState<string | null>(null);
+    const [activeCooldowns, setActiveCooldowns] = useState<Record<string, number>>({});
 
     // --- PERSUASION STATE ---
     const [persuasionState, setPersuasionState] = useState<PersuasionState | null>(null);
@@ -832,6 +1084,9 @@ export default function PlayDFPage() {
                 gridY: c.gridY,
                 isCurrentTurn: c.id === currentCombatant?.id,
                 portrait: c.portrait,
+                hasMoved: c.hasMoved,
+                hasActed: c.hasActed,
+                isDefending: c.isDefending,
             })),
             currentEntityIndex: engine.currentCombatantIndex,
             turn: engine.turn,
@@ -846,6 +1101,35 @@ export default function PlayDFPage() {
         };
         setTacticalUIState(uiState);
     }, []);
+
+    const parseAbilityRange = useCallback((range: unknown): number => {
+        const r = typeof range === 'string' ? range.trim().toLowerCase() : '';
+        if (!r) return 2;
+        if (/^\d+$/.test(r)) return Math.max(1, parseInt(r, 10));
+        if (r === 'melee') return 1;
+        if (r === 'short') return 2;
+        if (r === 'medium') return 4;
+        if (r === 'long') return 6;
+        if (r === 'unlimited') return 999;
+        return 2;
+    }, []);
+
+    const tacticalAbilities = useMemo(() => {
+        const spells = (data as any)?.spells as any[] | undefined;
+        if (!spells || spells.length === 0) return [];
+        return spells.map((s) => ({
+            id: String(s._id),
+            name: String(s.name || 'Ability'),
+            icon: s.iconEmoji ?? null,
+            description: s.description ?? null,
+            energyCost: typeof s.energyCost === 'number' ? s.energyCost : 0,
+            cooldownRemaining: activeCooldowns[String(s._id)] ?? 0,
+            range: parseAbilityRange(s.range),
+            damage: typeof s.damage === 'number' ? s.damage : null,
+            healing: typeof s.healing === 'number' ? s.healing : null,
+            effectName: s.statusEffect ?? null,
+        }));
+    }, [data, activeCooldowns, parseAbilityRange]);
 
     // Ref for AI turn processing (needed for circular dependency)
     const processAITurnIfNeededRef = useRef<((state: TacticalCombatState) => void) | null>(null);
@@ -906,6 +1190,7 @@ export default function PlayDFPage() {
         // Position enemy adjacent to player (1 tile away)
         const enemyGridX = playerPos.x + 2;
         const enemyGridY = playerPos.y;
+        const resolvedEnemyId = enemyData.entityId || `enemy_${Date.now()}`;
 
         // Initialize tactical combat with the new system
         const tacticalState = initializeTacticalCombat(
@@ -923,7 +1208,7 @@ export default function PlayDFPage() {
             [], // No followers for now (can add later from camp data)
             [
                 {
-                    id: enemyData.entityId || `enemy_${Date.now()}`,
+                    id: resolvedEnemyId,
                     name: enemyData.name,
                     hp: enemyData.hp,
                     maxHp: enemyData.maxHp,
@@ -946,9 +1231,11 @@ export default function PlayDFPage() {
         syncTacticalUIState(tacticalState);
 
         // Enter battle mode on the canvas (visual effects)
+        const playerCombatant = tacticalState.combatants.find(c => c.id === 'player');
+        const enemyCombatant = tacticalState.combatants.find(c => c.id === resolvedEnemyId);
         canvasRef.current?.enterBattleMode({
             enemies: [{
-                entityId: enemyData.entityId || `enemy_${Date.now()}`,
+                entityId: resolvedEnemyId,
                 name: enemyData.name,
                 hp: enemyData.hp,
                 maxHp: enemyData.maxHp,
@@ -956,7 +1243,16 @@ export default function PlayDFPage() {
                 damage: Math.floor(enemyData.hp / 15) + 1,
                 gridX: enemyGridX,
                 gridY: enemyGridY,
+                initiative: enemyCombatant?.initiative,
             }],
+            player: {
+                name: character?.name || 'Hero',
+                hp,
+                maxHp,
+                ac: playerAC,
+                damage: Math.max(1, Math.floor((weaponDamage === 'd12' ? 7 : weaponDamage === 'd10' ? 6 : weaponDamage === 'd8' ? 5 : weaponDamage === 'd6' ? 4 : weaponDamage === 'd4' ? 3 : 4) + getStatModifier(stats.str))),
+                initiative: playerCombatant?.initiative,
+            },
             playerMovementRange: 3,
             playerAttackRange: 1,
         });
@@ -1000,6 +1296,21 @@ export default function PlayDFPage() {
             if (aiAction.action === 'attack' && aiAction.targetId) {
                 const result = processTacticalAttack(state, current.id, aiAction.targetId);
                 newState = result.newState;
+                const hpAfter = newState.combatants.find(c => c.id === aiAction.targetId)?.stats.hp ?? 0;
+                canvasRef.current?.processEvent({
+                    type: 'battleAttack',
+                    battleAttack: {
+                        attackerId: current.id,
+                        targetId: aiAction.targetId,
+                        damage: result.result.totalDamage ?? 0,
+                        hit: result.result.hit,
+                        isCritical: result.result.isCritical,
+                        targetHpAfter: hpAfter,
+                    },
+                });
+                if (result.result.hit) {
+                    setScreenEffect(result.result.isCritical ? 'critical' : 'shake');
+                }
                 addNotification(result.result.hit ? 'warning' : 'info', current.name, result.narration);
             } else if (aiAction.action === 'move' && aiAction.moveToX !== undefined && aiAction.moveToY !== undefined) {
                 const result = processTacticalMove(state, current.id, aiAction.moveToX, aiAction.moveToY);
@@ -1019,10 +1330,17 @@ export default function PlayDFPage() {
             }
 
             // Advance to next turn
+            canvasRef.current?.endBattleTurn?.();
             const advancedState = advanceTacticalTurn(newState);
             setTacticalBattleState(advancedState);
             syncTacticalUIState(advancedState);
             setIsProcessingCombat(false);
+
+            const playerCombatant = advancedState.combatants.find(c => c.type === 'player');
+            if (playerCombatant) {
+                setHp(playerCombatant.stats.hp);
+                saveGameState({ hp: playerCombatant.stats.hp });
+            }
 
             // Recursively process if next combatant is also AI
             const nextCombatant = getCurrentCombatant(advancedState);
@@ -1032,7 +1350,24 @@ export default function PlayDFPage() {
                 setTacticalUIState(prev => prev ? { ...prev, phase: 'selectAction' } : null);
             }
         }, 800);
-    }, [addNotification, syncTacticalUIState]);
+    }, [addNotification, syncTacticalUIState, saveGameState]);
+
+    const advanceTacticalFrom = useCallback((state: TacticalCombatState) => {
+        if (state.outcome) {
+            handleTacticalCombatEndRef.current?.(state.outcome);
+            return;
+        }
+        canvasRef.current?.endBattleTurn?.();
+        const advancedState = advanceTacticalTurn(state);
+        setTacticalBattleState(advancedState);
+        syncTacticalUIState(advancedState);
+        const playerCombatant = advancedState.combatants.find(c => c.type === 'player');
+        if (playerCombatant) {
+            setHp(playerCombatant.stats.hp);
+            saveGameState({ hp: playerCombatant.stats.hp });
+        }
+        processAITurnIfNeeded(advancedState);
+    }, [processAITurnIfNeeded, syncTacticalUIState, saveGameState]);
 
     // Assign to ref for use in initiateCombat
     processAITurnIfNeededRef.current = processAITurnIfNeeded;
@@ -1344,15 +1679,29 @@ export default function PlayDFPage() {
         lines?: Array<{ speaker?: string; text: string; emotion?: string }>;
         activeNpc?: string
     }) => {
+        const narrative = lastNarrativeRef.current.trim();
+        const narrativeLines: DialogueLine[] = narrative
+            ? [{ text: narrative, emotion: 'neutral' }]
+            : [];
+
         if (dialogueData.lines && dialogueData.lines.length > 0) {
             // Convert to DialogueLine format and create DialogueState
-            const lines: DialogueLine[] = dialogueData.lines.map(line => ({
+            const lines: DialogueLine[] = [
+                ...narrativeLines,
+                ...dialogueData.lines.map(line => ({
                 speaker: line.speaker || undefined,
                 text: line.text,
                 emotion: (line.emotion as DialogueLine['emotion']) || 'neutral'
-            }));
+                }))
+            ].filter(l => typeof l.text === 'string' && l.text.trim().length > 0);
             setDialogueState({
                 lines,
+                currentLineIndex: 0,
+                isComplete: false
+            });
+        } else if (narrativeLines.length > 0) {
+            setDialogueState({
+                lines: narrativeLines,
                 currentLineIndex: 0,
                 isComplete: false
             });
@@ -1515,8 +1864,9 @@ export default function PlayDFPage() {
                     return { ...prev, choices: structuredChoices };
                 }
                 // If no dialogue lines, create a choice-only dialogue state
+                const narrative = lastNarrativeRef.current.trim();
                 return {
-                    lines: [],
+                    lines: narrative ? [{ text: narrative, emotion: 'neutral' }] : [],
                     currentLineIndex: 0,
                     choices: structuredChoices,
                     isComplete: false
@@ -1841,10 +2191,14 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
         let aiChoices: string[] | undefined;
 
         let aiQuotaLimited = false;
+        setIsSlowStream(false);
+        lastNarrativeRef.current = "";
         await streamNarrative(
             payload,
             (delta) => {
+                setIsSlowStream(false); // Clear slow stream indicator once we get content
                 aiResponseContent += delta;
+                lastNarrativeRef.current = aiResponseContent;
                 setMessages(prev => {
                     const last = prev[prev.length - 1];
                     if (last?.role === 'model') {
@@ -1854,6 +2208,7 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
                 });
             },
             (gameData) => {
+                setIsSlowStream(false); // Clear slow stream indicator once we get data
                 handleGameData(gameData);
                 // Extract just text strings for database storage (validator expects string[])
                 if (gameData.choices) {
@@ -1861,6 +2216,7 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
                 }
             },
             (events) => {
+                setIsSlowStream(false); // Clear slow stream indicator once we get events
                 // Narrative AI might also send map events - handle them
                 if (events.length > 0) {
                     handleMapEvents(events);
@@ -1868,10 +2224,12 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
                 }
             },
             (dialogueData) => {
+                setIsSlowStream(false); // Clear slow stream indicator once we get dialogue
                 // Handle dialogue data from AI
                 handleDialogue(dialogueData);
             },
             (err) => {
+                setIsSlowStream(false);
                 const msg = (err && typeof err === 'object' && 'message' in err) ? String((err as any).message) : String(err);
                 const isQuota = /quota exceeded|resource_exhausted|retry in|429/i.test(msg);
                 if (isQuota) {
@@ -1904,8 +2262,23 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
                 }
                 setIsLoading(false);
                 setIsGeneratingMap(false);
-            }
+            },
+            () => {
+                // onSlowStream callback
+                setIsSlowStream(true);
+            },
+            streamAbortControllerRef
         );
+
+        // Absolute fallback: ensure something appears in the dialogue UI even if <dialogue>/<data> parsing failed.
+        if (aiResponseContent && aiResponseContent.trim().length > 0) {
+            const narrative = aiResponseContent.trim();
+            setDialogueState(prev => prev ?? ({
+                lines: [{ text: narrative, emotion: 'neutral' }],
+                currentLineIndex: 0,
+                isComplete: false
+            }));
+        }
 
         if (playerId && aiResponseContent) {
             saveMessage({
@@ -1957,6 +2330,7 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
         // Clear stale dialogue/choices before sending new message
         setCurrentChoices([]);
         setDialogueState(null);
+        lastNarrativeRef.current = "";
 
         const userMsg: Message = { role: 'user', content: contentToSend };
         setMessages(prev => [...prev, userMsg]);
@@ -2079,11 +2453,14 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
         const attemptAICall = async (): Promise<boolean> => {
             return new Promise((resolve) => {
                 let callSucceeded = true;
+                setIsSlowStream(false);
 
                 streamNarrative(
                     payload,
                     (delta) => {
+                        setIsSlowStream(false); // Clear slow stream indicator once we get content
                         aiResponseContent += delta;
+                        lastNarrativeRef.current = aiResponseContent;
                         setMessages(prev => {
                             const last = prev[prev.length - 1];
                             if (last?.role === 'model') {
@@ -2093,22 +2470,33 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
                         });
                     },
                     (gameData) => {
+                        setIsSlowStream(false); // Clear slow stream indicator once we get data
                         handleGameData(gameData);
                         // Extract just text strings for database storage (validator expects string[])
                         if (gameData.choices) {
                             aiChoices = gameData.choices.map((c: any) => typeof c === 'string' ? c : c.text || c.action || c.label || '').filter(Boolean);
                         }
                     },
-                    handleMapEvents,
+                    (events) => {
+                        setIsSlowStream(false); // Clear slow stream indicator once we get events
+                        handleMapEvents(events);
+                    },
                     (dialogueData) => {
+                        setIsSlowStream(false); // Clear slow stream indicator once we get dialogue
                         // Handle dialogue data from AI
                         handleDialogue(dialogueData);
                     },
                     (err) => {
+                        setIsSlowStream(false);
                         console.error(`AI Error (attempt ${retryCount + 1}/${MAX_RETRIES}):`, err);
                         lastError = err;
                         callSucceeded = false;
-                    }
+                    },
+                    () => {
+                        // onSlowStream callback
+                        setIsSlowStream(true);
+                    },
+                    streamAbortControllerRef
                 ).then(() => {
                     resolve(callSucceeded);
                 }).catch((err) => {
@@ -2153,6 +2541,17 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
             }]);
         }
 
+        // Absolute fallback: if we got narrative text but never surfaced any dialogue UI,
+        // show the narrative as a single dialogue line so the player sees something.
+        if (aiResponseContent && aiResponseContent.trim().length > 0) {
+            const narrative = aiResponseContent.trim();
+            setDialogueState(prev => prev ?? ({
+                lines: [{ text: narrative, emotion: 'neutral' }],
+                currentLineIndex: 0,
+                isComplete: false
+            }));
+        }
+
         if (playerId && aiResponseContent) {
             saveMessage({
                 campaignId,
@@ -2181,12 +2580,154 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
 
     // --- TILE/ENTITY/OBJECT CLICK HANDLERS ---
     // Tile click: just close menu, movement is handled by engine's pathfinding
-    const handleTileClick = useCallback((_x: number, _y: number) => {
+    const handleTileClick = useCallback((x: number, y: number) => {
         setContextMenu(null); // Close any open context menu
-    }, []);
+
+        if (!tacticalBattleState || !tacticalUIState) return;
+        const current = getCurrentCombatant(tacticalBattleState);
+        if (!current || current.type !== 'player') return;
+
+        if (tacticalUIState.phase === 'selectMove') {
+            const click = canvasRef.current?.handleBattleClick(x, y);
+            if (click?.action === 'move' && click.toX !== undefined && click.toY !== undefined) {
+                const moved = processTacticalMove(tacticalBattleState, current.id, click.toX, click.toY);
+                setTacticalBattleState(moved.newState);
+                syncTacticalUIState(moved.newState);
+                canvasRef.current?.battleMoveEntity(current.id, click.toX, click.toY);
+                canvasRef.current?.cancelBattleSelection?.();
+                setTacticalUIState(prev => prev ? { ...prev, phase: 'selectAction', selectedAction: undefined } : null);
+            }
+            return;
+        }
+
+        if (tacticalUIState.phase === 'selectAttack' && tacticalUIState.selectedAction === 'attack') {
+            const click = canvasRef.current?.handleBattleClick(x, y);
+            if (click?.action === 'attack' && click.targetId) {
+                const result = processTacticalAttack(tacticalBattleState, current.id, click.targetId);
+                const hpAfter = result.newState.combatants.find(c => c.id === click.targetId)?.stats.hp ?? 0;
+                canvasRef.current?.processEvent({
+                    type: 'battleAttack',
+                    battleAttack: {
+                        attackerId: current.id,
+                        targetId: click.targetId,
+                        damage: result.result.totalDamage ?? 0,
+                        hit: result.result.hit,
+                        isCritical: result.result.isCritical,
+                        targetHpAfter: hpAfter,
+                    },
+                });
+                if (result.result.hit) {
+                    setScreenEffect(result.result.isCritical ? 'critical' : 'shake');
+                }
+                canvasRef.current?.cancelBattleSelection?.();
+                setTacticalUIState(prev => prev ? { ...prev, phase: 'selectAction', selectedAction: undefined } : null);
+                advanceTacticalFrom(result.newState);
+            }
+        }
+    }, [tacticalBattleState, tacticalUIState, syncTacticalUIState, advanceTacticalFrom]);
 
     // Entity click: show action context menu
     const handleEntityClick = useCallback((entityId: string, entity: RoomEntity, screenPos?: { x: number; y: number }) => {
+        // In tactical combat, entity clicks can be used to pick targets.
+        if (tacticalBattleState && tacticalUIState) {
+            const current = getCurrentCombatant(tacticalBattleState);
+            if (current && current.type === 'player') {
+                // Ability target selection
+                if (tacticalUIState.phase === 'selectAbility' && selectedTacticalAbilityId) {
+                    const ability = tacticalAbilities.find(a => a.id === selectedTacticalAbilityId);
+                    if (!ability) {
+                        addNotification('warning', 'Ability not found');
+                        return;
+                    }
+                    const cooldownRemaining = activeCooldowns[ability.id] ?? 0;
+                    if (cooldownRemaining > 0) {
+                        addNotification('warning', `${ability.name} is on cooldown`, `${cooldownRemaining} turns remaining`);
+                        return;
+                    }
+                    if (ability.energyCost > energy) {
+                        addNotification('warning', 'Not enough energy', `Need ${ability.energyCost}, have ${energy}`);
+                        return;
+                    }
+
+                    // Range check against tactical state
+                    const validTargets = getValidTargets(tacticalBattleState, current.id, ability.range);
+                    const inRange = validTargets.some(t => t.id === entityId);
+                    if (!inRange) {
+                        addNotification('warning', 'Out of range');
+                        return;
+                    }
+
+                    // Spend energy + set cooldowns
+                    const nextEnergy = Math.max(0, energy - ability.energyCost);
+                    setEnergy(nextEnergy);
+                    const nextCooldowns = { ...activeCooldowns };
+                    const cd = (data as any)?.spells?.find((s: any) => String(s._id) === ability.id)?.cooldown;
+                    if (typeof cd === 'number' && cd > 0) nextCooldowns[ability.id] = cd;
+                    setActiveCooldowns(nextCooldowns);
+                    saveGameState({ energy: nextEnergy, activeCooldowns: JSON.stringify(nextCooldowns) });
+
+                    const cast = processTacticalAbility(tacticalBattleState, current.id, entityId, {
+                        name: ability.name,
+                        baseDamage: ability.damage ?? 0,
+                        damageDice: (data as any)?.spells?.find((s: any) => String(s._id) === ability.id)?.damageDice,
+                        healing: ability.healing ?? 0,
+                    });
+
+                    const hpAfter = cast.newState.combatants.find(c => c.id === entityId)?.stats.hp ?? 0;
+                    canvasRef.current?.processEvent({
+                        type: 'battleAttack',
+                        battleAttack: {
+                            attackerId: current.id,
+                            targetId: entityId,
+                            damage: cast.result.totalDamage ?? 0,
+                            hit: !!cast.result.hit,
+                            isCritical: cast.result.isCritical,
+                            targetHpAfter: hpAfter,
+                        },
+                    });
+
+                    if (cast.result.hit) {
+                        setScreenEffect(cast.result.isCritical ? 'critical' : 'shake');
+                    }
+
+                    canvasRef.current?.cancelBattleSelection?.();
+                    setSelectedTacticalAbilityId(null);
+                    setTacticalUIState(prev => prev ? { ...prev, phase: 'selectAction', selectedAction: undefined, selectedAbilityId: undefined } : null);
+                    advanceTacticalFrom(cast.newState);
+                    return;
+                }
+
+                // Basic attack target selection (use canvas click helper if possible)
+                if (tacticalUIState.phase === 'selectAttack' && tacticalUIState.selectedAction === 'attack') {
+                    const validTargets = getValidTargets(tacticalBattleState, current.id, 1);
+                    if (!validTargets.some(t => t.id === entityId)) {
+                        addNotification('warning', 'No target in range');
+                        return;
+                    }
+                    const result = processTacticalAttack(tacticalBattleState, current.id, entityId);
+                    const hpAfter = result.newState.combatants.find(c => c.id === entityId)?.stats.hp ?? 0;
+                    canvasRef.current?.processEvent({
+                        type: 'battleAttack',
+                        battleAttack: {
+                            attackerId: current.id,
+                            targetId: entityId,
+                            damage: result.result.totalDamage ?? 0,
+                            hit: result.result.hit,
+                            isCritical: result.result.isCritical,
+                            targetHpAfter: hpAfter,
+                        },
+                    });
+                    if (result.result.hit) {
+                        setScreenEffect(result.result.isCritical ? 'critical' : 'shake');
+                    }
+                    canvasRef.current?.cancelBattleSelection?.();
+                    setTacticalUIState(prev => prev ? { ...prev, phase: 'selectAction', selectedAction: undefined } : null);
+                    advanceTacticalFrom(result.newState);
+                    return;
+                }
+            }
+        }
+
         // Use actual screen click position if available, otherwise fallback to calculation
         let screenX: number, screenY: number;
         if (screenPos) {
@@ -2211,7 +2752,7 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
             name: entity.name,
             hostile: entity.hostile,
         });
-    }, []);
+    }, [tacticalBattleState, tacticalUIState, selectedTacticalAbilityId, tacticalAbilities, activeCooldowns, energy, saveGameState, data, addNotification, advanceTacticalFrom]);
 
     // Object click: show action context menu or handle exit directly
     const handleObjectClick = useCallback((objectId: string, object: RoomObject, screenPos?: { x: number; y: number }) => {
@@ -2556,18 +3097,22 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
                             if (!tacticalBattleState) return;
 
                             if (action === 'move') {
-                                // Show movement range on canvas
+                                setSelectedTacticalAbilityId(null);
                                 canvasRef.current?.showBattleMovementRange();
-                                setTacticalUIState(prev => prev ? { ...prev, phase: 'selectMove' } : null);
+                                setTacticalUIState(prev => prev ? { ...prev, phase: 'selectMove', selectedAction: 'move', selectedAbilityId: undefined } : null);
                             } else if (action === 'attack') {
-                                // Show attack range on canvas
+                                setSelectedTacticalAbilityId(null);
                                 canvasRef.current?.showBattleAttackRange();
-                                setTacticalUIState(prev => prev ? { ...prev, phase: 'selectAttack' } : null);
+                                setTacticalUIState(prev => prev ? { ...prev, phase: 'selectAttack', selectedAction: 'attack', selectedAbilityId: undefined } : null);
                             } else if (action === 'defend') {
                                 // Process defend action
                                 const current = getCurrentCombatant(tacticalBattleState);
                                 if (current) {
                                     const { newState } = processTacticalDefend(tacticalBattleState, current.id);
+                                    canvasRef.current?.cancelBattleSelection?.();
+                                    canvasRef.current?.endBattleTurn?.();
+                                    setSelectedTacticalAbilityId(null);
+                                    setTacticalUIState(prev => prev ? { ...prev, phase: 'animating', selectedAction: undefined, selectedAbilityId: undefined } : null);
                                     // Advance turn and process AI if needed
                                     const advancedState = advanceTacticalTurn(newState);
                                     setTacticalBattleState(advancedState);
@@ -2576,31 +3121,31 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
                                     processAITurnIfNeeded(advancedState);
                                 }
                             } else if (action === 'ability') {
-                                // TODO: Show ability selection panel
-                                // For now, treat like a powerful attack
-                                const current = getCurrentCombatant(tacticalBattleState);
-                                if (current) {
-                                    const validTargets = getValidTargets(tacticalBattleState, current.id, 2); // Extended range for abilities
-                                    if (validTargets.length > 0) {
-                                        const target = validTargets[0];
-                                        const { newState } = processTacticalAttack(tacticalBattleState, current.id, target.id);
-                                        // Check for combat end
-                                        if (newState.outcome) {
-                                            handleTacticalCombatEndRef.current?.(newState.outcome);
-                                            return;
-                                        }
-                                        const advancedState = advanceTacticalTurn(newState);
-                                        setTacticalBattleState(advancedState);
-                                        syncTacticalUIState(advancedState);
-                                        processAITurnIfNeeded(advancedState);
-                                    } else {
-                                        addNotification('warning', 'No targets in range!');
-                                    }
-                                }
+                                canvasRef.current?.cancelBattleSelection?.();
+                                setSelectedTacticalAbilityId(null);
+                                setTacticalUIState(prev => prev ? { ...prev, phase: 'selectAbility', selectedAction: 'ability', selectedAbilityId: undefined } : null);
+                            } else if (action === 'flee') {
+                                canvasRef.current?.exitBattleMode('fled');
+                                setTacticalBattleState(null);
+                                setTacticalUIState(null);
+                                setSelectedTacticalAbilityId(null);
+                                setGameContext('explore');
                             }
+                        }}
+                        onAbilitySelect={(abilityId) => {
+                            setSelectedTacticalAbilityId(abilityId);
+                            setTacticalUIState(prev => prev ? { ...prev, selectedAbilityId: abilityId } : null);
+                        }}
+                        onCancelSelection={() => {
+                            canvasRef.current?.cancelBattleSelection?.();
+                            setSelectedTacticalAbilityId(null);
+                            setTacticalUIState(prev => prev ? { ...prev, phase: 'selectAction', selectedAction: undefined, selectedAbilityId: undefined } : null);
                         }}
                         onEndTurn={() => {
                             if (!tacticalBattleState) return;
+                            canvasRef.current?.cancelBattleSelection?.();
+                            canvasRef.current?.endBattleTurn?.();
+                            setSelectedTacticalAbilityId(null);
                             const advancedState = advanceTacticalTurn(tacticalBattleState);
                             setTacticalBattleState(advancedState);
                             syncTacticalUIState(advancedState);
@@ -2611,11 +3156,15 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
                             canvasRef.current?.exitBattleMode('fled');
                             setTacticalBattleState(null);
                             setTacticalUIState(null);
+                            setSelectedTacticalAbilityId(null);
                             setGameContext('explore');
                         }}
                         isLoading={isProcessingCombat}
                         movementRange={3}
                         attackRange={1}
+                        abilities={tacticalAbilities}
+                        playerEnergy={energy}
+                        maxEnergy={maxEnergy}
                     />
                 )}
 
@@ -2738,11 +3287,16 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
                         onDialogueAdvance={() => {
                             setDialogueState(prev => {
                                 if (!prev) return null;
+                                if (prev.isComplete) return prev; // Choices are showing
                                 const nextIndex = prev.currentLineIndex + 1;
                                 if (nextIndex >= prev.lines.length) {
                                     // If no more lines but has choices, keep showing choices
                                     if (prev.choices && prev.choices.length > 0) {
-                                        return { ...prev, currentLineIndex: prev.lines.length - 1 };
+                                        return {
+                                            ...prev,
+                                            currentLineIndex: Math.max(prev.lines.length - 1, 0),
+                                            isComplete: true
+                                        };
                                     }
                                     return null; // No more dialogue
                                 }
@@ -2883,8 +3437,8 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
                             playerState={{
                                 hp,
                                 maxHp,
-                                energy: playerGameState?.energy,
-                                maxEnergy: playerGameState?.maxEnergy,
+                                energy,
+                                maxEnergy,
                                 xp,
                                 level,
                                 gold,
@@ -3156,9 +3710,37 @@ NOTE: The map is being generated separately. Focus ONLY on narrative text.
 
             {/* === LOADING INDICATOR === */}
             {isLoading && (
-                <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 px-4 py-3 bg-slate-900/90 backdrop-blur-sm rounded-xl border border-purple-500/30">
-                    <Loader2 size={18} className="text-purple-400 animate-spin" />
-                    <span className="text-sm text-slate-300">Thinking...</span>
+                <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-3 px-4 py-3 bg-slate-900/90 backdrop-blur-sm rounded-xl border border-purple-500/30 min-w-[280px]">
+                    <div className="flex items-center gap-3 w-full">
+                        <Loader2 size={18} className="text-purple-400 animate-spin" />
+                        <span className="text-sm text-slate-300">
+                            {isSlowStream ? "Still thinking..." : "The narrator is thinking..."}
+                        </span>
+                    </div>
+                    {isSlowStream && (
+                        <div className="flex items-center gap-2 w-full pt-2 border-t border-slate-700/50">
+                            <span className="text-xs text-slate-400 flex-1">
+                                OpenRouter can be slow. You can cancel or wait.
+                            </span>
+                            <button
+                                onClick={() => {
+                                    if (streamAbortControllerRef.current) {
+                                        streamAbortControllerRef.current.abort();
+                                        streamAbortControllerRef.current = null;
+                                    }
+                                    setIsLoading(false);
+                                    setIsSlowStream(false);
+                                    setMessages(prev => [...prev, {
+                                        role: 'model',
+                                        content: "Request cancelled."
+                                    }]);
+                                }}
+                                className="px-3 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded transition-colors"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    )}
                 </div>
             )}
 

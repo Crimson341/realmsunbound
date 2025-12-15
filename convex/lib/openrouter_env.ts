@@ -7,6 +7,7 @@
  * Env vars:
  * - OPENROUTER_API_KEY (required)
  * - OPENROUTER_CHAT_MODEL (optional, default: openai/gpt-4o-mini)
+ * - OPENROUTER_FALLBACK_MODELS (optional, comma-separated model ids)
  * - OPENROUTER_EMBEDDINGS_MODEL (optional, default: openai/text-embedding-3-small)
  * - OPENROUTER_EMBEDDINGS_DIMENSIONS (optional, default: 768)
  * - OPENROUTER_HTTP_REFERER (optional)
@@ -25,6 +26,20 @@ export function getOpenRouterApiKey(): string {
 
 export function getOpenRouterChatModel(): string {
   return process.env.OPENROUTER_CHAT_MODEL || "openai/gpt-4o-mini";
+}
+
+/**
+ * Comma-separated list of fallback model ids for OpenRouter routing.
+ * Example:
+ *   OPENROUTER_FALLBACK_MODELS="openai/gpt-4o-mini,meta-llama/llama-3.1-8b-instruct,google/gemini-2.0-flash-lite"
+ */
+export function getOpenRouterFallbackModels(): string[] {
+  const raw = process.env.OPENROUTER_FALLBACK_MODELS;
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 export function getOpenRouterEmbeddingsModel(): string {

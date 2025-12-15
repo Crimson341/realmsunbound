@@ -1,6 +1,7 @@
 import {
   getOpenRouterApiKey,
   getOpenRouterChatModel,
+  getOpenRouterFallbackModels,
   getOpenRouterEmbeddingsDimensions,
   getOpenRouterEmbeddingsModel,
   getOpenRouterExtraHeaders,
@@ -45,12 +46,22 @@ export async function openRouterChatCompletionText(args: {
   temperature?: number;
   max_tokens?: number;
 }): Promise<string> {
-  const model = args.model || getOpenRouterChatModel();
+  const primaryModel = args.model || getOpenRouterChatModel();
+  const fallbackModels = getOpenRouterFallbackModels().filter((m) => m !== primaryModel);
+  const models = [primaryModel, ...fallbackModels];
+  
+  // openrouter/auto uses automatic routing - don't use fallback route with it
+  const isAutoModel = primaryModel === "openrouter/auto";
+
   const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
     method: "POST",
     headers: buildAuthHeaders(),
     body: JSON.stringify({
-      model,
+      ...(isAutoModel 
+        ? { model: primaryModel } 
+        : models.length > 1 
+          ? { models, route: "fallback" } 
+          : { model: primaryModel }),
       messages: args.messages,
       temperature: args.temperature,
       max_tokens: args.max_tokens,
@@ -83,10 +94,19 @@ export async function openRouterChatCompletionStream(args: {
   // Optional OpenRouter-only knobs; forwarded in request body.
   extra_body?: Record<string, unknown>;
 }): Promise<Response> {
-  const model = args.model || getOpenRouterChatModel();
+  const primaryModel = args.model || getOpenRouterChatModel();
+  const fallbackModels = getOpenRouterFallbackModels().filter((m) => m !== primaryModel);
+  const models = [primaryModel, ...fallbackModels];
+  
+  // openrouter/auto uses automatic routing - don't use fallback route with it
+  const isAutoModel = primaryModel === "openrouter/auto";
 
   const body = {
-    model,
+    ...(isAutoModel 
+      ? { model: primaryModel } 
+      : models.length > 1 
+        ? { models, route: "fallback" } 
+        : { model: primaryModel }),
     messages: args.messages,
     temperature: args.temperature,
     max_tokens: args.max_tokens,

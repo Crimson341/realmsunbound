@@ -33,8 +33,9 @@ export interface AIGameCanvasHandle {
   getDefaultZoom: () => number;
   // Battle controls
   enterBattleMode: (config: {
-    enemies: Array<{ entityId: string; name: string; hp: number; maxHp: number; ac: number; damage: number; gridX: number; gridY: number }>;
-    followers?: Array<{ entityId: string; name: string; hp: number; maxHp: number; ac: number; damage: number }>;
+    enemies: Array<{ entityId: string; name: string; hp: number; maxHp: number; ac: number; damage: number; gridX: number; gridY: number; initiative?: number }>;
+    followers?: Array<{ entityId: string; name: string; hp: number; maxHp: number; ac: number; damage: number; initiative?: number }>;
+    player?: { name?: string; hp?: number; maxHp?: number; ac?: number; damage?: number; initiative?: number };
     playerMovementRange?: number;
     playerAttackRange?: number;
   }) => void;
@@ -42,6 +43,7 @@ export interface AIGameCanvasHandle {
   getBattleState: () => import('./types').BattleState | null;
   showBattleMovementRange: () => void;
   showBattleAttackRange: () => void;
+  cancelBattleSelection: () => void;
   handleBattleClick: (gridX: number, gridY: number) => { action: 'move' | 'attack' | 'invalid'; targetId?: string; toX?: number; toY?: number } | null;
   battleMoveEntity: (entityId: string, toX: number, toY: number) => Promise<void>;
   endBattleTurn: () => void;
@@ -216,6 +218,9 @@ export const AIGameCanvas = forwardRef<AIGameCanvasHandle, AIGameCanvasProps>(
         },
         showBattleAttackRange: () => {
           engineRef.current?.showBattleAttackRange();
+        },
+        cancelBattleSelection: () => {
+          engineRef.current?.cancelBattleSelection();
         },
         handleBattleClick: (gridX, gridY) => {
           return engineRef.current?.handleBattleClick(gridX, gridY) ?? null;

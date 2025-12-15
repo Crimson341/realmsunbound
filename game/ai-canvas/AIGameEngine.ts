@@ -643,6 +643,7 @@ export class AIGameEngine {
       damage: number;
       gridX: number;
       gridY: number;
+      initiative?: number;
     }>;
     followers?: Array<{
       entityId: string;
@@ -651,7 +652,16 @@ export class AIGameEngine {
       maxHp: number;
       ac: number;
       damage: number;
+      initiative?: number;
     }>;
+    player?: {
+      name?: string;
+      hp?: number;
+      maxHp?: number;
+      ac?: number;
+      damage?: number;
+      initiative?: number;
+    };
     playerMovementRange?: number;
     playerAttackRange?: number;
   }): void {
@@ -684,18 +694,18 @@ export class AIGameEngine {
     // Player
     battleEntities.push({
       entityId: 'player',
-      name: 'Player',
+      name: config.player?.name ?? 'Player',
       gridX: centerX,
       gridY: centerY,
       isPlayerControlled: true,
       isFollower: false,
       movementRange: config.playerMovementRange ?? 3,
       attackRange: config.playerAttackRange ?? 1,
-      initiative: 10 + Math.floor(Math.random() * 10),
-      hp: player.data.hp ?? 100,
-      maxHp: player.data.maxHp ?? 100,
-      ac: 12,
-      damage: 8,
+      initiative: config.player?.initiative ?? (10 + Math.floor(Math.random() * 10)),
+      hp: config.player?.hp ?? (player.data.hp ?? 100),
+      maxHp: config.player?.maxHp ?? (player.data.maxHp ?? 100),
+      ac: config.player?.ac ?? 12,
+      damage: config.player?.damage ?? 8,
       hasMovedThisTurn: false,
       hasActedThisTurn: false,
     });
@@ -714,7 +724,7 @@ export class AIGameEngine {
             isFollower: true,
             movementRange: 3,
             attackRange: 1,
-            initiative: 5 + Math.floor(Math.random() * 10),
+            initiative: follower.initiative ?? (5 + Math.floor(Math.random() * 10)),
             hp: follower.hp,
             maxHp: follower.maxHp,
             ac: follower.ac,
@@ -737,7 +747,7 @@ export class AIGameEngine {
         isFollower: false,
         movementRange: 3,
         attackRange: 1,
-        initiative: 5 + Math.floor(Math.random() * 10),
+        initiative: enemy.initiative ?? (5 + Math.floor(Math.random() * 10)),
         hp: enemy.hp,
         maxHp: enemy.maxHp,
         ac: enemy.ac,
@@ -1096,6 +1106,13 @@ export class AIGameEngine {
       actorId: next.entityId,
     });
 
+    this.clearBattleHighlights();
+    this.onBattleStateChange?.(this.battleState);
+  }
+
+  /** Clear any selected battle action/highlights */
+  public cancelBattleSelection(): void {
+    if (!this.battleState) return;
     this.clearBattleHighlights();
     this.onBattleStateChange?.(this.battleState);
   }

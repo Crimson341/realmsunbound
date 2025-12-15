@@ -5,6 +5,19 @@
 
 export type DiceType = 'd4' | 'd6' | 'd8' | 'd10' | 'd12' | 'd20' | 'd100';
 
+function parseDiceExpression(expr: string): { dice: DiceType; count: number } | null {
+    const raw = expr.trim().toLowerCase();
+    if (!raw) return null;
+    const match = raw.match(/^(\d+)?d(\d+)$/);
+    if (!match) return null;
+    const count = match[1] ? parseInt(match[1], 10) : 1;
+    const faces = match[2];
+    const dice = (`d${faces}`) as DiceType;
+    if (!['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'd100'].includes(dice)) return null;
+    if (!Number.isFinite(count) || count < 1 || count > 20) return null;
+    return { dice, count };
+}
+
 export interface CombatantStats {
     name: string;
     hp: number;
@@ -100,6 +113,12 @@ export function rollDice(dice: DiceType, count: number = 1): DiceRollResult {
         isNat20: dice === 'd20' && count === 1 && rolls[0] === 20,
         isNat1: dice === 'd20' && count === 1 && rolls[0] === 1,
     };
+}
+
+export function rollDiceExpression(expr: string): DiceRollResult | null {
+    const parsed = parseDiceExpression(expr);
+    if (!parsed) return null;
+    return rollDice(parsed.dice, parsed.count);
 }
 
 /**
@@ -1012,6 +1031,122 @@ export function processTacticalAttack(
     };
 }
 
+export function processTacticalAbility(
+    state: TacticalCombatState,
+    casterId: string,
+    targetId: string,
+    ability: {
+        name: string;
+        attackBonus?: number;
+        baseDamage?: number;
+        damageDice?: string;
+        healing?: number;
+        isMagical?: boolean;
+    }
+): {
+    newState: TacticalCombatState;
+    result: AbilityResult & { isCritical?: boolean; isCriticalMiss?: boolean; targetAC?: number; totalAttack?: number };
+    narration: string;
+} {
+    const caster = state.combatants.find(c => c.id === casterId);
+    const target = state.combatants.find(c => c.id === targetId);
+    if (!caster || !target) {
+        throw new Error(`Invalid caster or target: ${casterId} -> ${targetId}`);
+    }
+
+    const targetWithBonus = {
+        ...target.stats,
+        ac: target.stats.ac + (target.isDefending ? 2 : 0),
+    };
+
+    const attackRoll = rollD20();
+    const bonus = ability.attackBonus ?? caster.stats.attackBonus;
+    const totalAttack = attackRoll.total + bonus;
+    const hit = totalAttack >= targetWithBonus.ac && !attackRoll.isNat1;
+    const isCritical = !!attackRoll.isNat20;
+    const isCriticalMiss = !!attackRoll.isNat1;
+
+    const damageRoll = ability.damageDice ? rollDiceExpression(ability.damageDice) : null;
+    const baseDamage = ability.baseDamage ?? 0;
+    let totalDamage = 0;
+    if (hit) {
+        totalDamage = baseDamage + (damageRoll?.total ?? 0);
+        if (isCritical) {
+            totalDamage = Math.max(1, totalDamage * 2);
+        }
+    }
+
+    const healing = ability.healing ?? 0;
+
+    const narration = hit
+        ? `${caster.name} uses ${ability.name} on ${target.name}${totalDamage > 0 ? ` for ${totalDamage} damage` : ''}${isCritical ? ' (CRITICAL!)' : ''}.`
+        : `${caster.name} uses ${ability.name}, but it fails to affect ${target.name}.`;
+
+    const newCombatants = state.combatants.map(c => {
+        if (c.id === targetId && hit && totalDamage > 0) {
+            return {
+                ...c,
+                stats: {
+                    ...c.stats,
+                    hp: Math.max(0, c.stats.hp - totalDamage),
+                },
+                isDefending: false,
+            };
+        }
+        if (c.id === casterId) {
+            return {
+                ...c,
+                stats: healing > 0 ? { ...c.stats, hp: Math.min(c.stats.maxHp, c.stats.hp + healing) } : c.stats,
+                hasActed: true,
+            };
+        }
+        return c;
+    });
+
+    const playerAlive = newCombatants.some(c => c.type === 'player' && c.stats.hp > 0);
+    const enemiesAlive = newCombatants.some(c => c.type === 'enemy' && c.stats.hp > 0);
+
+    let outcome: 'victory' | 'defeat' | undefined;
+    if (!playerAlive) outcome = 'defeat';
+    else if (!enemiesAlive) outcome = 'victory';
+
+    const newLog: CombatLogEntry[] = [
+        ...state.log,
+        {
+            id: `log_${Date.now()}`,
+            turn: state.turn,
+            actor: caster.type === 'enemy' ? 'enemy' : 'player',
+            type: isCritical ? 'crit' : hit ? 'attack' : isCriticalMiss ? 'miss' : 'miss',
+            text: narration,
+            roll: attackRoll,
+            damage: hit ? totalDamage : 0,
+            timestamp: Date.now(),
+        },
+    ];
+
+    return {
+        newState: {
+            ...state,
+            combatants: newCombatants,
+            log: newLog,
+            outcome,
+        },
+        result: {
+            abilityName: ability.name,
+            attackRoll,
+            damageRoll: damageRoll ?? undefined,
+            hit,
+            totalDamage: hit ? totalDamage : 0,
+            healAmount: healing > 0 ? healing : undefined,
+            isCritical,
+            isCriticalMiss,
+            targetAC: targetWithBonus.ac,
+            totalAttack,
+        },
+        narration,
+    };
+}
+
 /**
  * Process a defend action for a combatant
  */
@@ -1077,6 +1212,42 @@ export function processTacticalMove(
     const combatant = state.combatants.find(c => c.id === combatantId);
     if (!combatant) {
         throw new Error(`Invalid combatant: ${combatantId}`);
+    }
+
+    const dist = gridDistance(combatant.gridX, combatant.gridY, toX, toY);
+    const withinArena = (() => {
+        const minX = state.arenaCenter.x - Math.floor(state.arenaSize / 2);
+        const maxX = state.arenaCenter.x + Math.floor(state.arenaSize / 2);
+        const minY = state.arenaCenter.y - Math.floor(state.arenaSize / 2);
+        const maxY = state.arenaCenter.y + Math.floor(state.arenaSize / 2);
+        return toX >= minX && toX <= maxX && toY >= minY && toY <= maxY;
+    })();
+
+    const occupied = state.combatants.some(c => c.stats.hp > 0 && c.id !== combatantId && c.gridX === toX && c.gridY === toY);
+
+    if (combatant.hasMoved || dist <= 0 || dist > 3 || !withinArena || occupied) {
+        const reason =
+            combatant.hasMoved ? "already moved" :
+                dist > 3 ? "too far" :
+                    !withinArena ? "out of bounds" :
+                        occupied ? "occupied" : "invalid";
+        return {
+            newState: {
+                ...state,
+                log: [
+                    ...state.log,
+                    {
+                        id: `log_${Date.now()}`,
+                        turn: state.turn,
+                        actor: combatant.type === 'enemy' ? 'enemy' : combatant.type === 'player' ? 'player' : 'player',
+                        type: 'narration',
+                        text: `${combatant.name} cannot move (${reason}).`,
+                        timestamp: Date.now(),
+                    },
+                ],
+            },
+            path: [],
+        };
     }
 
     const path = [{ x: combatant.gridX, y: combatant.gridY }, { x: toX, y: toY }];

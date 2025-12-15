@@ -30,7 +30,7 @@ export type GameContext = 'explore' | 'combat' | 'social' | 'rest';
 
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
 
-export type ScreenEffectType = 'damage' | 'heal' | 'critical' | 'levelup';
+export type ScreenEffectType = 'damage' | 'heal' | 'critical' | 'levelup' | 'shake';
 
 export interface CombatState {
     enemyName: string;
@@ -1912,6 +1912,7 @@ export const ScreenEffect: React.FC<ScreenEffectProps> = ({ type, onComplete }) 
         heal: 'bg-emerald-500/25',
         critical: 'bg-gradient-to-r from-red-600/40 via-orange-500/30 to-red-600/40',
         levelup: 'bg-gradient-to-r from-amber-500/30 via-yellow-400/20 to-amber-500/30',
+        shake: 'bg-transparent',
     };
 
     return (
@@ -1926,6 +1927,16 @@ export const ScreenEffect: React.FC<ScreenEffectProps> = ({ type, onComplete }) 
                     className="absolute inset-0"
                     animate={{ x: [0, -10, 10, -10, 10, 0] }}
                     transition={{ duration: 0.4 }}
+                />
+            )}
+            {type === 'shake' && (
+                <motion.div
+                    className="absolute inset-0"
+                    animate={{
+                        x: [0, -3, 3, -2, 2, 0],
+                        y: [0, 2, -2, 1, -1, 0],
+                    }}
+                    transition={{ duration: 0.35 }}
                 />
             )}
             {type === 'levelup' && (
@@ -3296,7 +3307,11 @@ export const DialogueManager: React.FC<DialogueManagerProps> = ({
 }) => {
     const currentLine = dialogue?.lines[dialogue.currentLineIndex];
     const isLastLine = dialogue ? dialogue.currentLineIndex >= dialogue.lines.length - 1 : false;
-    const showChoices = dialogue && isLastLine && dialogue.choices && dialogue.choices.length > 0 && !dialogue.isComplete;
+    const showChoices =
+        !!dialogue &&
+        !!dialogue.choices &&
+        dialogue.choices.length > 0 &&
+        (dialogue.isComplete || dialogue.lines.length === 0);
 
     return (
         <>
@@ -3312,7 +3327,7 @@ export const DialogueManager: React.FC<DialogueManagerProps> = ({
 
             {/* Dialogue Box */}
             <AnimatePresence>
-                {currentLine && !showChoices && !dialogue?.isComplete && (
+                {currentLine && !dialogue?.isComplete && (
                     <DialogueBox
                         dialogue={currentLine}
                         onAdvance={onDialogueAdvance}
@@ -3635,35 +3650,60 @@ export interface TacticalBattleEntity {
     isCurrentTurn?: boolean;
     portrait?: string;
     statusEffects?: string[];
+    hasMoved?: boolean;
+    hasActed?: boolean;
+    isDefending?: boolean;
 }
 
 export interface TacticalBattleState {
     entities: TacticalBattleEntity[];
     currentEntityIndex: number;
     turn: number;
-    phase: 'selectAction' | 'selectMove' | 'selectAttack' | 'animating' | 'enemyTurn';
+    phase: 'selectAction' | 'selectMove' | 'selectAttack' | 'selectAbility' | 'animating' | 'enemyTurn';
     selectedAction?: 'move' | 'attack' | 'defend' | 'ability' | 'flee';
+    selectedAbilityId?: string;
     combatLog: Array<{ id: string; text: string; type: 'attack' | 'damage' | 'miss' | 'crit' | 'info'; timestamp: number }>;
 }
 
 interface TacticalBattleOverlayProps {
     state: TacticalBattleState;
     onAction: (action: 'move' | 'attack' | 'defend' | 'ability' | 'flee') => void;
+    onAbilitySelect?: (abilityId: string) => void;
+    onCancelSelection?: () => void;
     onEndTurn: () => void;
     onFlee: () => void;
     isLoading: boolean;
     movementRange?: number;
     attackRange?: number;
+    abilities?: Array<{
+        id: string;
+        name: string;
+        icon?: string | null;
+        description?: string | null;
+        energyCost: number;
+        cooldownRemaining: number;
+        range: number;
+        damage?: number | null;
+        healing?: number | null;
+        effectName?: string | null;
+    }>;
+    playerEnergy?: number;
+    maxEnergy?: number;
 }
 
 export const TacticalBattleOverlay: React.FC<TacticalBattleOverlayProps> = ({
     state,
     onAction,
+    onAbilitySelect,
+    onCancelSelection,
     onEndTurn,
     onFlee,
     isLoading,
     movementRange = 3,
     attackRange = 1,
+    abilities = [],
+    playerEnergy = 0,
+    maxEnergy = 0,
 }) => {
     const currentEntity = state.entities[state.currentEntityIndex];
     const isPlayerControlled = currentEntity?.type === 'player';
@@ -3673,6 +3713,21 @@ export const TacticalBattleOverlay: React.FC<TacticalBattleOverlayProps> = ({
 
     // Sort entities by initiative for turn order display
     const sortedEntities = [...state.entities].sort((a, b) => b.initiative - a.initiative);
+
+    const selectionHint =
+        state.phase === 'selectMove'
+            ? `Select a destination (range ${movementRange})`
+            : state.phase === 'selectAttack'
+                ? (state.selectedAction === 'ability' ? 'Select a target' : 'Select a target to attack')
+                : state.phase === 'selectAbility'
+                    ? (state.selectedAbilityId ? 'Select a target' : 'Select an ability')
+                    : null;
+
+    const canAct = isPlayerControlled && !isLoading && state.phase !== 'enemyTurn' && state.phase !== 'animating';
+    const hasMovedThisTurn = !!currentEntity?.hasMoved;
+    const hasActedThisTurn = !!currentEntity?.hasActed;
+    const showAbilityPicker = state.phase === 'selectAbility' && !state.selectedAbilityId;
+    const recentLog = [...state.combatLog].slice(-5).reverse();
 
     return (
         <>
@@ -3961,7 +4016,177 @@ export const TacticalBattleOverlay: React.FC<TacticalBattleOverlayProps> = ({
                     </div>
                 )}
             </motion.div>
+
+            {/* Command Menu + Status (Bottom Left) */}
+            <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="fixed bottom-4 left-4 z-50 w-[360px] max-w-[calc(100vw-2rem)]"
+            >
+                <div className="bg-slate-950/95 backdrop-blur-md border border-red-500/30 rounded-2xl shadow-2xl overflow-hidden">
+                    <div className="px-4 py-3 border-b border-slate-700/50 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <Swords size={16} className="text-red-400" />
+                            <span className="text-sm font-bold text-slate-100">
+                                {currentEntity?.name || '—'}
+                            </span>
+                            <span className="text-xs text-slate-400">
+                                {isPlayerControlled ? 'Your turn' : 'Enemy turn'}
+                            </span>
+                        </div>
+                        {maxEnergy > 0 && (
+                            <div className="text-xs text-cyan-300 font-mono">
+                                EN {playerEnergy}/{maxEnergy}
+                            </div>
+                        )}
+                    </div>
+
+                    {selectionHint && (
+                        <div className="px-4 py-2 text-xs text-amber-300 bg-amber-900/10 border-b border-amber-500/20">
+                            {selectionHint}
+                        </div>
+                    )}
+
+                    <div className="p-3">
+                        {canAct ? (
+                            <div className="grid grid-cols-3 gap-2">
+                                <button
+                                    onClick={() => onAction('attack')}
+                                    disabled={state.phase !== 'selectAction' || hasActedThisTurn}
+                                    className="px-3 py-2 rounded-lg bg-slate-900/70 hover:bg-red-900/30 border border-slate-700/60 hover:border-red-500/40 text-sm text-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Attack
+                                </button>
+                                <button
+                                    onClick={() => onAction('move')}
+                                    disabled={state.phase !== 'selectAction' || hasMovedThisTurn}
+                                    className="px-3 py-2 rounded-lg bg-slate-900/70 hover:bg-blue-900/30 border border-slate-700/60 hover:border-blue-500/40 text-sm text-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Move
+                                </button>
+                                <button
+                                    onClick={() => onAction('defend')}
+                                    disabled={state.phase !== 'selectAction' || hasActedThisTurn}
+                                    className="px-3 py-2 rounded-lg bg-slate-900/70 hover:bg-emerald-900/25 border border-slate-700/60 hover:border-emerald-500/40 text-sm text-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Defend
+                                </button>
+                                <button
+                                    onClick={() => onAction('ability')}
+                                    disabled={state.phase !== 'selectAction' || abilities.length === 0 || hasActedThisTurn}
+                                    className="px-3 py-2 rounded-lg bg-slate-900/70 hover:bg-purple-900/30 border border-slate-700/60 hover:border-purple-500/40 text-sm text-slate-100 disabled:opacity-50 disabled:cursor-not-allowed col-span-2"
+                                >
+                                    Abilities
+                                </button>
+                                <button
+                                    onClick={onEndTurn}
+                                    className="px-3 py-2 rounded-lg bg-slate-900/70 hover:bg-slate-800 border border-slate-700/60 text-sm text-slate-100"
+                                >
+                                    End
+                                </button>
+                                <button
+                                    onClick={onFlee}
+                                    className="px-3 py-2 rounded-lg bg-slate-900/70 hover:bg-slate-800 border border-slate-700/60 text-sm text-slate-100 col-span-2"
+                                >
+                                    Flee
+                                </button>
+                                {(state.phase === 'selectMove' || state.phase === 'selectAttack' || state.phase === 'selectAbility') && (
+                                    <button
+                                        onClick={onCancelSelection}
+                                        className="px-3 py-2 rounded-lg bg-slate-900/70 hover:bg-slate-800 border border-slate-700/60 text-sm text-slate-100"
+                                    >
+                                        Cancel
+                                    </button>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="text-sm text-slate-300">
+                                {isLoading ? 'Resolving…' : 'Waiting…'}
+                            </div>
+                        )}
+
+                        {showAbilityPicker && (
+                            <div className="mt-3 border-t border-slate-700/50 pt-3">
+                                {abilities.length === 0 ? (
+                                    <div className="text-xs text-slate-400">No abilities available.</div>
+                                ) : (
+                                    <div className="space-y-2 max-h-48 overflow-auto pr-1">
+                                        {abilities.map((a) => {
+                                            const onCooldown = a.cooldownRemaining > 0;
+                                            const tooExpensive = (a.energyCost ?? 0) > (playerEnergy ?? 0);
+                                            const disabled = onCooldown || tooExpensive || !onAbilitySelect;
+                                            return (
+                                                <button
+                                                    key={a.id}
+                                                    disabled={disabled}
+                                                    onClick={() => onAbilitySelect?.(a.id)}
+                                                    className={`w-full text-left px-3 py-2 rounded-lg border transition-all ${
+                                                        disabled
+                                                            ? 'bg-slate-900/40 border-slate-700/40 text-slate-500 cursor-not-allowed'
+                                                            : 'bg-slate-900/70 border-slate-700/60 text-slate-100 hover:border-purple-500/40 hover:bg-purple-900/20'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-lg">{a.icon || '✨'}</span>
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-sm font-semibold truncate">{a.name}</span>
+                                                                {onCooldown && (
+                                                                    <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+                                                                        CD {a.cooldownRemaining}
+                                                                    </span>
+                                                                )}
+                                                                {a.energyCost > 0 && (
+                                                                    <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-900/30 text-cyan-300">
+                                                                        EN {a.energyCost}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            {a.description && (
+                                                                <div className="text-xs text-slate-400 line-clamp-2 mt-0.5">
+                                                                    {a.description}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                                <div className="mt-2 text-[10px] text-slate-500">
+                                    Tip: after selecting an ability, click an enemy on the map.
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </motion.div>
+
+            {/* Combat Log (Bottom Right) */}
+            {recentLog.length > 0 && (
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="fixed bottom-4 right-4 z-50 w-[360px] max-w-[calc(100vw-2rem)]"
+                >
+                    <div className="bg-slate-950/90 backdrop-blur-md border border-slate-700/50 rounded-2xl shadow-2xl overflow-hidden">
+                        <div className="px-4 py-2 border-b border-slate-700/50 text-xs text-slate-400 uppercase tracking-wider">
+                            Combat Log
+                        </div>
+                        <div className="p-3 space-y-2">
+                            {recentLog.map((l) => (
+                                <div key={l.id} className="text-xs text-slate-200 leading-snug">
+                                    <span className="text-slate-500 mr-2">
+                                        {new Date(l.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                    </span>
+                                    {l.text}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </motion.div>
+            )}
         </>
     );
 };
-

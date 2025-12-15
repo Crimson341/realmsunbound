@@ -1234,14 +1234,61 @@ The map enhances the narrative - every room should feel unique and atmospheric!`
     },
   ];
 
+  const requestReceivedAt = Date.now();
+  let openRouterRequestStartedAt: number | null = null;
+  let firstChunkReceivedAt: number | null = null;
+
   try {
+    openRouterRequestStartedAt = Date.now();
+    console.log(`[chatStream] Request received at ${requestReceivedAt}, starting OpenRouter request at ${openRouterRequestStartedAt} (delay: ${openRouterRequestStartedAt - requestReceivedAt}ms)`);
+
     const upstream = await openRouterChatCompletionStream({
       messages,
       temperature: 0.9,
       max_tokens: 1000,
     });
 
-    return new Response(upstream.body, {
+    // Wrap the stream to track first chunk timing
+    const originalBody = upstream.body;
+    if (!originalBody) {
+      throw new Error("OpenRouter returned no response body");
+    }
+
+    const reader = originalBody.getReader();
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+              const streamEndAt = Date.now();
+              const totalTime = streamEndAt - requestReceivedAt;
+              const timeToFirstChunk = firstChunkReceivedAt && openRouterRequestStartedAt 
+                ? firstChunkReceivedAt - openRouterRequestStartedAt 
+                : null;
+              console.log(`[chatStream] Stream ended at ${streamEndAt}, total time: ${totalTime}ms, time to first chunk: ${timeToFirstChunk ? `${timeToFirstChunk}ms` : 'never received'}`);
+              controller.close();
+              break;
+            }
+
+            if (!firstChunkReceivedAt && value && value.length > 0) {
+              firstChunkReceivedAt = Date.now();
+              const timeToFirstChunk = openRouterRequestStartedAt 
+                ? firstChunkReceivedAt - openRouterRequestStartedAt 
+                : 0;
+              console.log(`[chatStream] First chunk received at ${firstChunkReceivedAt}, time to first chunk: ${timeToFirstChunk}ms`);
+            }
+
+            controller.enqueue(value);
+          }
+        } catch (error) {
+          console.error(`[chatStream] Stream error:`, error);
+          controller.error(error);
+        }
+      },
+    });
+
+    return new Response(stream, {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
@@ -1249,7 +1296,33 @@ The map enhances the narrative - every room should feel unique and atmospheric!`
       },
     });
   } catch (e) {
-    return new Response(String(e), { status: 502, headers: corsHeaders });
+    const errorAt = Date.now();
+    const timeToError = errorAt - requestReceivedAt;
+    const timeToOpenRouterStart = openRouterRequestStartedAt ? openRouterRequestStartedAt - requestReceivedAt : null;
+    
+    console.error(`[chatStream] Error at ${errorAt}, time to error: ${timeToError}ms, time to OpenRouter start: ${timeToOpenRouterStart ? `${timeToOpenRouterStart}ms` : 'never started'}`, e);
+    
+    const errorMessage = e instanceof Error ? e.message : String(e);
+    const statusCode = errorMessage.includes("401") || errorMessage.includes("unauthorized") ? 401
+      : errorMessage.includes("402") || errorMessage.includes("payment") ? 402
+      : errorMessage.includes("429") || errorMessage.includes("rate limit") ? 429
+      : errorMessage.includes("502") || errorMessage.includes("bad gateway") ? 502
+      : errorMessage.includes("503") || errorMessage.includes("service unavailable") ? 503
+      : 502;
+    
+    return new Response(JSON.stringify({ 
+      error: errorMessage,
+      timing: {
+        requestReceivedAt,
+        openRouterRequestStartedAt,
+        errorAt,
+        timeToError,
+        timeToOpenRouterStart,
+      }
+    }), { 
+      status: statusCode, 
+      headers: { ...corsHeaders, "Content-Type": "application/json" } 
+    });
   }
 });
 

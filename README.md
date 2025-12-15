@@ -56,6 +56,4 @@ This projectt is licensed under the **Realms Unbound License Agreement**. See [L
 **Liability:**
 - **Use at Own Risk** - This tool uses AI. We are not responsible for any damages. You assume all risk.
 
-**Contributing:**
-- By contributing, you grant Core Contributors full, irrevocable rights to your code (copyright assignment)
-- Core Contributors (Cody Seibert, SuperComboGamer, Kacper Lachowicz, Ben Scott) are granted perpetual, royalty-free licenses for any use, including monetization
+

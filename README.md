@@ -39,7 +39,7 @@ Open [http://localhost:3000](http://localhost:3000) to explore.
 
 ## License
 
-This project is licensed under the **Realms Unbound License Agreement**. See [LICENSE](LICENSE) for the full text.
+This projectt is licensed under the **Realms Unbound License Agreement**. See [LICENSE](LICENSE) for the full text.
 
 ### Summary of Terms
 
